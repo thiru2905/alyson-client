@@ -6,30 +6,41 @@ import { toast } from "sonner";
 import { Field, TextInput, TextArea, Select, PrimaryBtn, GhostBtn, FormFooter } from "@/components/forms/FormField";
 import { useAuth } from "@/lib/auth";
 import { fetchOverview } from "@/lib/queries";
+import { useMyEmployeeId } from "@/hooks/useMyEmployeeId";
+import { ensureMyAnnualLeaveBalance } from "@/lib/leave-functions";
 
 export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const auth = useAuth();
   const canRequestForOthers = auth.hasAnyRole(["super_admin", "hr", "manager"]);
+  const myEmployee = useMyEmployeeId();
 
   const useOverviewForEmployees =
     String(import.meta.env.VITE_HR_OVERVIEW_SOURCE ?? "").trim().toLowerCase() === "s3" ||
     String(import.meta.env.VITE_DEMO_MODE ?? "").trim().toLowerCase() === "true";
 
-  const { data: myProfile } = useQuery({
-    queryKey: ["my-profile", auth.user?.id],
-    queryFn: async () => {
-      if (!auth.user?.id) return null;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, employee_id")
-        .eq("id", auth.user.id)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
+  const ensureBalance = useMutation({
+    mutationFn: async () => {
+      const { data: sess, error: sErr } = await supabase.auth.getSession();
+      if (sErr) throw sErr;
+      const accessToken = sess.session?.access_token;
+      if (!accessToken) return;
+      await ensureMyAnnualLeaveBalance({ data: { accessToken } });
     },
-    enabled: open && !!auth.user?.id,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+    },
+    onError: async (e: unknown) => {
+      if (e instanceof Response) {
+        toast.error(await e.text());
+      }
+    },
   });
+
+  useEffect(() => {
+    if (open) ensureBalance.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync allowance when drawer opens
+  }, [open]);
 
   const { data: types } = useQuery({
     queryKey: ["leave-types"],
@@ -48,10 +59,7 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
           .map((e) => ({ id: e.id, full_name: e.full_name }))
           .sort((a, b) => a.full_name.localeCompare(b.full_name));
       }
-      const { data } = await supabase
-        .from("employees")
-        .select("id, full_name")
-        .order("full_name");
+      const { data } = await supabase.from("employees").select("id, full_name").order("full_name");
       return data ?? [];
     },
     enabled: open && canRequestForOthers,
@@ -65,16 +73,13 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
   const [reason, setReason] = useState("");
 
   useEffect(() => {
-    // Regular employees can only request for themselves (RLS requires employee_id to match profile.employee_id)
-    if (open && !canRequestForOthers && myProfile?.employee_id) setEmpId(myProfile.employee_id);
-
-    // Admin/HR/Manager can request on behalf of others
+    if (open && !canRequestForOthers && myEmployee.data) setEmpId(myEmployee.data);
     if (open && canRequestForOthers && emps?.length && !empId) setEmpId(emps[0].id);
     if (open && types?.length && !typeId) setTypeId(types[0].id);
-  }, [open, emps, types, empId, typeId, canRequestForOthers, myProfile?.employee_id]);
+  }, [open, emps, types, empId, typeId, canRequestForOthers, myEmployee.data]);
 
-  const days =
-    (new Date(end).getTime() - new Date(start).getTime()) / 86400000 + 1;
+  const days = (new Date(end).getTime() - new Date(start).getTime()) / 86400000 + 1;
+  const requestedDays = Math.max(1, days);
 
   const create = useMutation({
     mutationFn: async () => {
@@ -82,15 +87,28 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
         throw new Error(
           canRequestForOthers
             ? "Please select an employee"
-            : "Your account is not linked to an employee record. Ask an admin to link your user to an employee."
+            : "Your account is not linked to an employee record. Ask an admin to link your profile, or use the same email as your Team profile.",
         );
       }
+      const year = Number(start.slice(0, 4));
+      const { data: bal, error: bErr } = await supabase
+        .from("leave_balances")
+        .select("remaining")
+        .eq("employee_id", empId)
+        .eq("leave_type_id", typeId)
+        .eq("year", year)
+        .maybeSingle();
+      if (bErr) throw bErr;
+      if (bal != null && Number(bal.remaining) < requestedDays) {
+        throw new Error(`Not enough balance: ${Number(bal.remaining).toFixed(1)} days left for this type in ${year} (annual allowance 10).`);
+      }
+
       const { error } = await supabase.from("leave_requests").insert({
         employee_id: empId,
         leave_type_id: typeId,
         start_date: start,
         end_date: end,
-        days: Math.max(1, days),
+        days: requestedDays,
         reason: reason || null,
         status: "pending",
       });
@@ -99,10 +117,11 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leave-requests"] });
       qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      qc.invalidateQueries({ queryKey: ["pending-leave-for-bell"] });
       toast.success("Leave request submitted");
       onClose();
     },
-    onError: (e: any) => toast.error(e?.message ?? "Failed"),
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
   return (
@@ -115,11 +134,18 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
         }}
       >
         <div className="p-5 space-y-4 flex-1">
+          {!canRequestForOthers && myEmployee.isSuccess && !myEmployee.data && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+              No employee linked to your account. Match your login email to an employee on Team, or ask an admin to link your profile.
+            </div>
+          )}
           {canRequestForOthers && (
             <Field label="Employee">
               <Select value={empId} onChange={(e) => setEmpId(e.target.value)}>
                 {(emps ?? []).map((e: any) => (
-                  <option key={e.id} value={e.id}>{e.full_name}</option>
+                  <option key={e.id} value={e.id}>
+                    {e.full_name}
+                  </option>
                 ))}
               </Select>
             </Field>
@@ -127,7 +153,9 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
           <Field label="Leave type">
             <Select value={typeId} onChange={(e) => setTypeId(e.target.value)}>
               {(types ?? []).map((t: any) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
               ))}
             </Select>
           </Field>
@@ -140,15 +168,19 @@ export function LeaveRequestDrawer({ open, onClose }: { open: boolean; onClose: 
             </Field>
           </div>
           <div className="text-[12px] text-muted-foreground">
-            {Math.max(1, Math.round(days))} day{days !== 1 ? "s" : ""} requested.
+            {Math.max(1, Math.round(requestedDays))} day{requestedDays !== 1 ? "s" : ""} requested (pending super admin approval).
           </div>
           <Field label="Reason">
             <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional" />
           </Field>
         </div>
         <FormFooter>
-          <GhostBtn type="button" onClick={onClose}>Cancel</GhostBtn>
-          <PrimaryBtn type="submit" disabled={create.isPending}>Submit request</PrimaryBtn>
+          <GhostBtn type="button" onClick={onClose}>
+            Cancel
+          </GhostBtn>
+          <PrimaryBtn type="submit" disabled={create.isPending || ensureBalance.isPending}>
+            Submit request
+          </PrimaryBtn>
         </FormFooter>
       </form>
     </Drawer>
