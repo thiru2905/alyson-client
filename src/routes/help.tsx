@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageHeader } from "@/components/AppShell";
-import { Book, MessageCircle, Zap, FileQuestion, Search, ChevronDown } from "lucide-react";
+import {
+  Book,
+  MessageCircle,
+  Zap,
+  FileQuestion,
+  Search,
+  ChevronDown,
+  Captions,
+  CalendarDays,
+  Clock,
+} from "lucide-react";
 import { useState } from "react";
 
 export const Route = createFileRoute("/help")({
@@ -8,15 +18,95 @@ export const Route = createFileRoute("/help")({
   component: HelpPage,
 });
 
+const SUPPORT_EMAIL = "thirumalai@cintara.ai";
+
 const TOPICS = [
   {
     icon: Book,
     title: "Getting started",
-    desc: "Set up your workspace, import people, configure pay cycles.",
+    desc: "Onboard to Alyson: workspace basics, people data, and where to find deeper guides below.",
     faq: [
-      { q: "How do I import existing employees?", a: "Use the CSV importer in Admin → Data sources, or paste from your old HRIS. We'll match levels and departments automatically." },
-      { q: "What if I don't have all comp data?", a: "Start with name, email, role, department. You can backfill base salary and bonus % later — every other metric will update automatically." },
-      { q: "Can I trial without committing?", a: "Yes — create a sandbox workspace from the role switcher. Nothing in sandbox is published." },
+      {
+        q: "What should I do first?",
+        a: "Confirm your role in the app shell, explore Team and core HR areas you use day to day, then read the sections for Alyson Notetaker, Meeting calendar, and Time dashboard if your org uses them. Super admins unlock additional tools from the shell.",
+      },
+      {
+        q: "How do I import existing employees?",
+        a: "Use the CSV importer in Admin → Data sources, or paste from your old HRIS. We'll match levels and departments automatically.",
+      },
+      {
+        q: "What if I don't have all comp data?",
+        a: "Start with name, email, role, department. You can backfill base salary and bonus % later — every other metric will update automatically.",
+      },
+      {
+        q: "Can I trial without committing?",
+        a: "Yes — create a sandbox workspace from the role switcher. Nothing in sandbox is published.",
+      },
+    ],
+  },
+  {
+    icon: Captions,
+    title: "Alyson Notetaker",
+    desc: "Meeting bot: join link, live transcripts, AI notes, and persist to secure storage.",
+    faq: [
+      {
+        q: "How do I set up a meeting for the bot?",
+        a: "Give the meeting a clear name so it is easy to find later. Paste the full meeting link (Zoom, Google Meet, Microsoft Teams, or other supported provider) into the link field on the Notetaker screen before the call starts.",
+      },
+      {
+        q: "When does the bot join?",
+        a: "After you submit the meeting details, the bot typically joins within about 10 seconds. Once connected, it listens to the call and produces real-time transcripts you can follow as the conversation happens.",
+      },
+      {
+        q: "How do I generate meeting notes?",
+        a: "Open the Notes area for that session. When you are ready, use the control to generate meeting notes from the transcript. Review the output, then edit if needed before saving.",
+      },
+      {
+        q: "What does Persist do?",
+        a: "Persist writes the current notes (and related session data) to cloud storage (S3) so they are retained for your workspace. Use it when you want the official copy saved and available for later review or compliance.",
+      },
+      {
+        q: "Who can use Notetaker?",
+        a: "Notetaker is intended for super-admin workflows. If you do not see it in the navigation, ask your workspace super admin to confirm your access.",
+      },
+    ],
+  },
+  {
+    icon: CalendarDays,
+    title: "Meeting calendar",
+    desc: "See every meeting your Alyson bot was invited to, in one place.",
+    faq: [
+      {
+        q: "What is the Meeting calendar for?",
+        a: "It lists meetings where the Notetaker bot was added or invited. Use it to scan upcoming and past sessions, open a meeting for details, and cross-check that the bot is on the right calls.",
+      },
+      {
+        q: "How do I find a specific meeting?",
+        a: "Use the calendar layout and meeting titles. Match the name you used when creating the session in Notetaker, or look by date and time.",
+      },
+    ],
+  },
+  {
+    icon: Clock,
+    title: "Time dashboard",
+    desc: "Super-admin view of employee working time, app and site usage, and range-based summaries.",
+    faq: [
+      {
+        q: "What can I see on the Time dashboard?",
+        a: "You get a list of employees with their working hours. Select someone to open a detail view with a deeper breakdown, including where the most time was spent across apps and websites (when that data is available from your integration).",
+      },
+      {
+        q: "How do date and time ranges work?",
+        a: "Set a start and end for the period you care about. All working-hour metrics and summaries on the page respect that range so you are not mixing unrelated weeks or months.",
+      },
+      {
+        q: "What summaries are available?",
+        a: "You can interpret daily, weekly, and monthly working hours from the same underlying data by adjusting the range: pick a single day for daily-style review, a week for weekly patterns, or a full month for monthly rollups.",
+      },
+      {
+        q: "Who can access the Time dashboard?",
+        a: "It is restricted to super admins. If you need access for compliance or IT, ask a super admin in your organization.",
+      },
     ],
   },
   {
@@ -42,10 +132,20 @@ const TOPICS = [
   {
     icon: MessageCircle,
     title: "Contact support",
-    desc: "Ask Alyson AI or email support@alyson.com — we reply within 4h.",
+    desc: `Email ${SUPPORT_EMAIL} for product questions, access issues, or onboarding help.`,
     faq: [
-      { q: "How do I reach a human?", a: "Click 'Ask Alyson' in the top bar. If she can't help, type 'escalate' and we'll route to support@alyson.com." },
-      { q: "What's your SLA?", a: "Standard plans get a 4-hour first response on weekdays. Enterprise plans get a 30-minute pager." },
+      {
+        q: "How do I reach support?",
+        a: `Write to ${SUPPORT_EMAIL}. Include your workspace name, role, and a short description of what you were trying to do (with screenshots if helpful).`,
+      },
+      {
+        q: "Can I still use Ask Alyson in the app?",
+        a: "Yes — use Ask Alyson in the top bar for quick how-tos inside the product. For account access, billing, or anything that needs a human, email the address above.",
+      },
+      {
+        q: "What response time can I expect?",
+        a: "We aim to reply on UK business days as soon as practical. For urgent production issues, mark the subject line URGENT and include the time zone you are in.",
+      },
     ],
   },
 ];
@@ -61,45 +161,50 @@ function HelpPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Resources" title="Help & docs" description="Everything you need to operate Alyson confidently." />
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-5 max-w-3xl">
-        <div className="relative">
-          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <PageHeader
+        eyebrow="Resources"
+        title="Help & docs"
+        description="Everything you need to operate confidently — onboarding, Notetaker, calendar, time tracking, payroll, equity, and support."
+      />
+      <div className="px-5 md:px-8 py-4 md:py-5 space-y-4 max-w-5xl mx-auto">
+        <div className="relative max-w-xl">
+          <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search help topics and FAQs…"
-            className="w-full h-10 pl-9 pr-3 rounded-md border border-border bg-background text-[13px]"
+            className="w-full h-9 pl-8 pr-2.5 rounded-md border border-border bg-background text-[12px]"
           />
         </div>
 
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
           {filtered.map((t) => {
             const isOpen = open === t.title;
             return (
-              <div key={t.title} className="surface-card overflow-hidden">
+              <div key={t.title} className="surface-card overflow-hidden flex flex-col min-w-0 rounded-lg">
                 <button
+                  type="button"
                   onClick={() => setOpen(isOpen ? null : t.title)}
-                  className="w-full p-5 flex items-start gap-3 text-left hover:bg-muted/30"
+                  className="w-full p-3.5 flex items-start gap-2.5 text-left hover:bg-muted/30 shrink-0"
                 >
-                  <div className="h-9 w-9 rounded-md bg-accent text-accent-foreground grid place-items-center shrink-0">
-                    <t.icon className="h-4 w-4" />
+                  <div className="h-8 w-8 rounded-md bg-accent text-accent-foreground grid place-items-center shrink-0">
+                    <t.icon className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium">{t.title}</div>
-                    <div className="text-[12px] text-muted-foreground mt-1 leading-relaxed">{t.desc}</div>
+                    <div className="font-medium text-[13px] leading-tight">{t.title}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1 leading-snug">{t.desc}</div>
                   </div>
-                  <ChevronDown className={"h-4 w-4 text-muted-foreground transition-transform shrink-0 " + (isOpen ? "rotate-180" : "")} />
+                  <ChevronDown className={"h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0 mt-0.5 " + (isOpen ? "rotate-180" : "")} />
                 </button>
                 {isOpen && (
                   <div className="border-t border-border divide-y divide-border bg-muted/10">
                     {t.faq.map((f, i) => (
-                      <div key={i} className="p-4">
-                        <div className="font-medium text-[13px]">{f.q}</div>
-                        <div className="text-[12.5px] text-muted-foreground mt-1 leading-relaxed">{f.a}</div>
+                      <div key={i} className="px-3 py-2.5">
+                        <div className="font-medium text-[12px] leading-snug">{f.q}</div>
+                        <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{f.a}</div>
                       </div>
                     ))}
-                    {t.faq.length === 0 && <div className="p-4 text-[12px] text-muted-foreground italic">No FAQs match your search.</div>}
+                    {t.faq.length === 0 && <div className="px-3 py-2.5 text-[11px] text-muted-foreground italic">No FAQs match your search.</div>}
                   </div>
                 )}
               </div>
@@ -107,7 +212,7 @@ function HelpPage() {
           })}
 
           {filtered.length === 0 && (
-            <div className="surface-card p-10 text-center">
+            <div className="surface-card p-6 text-center sm:col-span-2 lg:col-span-3 rounded-lg">
               <div className="text-[14px] font-medium">No matches</div>
               <div className="text-[12px] text-muted-foreground mt-1">Try a different search term, or <button onClick={() => { /* opens AI from app shell */ }} className="text-primary hover:underline">ask Alyson</button>.</div>
             </div>

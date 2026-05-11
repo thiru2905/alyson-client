@@ -26,7 +26,7 @@ type NavItem = {
   group: "Workspace" | "People" | "Money" | "Ops" | "Admin";
 };
 
-const NEW_BADGE_ROUTES = new Set<string>(["/bonus", "/time-dashboard", "/alyson-notetaker", "/boarding"]);
+const NEW_BADGE_ROUTES = new Set<string>(["/bonus", "/time-dashboard", "/alyson-notetaker", "/boarding", "/help"]);
 
 const NAV: NavItem[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
