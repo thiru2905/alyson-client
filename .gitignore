@@ -1,9 +1,34 @@
+# dependencies
 node_modules/
+
+# local env
 .env
 .env.*
-!.env.example
+
+# build outputs
 dist/
-.vite/
-coverage/
+build/
+.vercel/
+.nitro/
+.output/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+
+# local uploads / artifacts (keep out of git)
+boarding.xlsx
+boardingdetails.pdf
+MeetingBotDatastore.md
+
+# local meeting bot datastore
+.alyson/
+
