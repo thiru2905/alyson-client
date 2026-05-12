@@ -30,7 +30,7 @@ const NEW_BADGE_ROUTES = new Set<string>(["/bonus", "/time-dashboard", "/alyson-
 
 const NAV: NavItem[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
-  { to: "/team", label: "Team", icon: Users, group: "People", roles: ["super_admin", "ceo", "hr", "manager"] },
+  { to: "/team", label: "Team", icon: Users, group: "People" },
   { to: "/boarding", label: "Boarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People", roles: ["super_admin"] },
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },
