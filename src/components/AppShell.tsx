@@ -878,6 +878,238 @@ function MiniModuleAiFab({
         }
       }
 
+      // Deterministic answers for the Org Chart canvas.
+      if (liveCtx?.module === "org-chart") {
+        const employees: Array<{
+          id: string;
+          name: string;
+          role: string;
+          level?: string;
+          department: string;
+          email?: string;
+          manager_id: string | null;
+          manager_name: string | null;
+          direct_report_ids: string[];
+          direct_report_count: number;
+          is_dummy: boolean;
+        }> = Array.isArray(liveCtx?.employees) ? liveCtx.employees : [];
+        const terminations: Array<{
+          id: string;
+          name: string;
+          role: string | null;
+          department: string | null;
+          is_dummy: boolean;
+          terminated_at: string;
+          previous_manager_id: string | null;
+          reparented_to_manager_id: string | null;
+        }> = Array.isArray(liveCtx?.terminations) ? liveCtx.terminations : [];
+        const additions: Array<{
+          id: string;
+          name: string;
+          role: string;
+          department: string;
+          manager_id: string | null;
+          is_dummy: boolean;
+        }> = Array.isArray(liveCtx?.additions) ? liveCtx.additions : [];
+
+        const byId = new Map(employees.map((e) => [e.id, e]));
+        const normalize = (s: string) =>
+          String(s || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        const findPerson = (raw: string) => {
+          const target = normalize(raw);
+          if (!target) return null;
+          const exact = employees.find((e) => normalize(e.name) === target);
+          if (exact) return exact;
+          const tokens = target.split(" ").filter(Boolean);
+          const startsWith = employees.find((e) => {
+            const n = normalize(e.name);
+            return tokens.every((t) => n.split(" ").some((w) => w.startsWith(t)));
+          });
+          if (startsWith) return startsWith;
+          return employees.find((e) => normalize(e.name).includes(target)) ?? null;
+        };
+
+        const reportsQ =
+          q.match(/(?:works?\s+under|reports?\s+(?:to|under)|under|reports?\s+of|direct\s+reports?\s+(?:of|for)|team\s+(?:of|under)|subordinates?\s+of)\s+([a-z][a-z0-9.\s'-]{1,})$/i);
+        const managerQ =
+          q.match(/(?:who\s+is|whos|who's)\s+([a-z][a-z0-9.\s'-]{1,})\s*['’]?s?\s+manager\b/i) ||
+          q.match(/(?:manager\s+(?:of|for))\s+([a-z][a-z0-9.\s'-]{1,})$/i);
+        const allReportsQ =
+          /\b(all|every|entire|whole)\s+(team|reports|subordinates|people|members)\b/i.test(q) &&
+          /\bunder\s+([a-z][a-z0-9.\s'-]{1,})$/i.test(q);
+        const allReportsMatch = q.match(/\bunder\s+([a-z][a-z0-9.\s'-]{1,})$/i);
+
+        const headcountQ = /\b(how\s+many|number\s+of|total|count)\b.*\b(people|employees|headcount|head\s*count)\b/i.test(q);
+        const terminatedQ = /\b(terminated|fired|removed|deleted)\b/i.test(q) && /\b(list|who|show|all)\b/i.test(q);
+        const addedQ = /\b(added|dummy|new)\b/i.test(q) && /\b(list|who|show|all)\b/i.test(q);
+
+        const buildPersonHeader = (p: typeof employees[number]) =>
+          `${p.name}${p.role ? ` — ${p.role}` : ""}${p.department ? ` · ${p.department}` : ""}`;
+
+        const respond = (content: string) => {
+          setMessages((prev) => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { role: "assistant", content };
+            return copy;
+          });
+          setLoading(false);
+        };
+
+        if (headcountQ) {
+          const live = employees.length;
+          const termCount = terminations.length;
+          const addCount = additions.length;
+          respond(
+            [
+              `${live} active people on the org chart.`,
+              termCount ? `${termCount} terminated (full history kept).` : null,
+              addCount ? `${addCount} synthetic/added.` : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          );
+          return;
+        }
+
+        if (terminatedQ) {
+          if (!terminations.length) {
+            respond("No terminations recorded for this org chart.");
+            return;
+          }
+          const rows = terminations
+            .slice()
+            .sort((a, b) => b.terminated_at.localeCompare(a.terminated_at))
+            .slice(0, 50)
+            .map(
+              (t) =>
+                `- ${t.name}${t.role ? ` — ${t.role}` : ""}${t.department ? ` · ${t.department}` : ""}  (${t.terminated_at.slice(0, 10)}${t.is_dummy ? ", dummy" : ""})`,
+            );
+          respond(`Terminations (${terminations.length}):\n${rows.join("\n")}`);
+          return;
+        }
+
+        if (addedQ) {
+          if (!additions.length) {
+            respond("No people have been added in draft on this org chart.");
+            return;
+          }
+          const rows = additions
+            .slice(0, 50)
+            .map(
+              (a) =>
+                `- ${a.name}${a.role ? ` — ${a.role}` : ""}${a.department ? ` · ${a.department}` : ""}${a.is_dummy ? "  (dummy)" : ""}`,
+            );
+          respond(`Added in draft (${additions.length}):\n${rows.join("\n")}`);
+          return;
+        }
+
+        if (managerQ) {
+          const name = String(managerQ[1] || "").trim();
+          const p = findPerson(name);
+          if (!p) {
+            respond(`I couldn't find "${name}" on the chart. Try the exact name as it appears on a node.`);
+            return;
+          }
+          if (!p.manager_id) {
+            respond(`${p.name} has no manager (root of the tree).`);
+            return;
+          }
+          const mgr = byId.get(p.manager_id);
+          respond(
+            mgr
+              ? `${p.name} reports to ${mgr.name}${mgr.role ? ` (${mgr.role})` : ""}.`
+              : `${p.name}'s manager id is ${p.manager_id}, but that person isn't on the current chart.`,
+          );
+          return;
+        }
+
+        const handleSubtree = (name: string) => {
+          const p = findPerson(name);
+          if (!p) {
+            respond(`I couldn't find "${name}" on the chart. Try the exact name as it appears on a node.`);
+            return;
+          }
+          const visited = new Set<string>();
+          const collect = (rootId: string) => {
+            const queue: string[] = [rootId];
+            while (queue.length) {
+              const id = queue.shift()!;
+              if (visited.has(id)) continue;
+              visited.add(id);
+              const e = byId.get(id);
+              if (e) queue.push(...e.direct_report_ids);
+            }
+          };
+          collect(p.id);
+          visited.delete(p.id);
+          if (!visited.size) {
+            respond(`${p.name} has no reports on this org chart.`);
+            return;
+          }
+          const groups = new Map<string | null, string[]>();
+          for (const id of visited) {
+            const e = byId.get(id);
+            if (!e) continue;
+            const key = e.manager_id;
+            const arr = groups.get(key) ?? [];
+            arr.push(id);
+            groups.set(key, arr);
+          }
+          const lines: string[] = [`Everyone under ${buildPersonHeader(p)} (${visited.size}):`];
+          const ordered = Array.from(visited)
+            .map((id) => byId.get(id))
+            .filter(Boolean)
+            .sort((a, b) => (a!.name).localeCompare(b!.name));
+          for (const e of ordered) {
+            const mgr = e!.manager_id ? byId.get(e!.manager_id) : null;
+            lines.push(
+              `- ${e!.name}${e!.role ? ` — ${e!.role}` : ""}${e!.department ? ` · ${e!.department}` : ""}${mgr ? `  ↦ ${mgr.name}` : ""}`,
+            );
+          }
+          respond(lines.join("\n"));
+        };
+
+        if (allReportsQ && allReportsMatch) {
+          handleSubtree(String(allReportsMatch[1] || "").trim());
+          return;
+        }
+
+        if (reportsQ) {
+          const name = String(reportsQ[1] || "").trim();
+          const wantsTree = /\b(all|every|entire|whole|recursive|deep)\b/i.test(q);
+          const p = findPerson(name);
+          if (!p) {
+            respond(`I couldn't find "${name}" on the chart. Try the exact name as it appears on a node.`);
+            return;
+          }
+          if (wantsTree) {
+            handleSubtree(name);
+            return;
+          }
+          if (!p.direct_report_ids.length) {
+            respond(`${p.name} has no direct reports on this org chart.`);
+            return;
+          }
+          const list = p.direct_report_ids
+            .map((id) => byId.get(id))
+            .filter(Boolean)
+            .sort((a, b) => (a!.name).localeCompare(b!.name))
+            .map(
+              (e) =>
+                `- ${e!.name}${e!.role ? ` — ${e!.role}` : ""}${e!.department ? ` · ${e!.department}` : ""}`,
+            );
+          respond(
+            `${buildPersonHeader(p)} has ${p.direct_report_ids.length} direct report(s):\n${list.join("\n")}`,
+          );
+          return;
+        }
+      }
+
       const history = messages
         .filter((m) => m && (m.role === "user" || m.role === "assistant"))
         .slice(-6)

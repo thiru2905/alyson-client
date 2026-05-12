@@ -1010,6 +1010,76 @@ export function OrgChart({ employees, canEdit = false }: { employees: EmployeeFu
     rf.setCenter(centerX, centerY, { zoom: 1.05, duration: 450 });
   }, [rf, highlightId, nodes]);
 
+  // Publish a rich context object so Alyson Mini can answer org-chart questions
+  // ("who reports to X", "team under X", "who is X's manager", etc.).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const empById = new Map(effectiveEmployees.map((e) => [e.id, e]));
+    const directReports = new Map<string | null, string[]>();
+    for (const e of effectiveEmployees) {
+      const m = getManagerId(e, managerOverrides);
+      const key = m && empById.has(m) ? m : null;
+      const list = directReports.get(key) ?? [];
+      list.push(e.id);
+      directReports.set(key, list);
+    }
+
+    const employeesPayload = effectiveEmployees.map((e) => {
+      const mgrId = getManagerId(e, managerOverrides);
+      const mgr = mgrId ? empById.get(mgrId) ?? null : null;
+      const reports = directReports.get(e.id) ?? [];
+      return {
+        id: e.id,
+        name: e.full_name,
+        role: e.role,
+        level: e.level,
+        department: e.department_name,
+        email: e.email,
+        manager_id: mgrId,
+        manager_name: mgr ? mgr.full_name : null,
+        direct_report_ids: reports,
+        direct_report_count: reports.length,
+        is_dummy: e.id.startsWith("dummy-"),
+      };
+    });
+
+    (window as { __ALYSON_MINI_CONTEXT__?: unknown }).__ALYSON_MINI_CONTEXT__ = {
+      module: "org-chart",
+      view: "team-orgchart",
+      generated_at: new Date().toISOString(),
+      total_employees: effectiveEmployees.length,
+      root_employee_ids: directReports.get(null) ?? [],
+      employees: employeesPayload,
+      terminations: terminations.map((t) => ({
+        id: t.employeeId,
+        name: t.fullName,
+        role: t.role,
+        department: t.departmentName,
+        is_dummy: t.isDummy,
+        terminated_at: t.terminatedAt,
+        previous_manager_id: t.previousManagerId,
+        reparented_to_manager_id: t.reparentedToManagerId,
+      })),
+      additions: addedEmployees.map((e) => ({
+        id: e.id,
+        name: e.full_name,
+        role: e.role,
+        department: e.department_name,
+        manager_id: e.manager_id ?? null,
+        is_dummy: e.id.startsWith("dummy-"),
+      })),
+      highlighted_employee_id: highlightId,
+    };
+
+    return () => {
+      const cur = (window as { __ALYSON_MINI_CONTEXT__?: { module?: string } }).__ALYSON_MINI_CONTEXT__;
+      if (cur && cur.module === "org-chart") {
+        (window as { __ALYSON_MINI_CONTEXT__?: unknown }).__ALYSON_MINI_CONTEXT__ = undefined;
+      }
+    };
+  }, [effectiveEmployees, managerOverrides, terminations, addedEmployees, highlightId]);
+
   return (
     <div className="surface-card overflow-hidden flex flex-col" style={{ height: 620 }}>
       <div className="h-12 px-4 flex items-center gap-2 border-b border-border bg-paper/80">

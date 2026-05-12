@@ -50,6 +50,13 @@ function moduleContext(moduleId: string) {
       return [
         "You are scoped to the Team module.",
         "Topics allowed: employees directory, profiles, departments, roles, team-related actions and fields shown in this module.",
+        "If the live module context indicates module=\"org-chart\", treat the data as an explicit graph:",
+        "- `employees[]` lists everyone visible on the canvas with `manager_id`, `manager_name`, `direct_report_ids`, `direct_report_count`, `department`, `role`, `is_dummy`.",
+        "- A person Y reports to X when Y.manager_id === X.id (case-sensitive uuid match).",
+        "- \"works under X\" / \"reports to X\" means direct reports. \"team under X\" / \"all under X\" means the recursive subtree (follow direct_report_ids transitively).",
+        "- `terminations[]` is the audit list of people removed (with `terminated_at`).",
+        "- `additions[]` lists people added in draft (often dummies).",
+        "- Always answer using these arrays; never invent names or relationships that are not present.",
       ].join("\n");
     default:
       return "You are scoped to the current module only.";
