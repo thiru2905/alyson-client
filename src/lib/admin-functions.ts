@@ -4,10 +4,19 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
+function generateTempAuthPassword() {
+  const bytes = new Uint8Array(28);
+  crypto.getRandomValues(bytes);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += alphabet[bytes[i]! % alphabet.length];
+  return `${s}Aa9!`;
+}
+
 const CreateUserInput = z.object({
   accessToken: z.string().min(1),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string().optional(),
   employeeId: z.string().uuid().optional(),
 });
 
@@ -41,9 +50,11 @@ export const createUserAsAdmin = createServerFn({ method: "POST" })
     if (rolesErr) throw new Response(rolesErr.message, { status: 500 });
     if (!roles || roles.length === 0) throw new Response("Forbidden", { status: 403 });
 
+    const password =
+      data.password && data.password.length >= 8 ? data.password : generateTempAuthPassword();
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
-      password: data.password,
+      password,
       email_confirm: true,
     });
 
@@ -86,7 +97,7 @@ const CreateEmployeeUserInput = z.object({
   accessToken: z.string().min(1),
   fullName: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z.string().optional(),
   departmentId: z.string().uuid(),
   role: z.string().min(2),
   level: z.string().min(1),
@@ -138,9 +149,11 @@ export const createEmployeeAndUserAsAdmin = createServerFn({ method: "POST" })
     if (empErr) throw new Response(empErr.message, { status: 400 });
 
     // 2) Create auth user (persisted, can login immediately)
+    const password =
+      data.password && data.password.length >= 8 ? data.password : generateTempAuthPassword();
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email,
-      password: data.password,
+      password,
       email_confirm: true,
     });
 

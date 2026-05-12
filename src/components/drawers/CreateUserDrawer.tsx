@@ -5,20 +5,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { createEmployeeAndUserAsAdmin } from "@/lib/admin-functions";
-import { fetchOverview } from "@/lib/queries";
 
 export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const useOverviewForDeps =
-    String(import.meta.env.VITE_HR_OVERVIEW_SOURCE ?? "").trim().toLowerCase() === "s3" ||
-    String(import.meta.env.VITE_DEMO_MODE ?? "").trim().toLowerCase() === "true";
-
-  const { data: deps } = useQuery({
+  const {
+    data: deps,
+    isError: depsError,
+    error: depsQueryError,
+  } = useQuery({
     queryKey: ["departments-create-user"],
     queryFn: async () => {
-      if (useOverviewForDeps) {
-        const o = await fetchOverview();
-        return o.departments;
-      }
       const { data, error } = await supabase.from("departments").select("id, name").order("name");
       if (error) throw error;
       return data ?? [];
@@ -29,7 +24,6 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
   const today = new Date().toISOString().slice(0, 10);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [departmentId, setDepartmentId] = useState<string>("");
   const [role, setRole] = useState<string>("Employee");
   const [level, setLevel] = useState<string>("1");
@@ -39,7 +33,7 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
     if (!open) return;
     setFullName("");
     setEmail("");
-    setPassword("");
+    setDepartmentId("");
     setRole("Employee");
     setLevel("1");
     setHireDate(today);
@@ -47,7 +41,11 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
 
   useEffect(() => {
     if (!open) return;
-    if (!departmentId && deps?.length) setDepartmentId(deps[0].id);
+    if (!deps?.length) return;
+    const validIds = new Set(deps.map((d) => d.id));
+    if (!departmentId || !validIds.has(departmentId)) {
+      setDepartmentId(deps[0]!.id);
+    }
   }, [open, departmentId, deps]);
 
   const create = useMutation({
@@ -62,7 +60,6 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
           accessToken,
           fullName,
           email,
-          password,
           departmentId,
           role,
           level,
@@ -72,18 +69,27 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
       return res;
     },
     onSuccess: () => {
-      toast.success("Employee + user created");
+      toast.success("Employee + user created", {
+        description: "A secure temporary password was set — use password reset to sign in.",
+      });
       onClose();
     },
-    onError: async (e: any) => {
-      // ServerFn errors can arrive as Response
+    onError: async (e: unknown) => {
       if (e instanceof Response) {
         toast.error(await e.text());
         return;
       }
-      toast.error(e?.message ?? "Failed to create user");
+      const msg = e instanceof Error ? e.message : "Failed to create user";
+      toast.error(msg);
     },
   });
+
+  const canSubmit =
+    Boolean(fullName.trim()) &&
+    Boolean(email.trim()) &&
+    Boolean(departmentId) &&
+    (deps?.length ?? 0) > 0 &&
+    !create.isPending;
 
   return (
     <Drawer open={open} onClose={onClose} title="Create user" eyebrow="Admin" width="md">
@@ -91,6 +97,7 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
         className="flex flex-col h-full"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!canSubmit) return;
           create.mutate();
         }}
       >
@@ -102,13 +109,30 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
           <Field label="Department">
             <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} required>
               <option value="">Select a department…</option>
-              {(deps ?? []).map((d: any) => (
+              {(deps ?? []).map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
               ))}
             </Select>
+            <p className="mt-1.5 text-[11px] text-muted-foreground leading-snug">
+              Departments come from your Supabase database (UUID ids). HR overview / demo datasets use different ids
+              and cannot be used here.
+            </p>
           </Field>
+
+          {depsError && (
+            <p className="text-[12px] text-destructive">
+              Could not load departments: {depsQueryError instanceof Error ? depsQueryError.message : "Unknown error"}
+            </p>
+          )}
+
+          {!depsError && deps && deps.length === 0 && (
+            <p className="text-[12px] text-muted-foreground">
+              No departments found. Add rows to the <code className="text-[11px]">departments</code> table in Supabase
+              before creating users.
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Role">
@@ -126,15 +150,12 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
           <Field label="Email">
             <TextInput value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
           </Field>
-          <Field label="Password">
-            <TextInput value={password} onChange={(e) => setPassword(e.target.value)} type="password" required />
-          </Field>
         </div>
         <FormFooter>
           <GhostBtn type="button" onClick={onClose}>
             Cancel
           </GhostBtn>
-          <PrimaryBtn type="submit" disabled={create.isPending}>
+          <PrimaryBtn type="submit" disabled={!canSubmit}>
             Create
           </PrimaryBtn>
         </FormFooter>
@@ -142,4 +163,3 @@ export function CreateUserDrawer({ open, onClose }: { open: boolean; onClose: ()
     </Drawer>
   );
 }
-
