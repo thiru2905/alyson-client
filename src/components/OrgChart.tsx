@@ -104,7 +104,7 @@ function PersonNode({ data }: NodeProps<EmpNode["data"]>) {
             {showBreakLink && (
               <button
                 type="button"
-                aria-label="Break reporting line"
+                aria-label="Break"
                 className="group/break relative flex items-center gap-1 rounded-full border border-destructive/25 bg-paper/85 px-2 py-[3px] text-[9.5px] font-medium tracking-tight text-destructive/90 shadow-[0_6px_18px_-8px_oklch(0.55_0.18_28/0.55)] backdrop-blur-md transition-all duration-150 ease-out hover:-translate-y-px hover:border-destructive/55 hover:bg-destructive hover:text-destructive-foreground hover:shadow-[0_8px_22px_-8px_oklch(0.55_0.18_28/0.7)] active:translate-y-0 active:scale-[0.97]"
                 onMouseDown={(ev) => ev.stopPropagation()}
                 onClick={(ev) => {
@@ -117,7 +117,7 @@ function PersonNode({ data }: NodeProps<EmpNode["data"]>) {
                   className="h-[10px] w-[10px] transition-transform duration-200 ease-out group-hover/break:-rotate-12"
                   strokeWidth={2.4}
                 />
-                <span>Break link</span>
+                <span>Break</span>
               </button>
             )}
             <button
