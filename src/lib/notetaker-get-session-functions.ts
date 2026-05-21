@@ -1,19 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
+import type {
+  NotetakerSession,
+  NotetakerSessionPayload,
+  NotetakerTranscriptLine,
+} from "@/lib/alyson-notetaker-functions";
 import { getPersistedSession, persistSession } from "@/lib/notetaker-datastore.server";
-import { getNotetakerSessionsIndexFromS3 } from "@/lib/notetaker-sessions-s3.server";
+import { loadPersistedSessionPayloadFromS3 } from "@/lib/notetaker-sessions-history.server";
 
 const BotIdInput = z.object({ botId: z.string().min(1) });
 
-export type NotetakerSessionPayload = {
-  session: NotetakerSession;
-  lines: NotetakerTranscriptLine[];
-  participantCount: number;
-  startedLabel: string;
-  hasRecallConfig: boolean;
-  hasGroqConfig: boolean;
-};
+export type { NotetakerSessionPayload } from "@/lib/alyson-notetaker-functions";
 
 function baseUrl() {
   const raw =
@@ -87,25 +84,13 @@ async function loadSessionFallback(botId: string): Promise<NotetakerSessionPaylo
       startedLabel: persisted.createdAt,
       hasRecallConfig: true,
       hasGroqConfig: true,
+      notesMd: persisted.notes?.notesMd ?? null,
+      notesModel: persisted.notes?.model,
     };
   }
 
-  try {
-    const idx = await getNotetakerSessionsIndexFromS3();
-    const meta = (idx.sessions ?? []).find((s) => String(s.botId) === botId);
-    if (meta) {
-      return {
-        session: meta,
-        lines: [],
-        participantCount: 0,
-        startedLabel: meta.createdAt,
-        hasRecallConfig: true,
-        hasGroqConfig: true,
-      };
-    }
-  } catch {
-    // ignore
-  }
+  const fromS3 = await loadPersistedSessionPayloadFromS3(botId);
+  if (fromS3) return fromS3;
 
   return null;
 }
@@ -135,6 +120,24 @@ export const getNotetakerSession = createServerFn({ method: "POST" })
     try {
       const res = await upstream(`/api/session/${encodeURIComponent(data.botId)}`);
       const typed = normalizeSessionPayload(res, data.botId);
+
+      const needsS3Content =
+        typed.lines.length === 0 ||
+        ["ended", "completed", "disconnected", "left", "finished", "persisted"].includes(
+          String(typed.session?.status || "").toLowerCase(),
+        );
+      if (needsS3Content) {
+        const fromS3 = await loadPersistedSessionPayloadFromS3(data.botId);
+        if (fromS3) {
+          if (!typed.lines.length && fromS3.lines.length) typed.lines = fromS3.lines;
+          if (!typed.notesMd && fromS3.notesMd) {
+            typed.notesMd = fromS3.notesMd;
+            typed.notesModel = fromS3.notesModel;
+          }
+          if (fromS3.persistedInS3) typed.persistedInS3 = true;
+          typed.participantCount = Math.max(typed.participantCount, fromS3.participantCount);
+        }
+      }
 
       const st = String(typed.session?.status || "").toLowerCase();
       const ended = ["ended", "completed", "disconnected", "left", "finished"].includes(st);

@@ -257,7 +257,11 @@ function AlysonNotetakerPage() {
               />
 
               {filteredSessions.length === 0 ? (
-                <EmptyState icon={Captions} title="No sessions yet" description="Create a bot to start capturing transcripts." />
+                <EmptyState
+                  icon={Captions}
+                  title="No sessions yet"
+                  description="Create a bot for a live meeting, or open a past meeting after Persist to S3."
+                />
               ) : (
                 <div className="max-h-[520px] overflow-y-auto pr-1 space-y-1">
                   {filteredSessions.map((s) => (
@@ -271,7 +275,14 @@ function AlysonNotetakerPage() {
                     >
                       <div className="flex items-start gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="font-medium text-[13px] truncate">{s.title || "Meeting"}</div>
+                          <div className="font-medium text-[13px] truncate flex items-center gap-1.5">
+                            <span className="truncate">{s.title || "Meeting"}</span>
+                            {String(s.status || "").toLowerCase() === "persisted" && (
+                              <span className="shrink-0 rounded px-1 py-0.5 text-[9px] uppercase tracking-wide bg-muted text-muted-foreground">
+                                S3
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-muted-foreground truncate">{s.botId}</div>
                         </div>
                         <button
@@ -524,6 +535,12 @@ function SessionPanel({ botId }: { botId: string | null }) {
     };
     return () => es.close();
   }, [botId, base]);
+
+  useEffect(() => {
+    if (!q.data?.notesMd?.trim()) return;
+    setNotes(q.data.notesMd);
+    setNotesModel(q.data.notesModel || "s3");
+  }, [botId, q.data?.notesMd, q.data?.notesModel]);
 
   const notesM = useMutation({
     mutationFn: async (prompt?: string) => {

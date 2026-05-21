@@ -1,7 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { persistSession } from "@/lib/notetaker-datastore.server";
-import { getNotetakerSessionsIndexFromS3, putNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3.server";
+import {
+  listPersistedSessionsFromS3,
+  mergeNotetakerSessions,
+} from "@/lib/notetaker-sessions-history.server";
+import { putNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3.server";
 
 const BotIdInput = z.object({ botId: z.string().min(1) });
 const CreateBotInput = z.object({
@@ -66,14 +70,32 @@ export type NotetakerTranscriptLine = {
   clock?: string;
 };
 
+export type NotetakerSessionPayload = {
+  session: NotetakerSession;
+  lines: NotetakerTranscriptLine[];
+  participantCount: number;
+  startedLabel: string;
+  hasRecallConfig: boolean;
+  hasGroqConfig: boolean;
+  notesMd?: string | null;
+  notesModel?: string;
+  persistedInS3?: boolean;
+};
+
 export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(async () => {
   const source = String(process.env.NOTETAKER_SESSIONS_SOURCE || "").trim().toLowerCase();
 
+  let s3Sessions: NotetakerSession[] = [];
+  try {
+    s3Sessions = await listPersistedSessionsFromS3();
+  } catch {
+    // S3 optional when credentials missing
+  }
+
   // S3-only mode (for deployments that don't want to depend on upstream availability)
   if (source === "s3") {
-    const idx = await getNotetakerSessionsIndexFromS3();
     return {
-      sessions: idx.sessions ?? [],
+      sessions: s3Sessions,
       hasRecallConfig: true,
       hasGroqConfig: true,
     };
@@ -86,26 +108,25 @@ export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(a
       hasGroqConfig: boolean;
     };
 
-    // Best-effort: persist the sessions catalog to S3 so the UI can still render later.
+    const merged = mergeNotetakerSessions(data.sessions ?? [], s3Sessions);
+
+    // Best-effort: persist merged catalog so history stays in sync.
     try {
-      await putNotetakerSessionsIndexToS3({ sessions: data.sessions ?? [] });
+      await putNotetakerSessionsIndexToS3({ sessions: merged });
     } catch {
       // ignore S3 failures for the live sessions call
     }
 
-    return data;
+    return { ...data, sessions: merged };
   } catch (e) {
-    // Fallback: if upstream fails, try the last persisted S3 snapshot.
-    try {
-      const idx = await getNotetakerSessionsIndexFromS3();
+    if (s3Sessions.length > 0) {
       return {
-        sessions: idx.sessions ?? [],
+        sessions: s3Sessions,
         hasRecallConfig: true,
         hasGroqConfig: true,
       };
-    } catch {
-      throw e;
     }
+    throw e;
   }
 });
 
