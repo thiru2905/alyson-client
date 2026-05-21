@@ -7,6 +7,8 @@ export type AppRole = "super_admin" | "ceo" | "finance" | "hr" | "manager" | "em
 const DEMO_ROLE_KEY = "alyson-demo-role";
 const SUPER_ADMIN_UNLOCK_KEY = "alyson-super-admin-unlocked";
 const SUPER_ADMIN_CODE = "75391";
+const TIME_DASHBOARD_UNLOCK_KEY = "alyson-time-dashboard-unlocked";
+const TIME_DASHBOARD_CODE = "111111";
 
 type AppSession = { userId: string } | null;
 type AppUser = { id: string; email: string | null } | null;
@@ -21,6 +23,11 @@ type AuthContextValue = {
   superAdminUnlocked: boolean;
   tryUnlockSuperAdmin: (code: string) => boolean;
   lockSuperAdmin: () => void;
+  timeDashboardUnlocked: boolean;
+  tryUnlockTimeDashboard: (code: string) => boolean;
+  lockTimeDashboard: () => void;
+  /** True after entering the Time Dashboard access code (111111) — all roles including super admin. */
+  canAccessTimeDashboard: boolean;
   /** Effective roles after demo override */
   roles: AppRole[];
   /** Highest-priority role (for landing routing) */
@@ -48,6 +55,7 @@ function AuthInner({ children }: { children: ReactNode }) {
   const [realRoles, setRealRoles] = useState<AppRole[]>([]);
   const [demoRole, setDemoRoleState] = useState<AppRole | null>(null);
   const [superAdminUnlocked, setSuperAdminUnlocked] = useState(false);
+  const [timeDashboardUnlocked, setTimeDashboardUnlocked] = useState(false);
 
   // Load demo role from storage
   useEffect(() => {
@@ -58,8 +66,8 @@ function AuthInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = sessionStorage.getItem(SUPER_ADMIN_UNLOCK_KEY);
-    setSuperAdminUnlocked(stored === "1");
+    setSuperAdminUnlocked(sessionStorage.getItem(SUPER_ADMIN_UNLOCK_KEY) === "1");
+    setTimeDashboardUnlocked(sessionStorage.getItem(TIME_DASHBOARD_UNLOCK_KEY) === "1");
   }, []);
 
   const setDemoRole = useCallback((role: AppRole | null) => {
@@ -80,6 +88,18 @@ function AuthInner({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") sessionStorage.removeItem(SUPER_ADMIN_UNLOCK_KEY);
   }, []);
 
+  const tryUnlockTimeDashboard = useCallback((code: string) => {
+    if (code.trim() !== TIME_DASHBOARD_CODE) return false;
+    setTimeDashboardUnlocked(true);
+    if (typeof window !== "undefined") sessionStorage.setItem(TIME_DASHBOARD_UNLOCK_KEY, "1");
+    return true;
+  }, []);
+
+  const lockTimeDashboard = useCallback(() => {
+    setTimeDashboardUnlocked(false);
+    if (typeof window !== "undefined") sessionStorage.removeItem(TIME_DASHBOARD_UNLOCK_KEY);
+  }, []);
+
   useEffect(() => {
     // Roles come from Clerk user metadata (or demo override).
     // Expected shape: user.publicMetadata.roles = ["hr", "finance", ...]
@@ -98,14 +118,16 @@ function AuthInner({ children }: { children: ReactNode }) {
   const roles = superAdminUnlocked ? rawRoles : rawRoles.filter((r) => r !== "super_admin");
   const primaryRole = pickPrimary(roles);
 
+  const hasRole = useCallback((r: AppRole) => roles.includes(r), [roles]);
+  const hasAnyRole = useCallback((rs: AppRole[]) => rs.some((r) => roles.includes(r)), [roles]);
+  const canAccessTimeDashboard = timeDashboardUnlocked;
+
   const signOut = useCallback(async () => {
     await clerk.signOut();
     setDemoRole(null);
     lockSuperAdmin();
-  }, [clerk, setDemoRole, lockSuperAdmin]);
-
-  const hasRole = useCallback((r: AppRole) => roles.includes(r), [roles]);
-  const hasAnyRole = useCallback((rs: AppRole[]) => rs.some((r) => roles.includes(r)), [roles]);
+    lockTimeDashboard();
+  }, [clerk, setDemoRole, lockSuperAdmin, lockTimeDashboard]);
 
   const session: AppSession = clerkAuth.isSignedIn && clerkAuth.userId ? { userId: clerkAuth.userId } : null;
   const user: AppUser = clerkUser.user
@@ -123,6 +145,10 @@ function AuthInner({ children }: { children: ReactNode }) {
         superAdminUnlocked,
         tryUnlockSuperAdmin,
         lockSuperAdmin,
+        timeDashboardUnlocked,
+        tryUnlockTimeDashboard,
+        lockTimeDashboard,
+        canAccessTimeDashboard,
         roles,
         primaryRole,
         loading: !clerkAuth.isLoaded || !clerkUser.isLoaded,

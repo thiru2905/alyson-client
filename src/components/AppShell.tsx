@@ -40,7 +40,7 @@ const NAV: NavItem[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
   { to: "/team", label: "Team", icon: Users, group: "People" },
   { to: "/boarding", label: "Boarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
-  { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People", roles: ["super_admin"] },
+  { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People" },
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },
   { to: "/leave", label: "Leave", icon: Calendar, group: "People" },
   { to: "/attendance", label: "Attendance", icon: Clock, group: "People" },
