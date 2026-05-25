@@ -26,10 +26,13 @@ Copy `.env` from your team vault. See [Environment variables](#environment-varia
 |-----|--------|
 | [orgchart.md](./orgchart.md) | Org chart UI, S3 bucket layout, audit logs |
 | [boarding.md](./boarding.md) | Onboarding / offboarding workflow spec |
+| [notetaker-architecture.md](./notetaker-architecture.md) | Notetaker + Recall flow, endpoints, file map |
 
 ---
 
 ## Alyson Notetaker — Create Bot flow
+
+> **Full architecture doc:** [notetaker-architecture.md](./notetaker-architecture.md) (endpoints, webhooks, SSE, folder/file map, billing).
 
 The **Create** button on `/alyson-notetaker` does **not** call Recall.ai from the browser. The UI talks to this app’s server, which proxies to a **separate notetaker service** (default `http://localhost:3003`). That service holds `RECALL_API_KEY` and joins the meeting.
 
