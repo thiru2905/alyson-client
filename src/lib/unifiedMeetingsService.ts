@@ -267,7 +267,13 @@ async function writeState(state: ScheduledState): Promise<void> {
   await fs.writeFile(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-function dedupeKey(meetingUrl: string, startTime: string, calendarUserEmail: string): string {
+function dedupeKey(meetingUrl: string, startTime: string): string {
+  return `${meetingUrl}|${startTime}`;
+}
+
+// Legacy key included calendar user; keep for backward compatibility
+// with already-written local state rows.
+function dedupeKeyLegacy(meetingUrl: string, startTime: string, calendarUserEmail: string): string {
   return `${meetingUrl}|${startTime}|${calendarUserEmail.toLowerCase()}`;
 }
 
@@ -386,8 +392,9 @@ function normalizeMeetingEvent(userEmail: string, event: any, stateByKey: Map<st
   const skipReason = computeSkipReason(event, meetingUrl);
   const title = String(event?.summary || "Untitled meeting");
   const iCalUID = String(event?.iCalUID || event?.id || "");
-  const dedupe = meetingUrl ? dedupeKey(meetingUrl, startTime, userEmail) : "";
-  const stateEntry = dedupe ? stateByKey.get(dedupe) : undefined;
+  const dedupe = meetingUrl ? dedupeKey(meetingUrl, startTime) : "";
+  const legacyDedupe = meetingUrl ? dedupeKeyLegacy(meetingUrl, startTime, userEmail) : "";
+  const stateEntry = dedupe ? (stateByKey.get(dedupe) || stateByKey.get(legacyDedupe)) : undefined;
 
   let shouldBotJoin = false;
   let botStatus: UnifiedBotStatus = "not_required";
@@ -527,8 +534,9 @@ async function scheduleMeetingInternal(meeting: UnifiedMeeting): Promise<{ sched
   if (!joinAt) return { scheduled: false, error: "Meeting start time is in the past" };
 
   const state = await readState();
-  const key = dedupeKey(meeting.meetingUrl, meeting.startTime, meeting.calendarUserEmail);
-  if (state.scheduled.some((s) => s.dedupeKey === key)) {
+  const key = dedupeKey(meeting.meetingUrl, meeting.startTime);
+  const legacyKey = dedupeKeyLegacy(meeting.meetingUrl, meeting.startTime, meeting.calendarUserEmail);
+  if (state.scheduled.some((s) => s.dedupeKey === key || s.dedupeKey === legacyKey)) {
     return { scheduled: false, error: "Already scheduled (dedupe)" };
   }
 
