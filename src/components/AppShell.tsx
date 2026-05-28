@@ -32,6 +32,7 @@ const NEW_BADGE_ROUTES = new Set<string>([
   "/alyson-notetaker",
   "/alyson-notetaker/calendar",
   "/alyson-notetaker/analytics",
+  "/alyson-notetaker/unified-meetings",
   "/boarding",
   "/help",
 ]);
@@ -53,6 +54,7 @@ const NAV: NavItem[] = [
   { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops", roles: ["super_admin"] },
   { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops", roles: ["super_admin"] },
   { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3, group: "Ops", roles: ["super_admin"] },
+  { to: "/alyson-notetaker/unified-meetings", label: "Unified Meetings", icon: CalendarDays, group: "Ops", roles: ["super_admin"] },
   { to: "/admin", label: "Admin", icon: Shield, group: "Admin", roles: ["super_admin"] },
   { to: "/help", label: "Help", icon: HelpCircle, group: "Admin" },
 ];

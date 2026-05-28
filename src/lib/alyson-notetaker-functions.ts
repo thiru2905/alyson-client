@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { persistSession } from "@/lib/notetaker-datastore.server";
 import {
   listPersistedSessionsFromS3,
@@ -16,6 +18,17 @@ const CreateBotInput = z.object({
   avatar_jpeg_b64: z.string().min(1).max(1_835_008).optional(),
 });
 const NotesInput = z.object({ botId: z.string().min(1), prompt: z.string().optional() });
+
+type UnifiedScheduledState = {
+  scheduled?: Array<{
+    recallBotId?: string;
+    title?: string;
+    meetingUrl?: string;
+    scheduledAt?: string;
+    startTime?: string;
+    endTime?: string;
+  }>;
+};
 
 function baseUrl() {
   const raw =
@@ -52,6 +65,66 @@ async function upstream(path: string, init?: RequestInit) {
   return json;
 }
 
+async function listUnifiedScheduledSessions(): Promise<NotetakerSession[]> {
+  const stateFile = path.resolve(process.cwd(), "alyson_scheduled_state.json");
+  try {
+    const raw = await fs.readFile(stateFile, "utf8");
+    const parsed = JSON.parse(raw) as UnifiedScheduledState;
+    const rows = Array.isArray(parsed?.scheduled) ? parsed.scheduled : [];
+    const now = Date.now();
+    return rows
+      .map((r) => {
+        const botId = String(r?.recallBotId || "").trim();
+        if (!botId) return null;
+        const startMs = new Date(String(r?.startTime || "")).getTime();
+        const endMsRaw = new Date(String(r?.endTime || "")).getTime();
+        const endMs = Number.isFinite(endMsRaw) ? endMsRaw : (Number.isFinite(startMs) ? startMs + 90 * 60 * 1000 : NaN);
+        const windowStart = Number.isFinite(startMs) ? startMs - 10 * 60 * 1000 : NaN;
+        const windowEnd = Number.isFinite(endMs) ? endMs + 30 * 60 * 1000 : NaN;
+        if (!Number.isFinite(windowStart) || !Number.isFinite(windowEnd) || now < windowStart || now > windowEnd) {
+          return null;
+        }
+        return {
+          botId,
+          title: String(r?.title || "Unified meeting"),
+          meetingUrl: r?.meetingUrl ? String(r.meetingUrl) : undefined,
+          createdAt: String(r?.scheduledAt || r?.startTime || new Date().toISOString()),
+          status: "scheduled",
+        } satisfies NotetakerSession;
+      })
+      .filter((v): v is NotetakerSession => Boolean(v));
+  } catch {
+    return [];
+  }
+}
+
+async function hasTranscriptLines(botId: string): Promise<boolean> {
+  try {
+    const data = (await upstream(`/api/session/${encodeURIComponent(botId)}`)) as { lines?: unknown[] };
+    return Array.isArray(data?.lines) && data.lines.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function filterSessionsWithTranscript(
+  sessions: NotetakerSession[],
+  options: { forceKeepBotIds?: Set<string> } = {},
+): Promise<NotetakerSession[]> {
+  const forceKeepBotIds = options.forceKeepBotIds ?? new Set<string>();
+  if (!sessions.length) return sessions;
+  const checks = await Promise.all(
+    sessions.map(async (s) => ({
+      session: s,
+      keep:
+        forceKeepBotIds.has(String(s.botId || "")) ||
+        String(s.status || "").toLowerCase() === "persisted" ||
+        (await hasTranscriptLines(String(s.botId || ""))),
+    })),
+  );
+  return checks.filter((x) => x.keep).map((x) => x.session);
+}
+
 export type NotetakerSession = {
   botId: string;
   title: string;
@@ -86,6 +159,7 @@ export type NotetakerSessionPayload = {
 
 export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(async () => {
   const source = String(process.env.NOTETAKER_SESSIONS_SOURCE || "").trim().toLowerCase();
+  const unifiedScheduledSessions = await listUnifiedScheduledSessions();
 
   let s3Sessions: NotetakerSession[] = [];
   try {
@@ -96,8 +170,9 @@ export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(a
 
   // S3-only mode (for deployments that don't want to depend on upstream availability)
   if (source === "s3") {
+    const filteredS3 = await filterSessionsWithTranscript(s3Sessions);
     return {
-      sessions: s3Sessions,
+      sessions: filteredS3,
       hasRecallConfig: true,
       hasGroqConfig: true,
     };
@@ -110,20 +185,30 @@ export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(a
       hasGroqConfig: boolean;
     };
 
-    const merged = mergeNotetakerSessions(data.sessions ?? [], s3Sessions);
+    // Keep active-window unified-scheduled bots visible in Notetaker sessions
+    // so automated calls appear exactly like manual flow.
+    const merged = mergeNotetakerSessions(data.sessions ?? [], unifiedScheduledSessions, s3Sessions);
+    // Keep upstream live sessions + active unified-scheduled sessions even if
+    // transcript lines have not arrived yet.
+    const forceKeepBotIds = new Set([
+      ...(data.sessions ?? []).map((s) => String(s.botId || "")),
+      ...unifiedScheduledSessions.map((s) => String(s.botId || "")),
+    ]);
+    const filtered = await filterSessionsWithTranscript(merged, { forceKeepBotIds });
 
     // Best-effort: persist merged catalog so history stays in sync.
     try {
-      await putNotetakerSessionsIndexToS3({ sessions: merged });
+      await putNotetakerSessionsIndexToS3({ sessions: filtered });
     } catch {
       // ignore S3 failures for the live sessions call
     }
 
-    return { ...data, sessions: merged };
+    return { ...data, sessions: filtered };
   } catch (e) {
     if (s3Sessions.length > 0) {
+      const filteredS3 = await filterSessionsWithTranscript(s3Sessions);
       return {
-        sessions: s3Sessions,
+        sessions: filteredS3,
         hasRecallConfig: true,
         hasGroqConfig: true,
       };

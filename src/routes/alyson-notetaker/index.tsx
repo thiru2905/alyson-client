@@ -308,7 +308,11 @@ function AlysonNotetakerPage() {
             </div>
           </div>
 
-          <SessionPanel botId={picked} onSessionsChange={() => sessionsQ.refetch()} />
+          <SessionPanel
+            botId={picked}
+            fallbackTitle={sessions.find((s) => s.botId === picked)?.title || null}
+            onSessionsChange={() => sessionsQ.refetch()}
+          />
         </div>
       </div>
     </div>
@@ -431,9 +435,11 @@ function CreateBotForm({ onCreated }: { onCreated: (botId: string | null) => voi
 
 function SessionPanel({
   botId,
+  fallbackTitle,
   onSessionsChange,
 }: {
   botId: string | null;
+  fallbackTitle?: string | null;
   onSessionsChange?: () => void;
 }) {
   const qc = useQueryClient();
@@ -444,13 +450,31 @@ function SessionPanel({
   const q = useQuery({
     queryKey: ["alyson-notetaker", "session", botId],
     queryFn: async () => {
-      const res = await getNotetakerSession({ data: { botId: botId! } });
-      if (!res?.session) {
-        throw new Error(
-          "Session data was empty. Stop the dev server, run npm run dev again, then hard-refresh the page (Ctrl+Shift+R).",
-        );
+      try {
+        const res = await getNotetakerSession({ data: { botId: botId! } });
+        if (!res?.session) {
+          throw new Error(
+            "Session data was empty. Stop the dev server, run npm run dev again, then hard-refresh the page (Ctrl+Shift+R).",
+          );
+        }
+        return res as any;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Session metadata unavailable";
+        return {
+          session: {
+            botId: botId!,
+            title: String(fallbackTitle || "Live unified meeting"),
+            createdAt: new Date().toISOString(),
+            status: "scheduled",
+          },
+          lines: [],
+          participantCount: 0,
+          startedLabel: "",
+          hasRecallConfig: true,
+          hasGroqConfig: true,
+          _fallbackError: message,
+        } as any;
       }
-      return res;
     },
     enabled: Boolean(botId),
     refetchInterval: 10_000,
@@ -484,6 +508,8 @@ function SessionPanel({
   }, [q.data, live]);
 
   const session = q.data?.session;
+  const fallbackError = String((q.data as any)?._fallbackError || "");
+  const isSessionFallback = Boolean(fallbackError);
   const plainNotes = notes ? notesToPlainText(notes) : "";
   const plainTranscript = mergedLines
     .map((L) => {
@@ -597,20 +623,6 @@ function SessionPanel({
     return <div className="surface-card p-10 text-center text-[13px] text-muted-foreground">Pick a session to view transcript.</div>;
   }
   if (q.isLoading) return <div className="surface-card p-6"><div className="text-sm text-muted-foreground">Loading session…</div></div>;
-  if (q.isError) {
-    return (
-      <div className="surface-card p-6">
-        <div className="font-medium">Unable to load session</div>
-        <div className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{q.error instanceof Error ? q.error.message : "Failed to load session."}</div>
-        <div className="mt-4">
-          <button onClick={() => q.refetch()} className="h-8 px-3 rounded-md bg-foreground text-background text-xs flex items-center gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const sendChat = async () => {
     const question = chatInput.trim();
     if (!question || chatLoading) return;
@@ -650,6 +662,11 @@ function SessionPanel({
 
   return (
     <div className="surface-card p-4">
+      {isSessionFallback && (
+        <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200">
+          Session metadata is not available yet; showing live transcript stream directly from bot events.
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-medium text-[14px] truncate flex items-center gap-2">
@@ -670,7 +687,7 @@ function SessionPanel({
           </button>
           <button
             onClick={() => persistM.mutate()}
-            disabled={persistM.isPending}
+            disabled={persistM.isPending || isSessionFallback}
             className="h-8 px-3 rounded-md bg-foreground text-background text-xs flex items-center gap-1.5 disabled:opacity-50"
             title="Persist transcript + notes to S3"
           >

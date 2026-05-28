@@ -4,6 +4,8 @@ node_modules/
 # local env
 .env
 .env.*
+.env.local
+*.json
 
 # build outputs
 dist/
@@ -31,4 +33,5 @@ MeetingBotDatastore.md
 
 # local meeting bot datastore
 .alyson/
+alyson_scheduled_state.json
 

@@ -34,8 +34,14 @@ import { Route as BonusSimulateRouteImport } from './routes/bonus/simulate'
 import { Route as BonusPlansRouteImport } from './routes/bonus/plans'
 import { Route as BonusAuditRouteImport } from './routes/bonus/audit'
 import { Route as BonusApprovalsRouteImport } from './routes/bonus/approvals'
+import { Route as AlysonNotetakerUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/unified-meetings'
 import { Route as AlysonNotetakerCalendarRouteImport } from './routes/alyson-notetaker/calendar'
 import { Route as AlysonNotetakerAnalyticsRouteImport } from './routes/alyson-notetaker/analytics'
+import { Route as ApiAnalyticsUnifiedMeetingsRouteImport } from './routes/api/analytics/unified-meetings'
+import { Route as AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/analytics.unified-meetings'
+import { Route as ApiAnalyticsUnifiedMeetingsScheduleBotsRouteImport } from './routes/api/analytics/unified-meetings.schedule-bots'
+import { Route as ApiAnalyticsUnifiedMeetingsRefreshRouteImport } from './routes/api/analytics/unified-meetings.refresh'
+import { Route as ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRouteImport } from './routes/api/analytics/unified-meetings.$meetingId.schedule'
 
 const WorkflowsRoute = WorkflowsRouteImport.update({
   id: '/workflows',
@@ -162,6 +168,12 @@ const BonusApprovalsRoute = BonusApprovalsRouteImport.update({
   path: '/approvals',
   getParentRoute: () => BonusRouteRoute,
 } as any)
+const AlysonNotetakerUnifiedMeetingsRoute =
+  AlysonNotetakerUnifiedMeetingsRouteImport.update({
+    id: '/unified-meetings',
+    path: '/unified-meetings',
+    getParentRoute: () => AlysonNotetakerRouteRoute,
+  } as any)
 const AlysonNotetakerCalendarRoute = AlysonNotetakerCalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -172,6 +184,36 @@ const AlysonNotetakerAnalyticsRoute =
     id: '/analytics',
     path: '/analytics',
     getParentRoute: () => AlysonNotetakerRouteRoute,
+  } as any)
+const ApiAnalyticsUnifiedMeetingsRoute =
+  ApiAnalyticsUnifiedMeetingsRouteImport.update({
+    id: '/api/analytics/unified-meetings',
+    path: '/api/analytics/unified-meetings',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AlysonNotetakerAnalyticsUnifiedMeetingsRoute =
+  AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport.update({
+    id: '/unified-meetings',
+    path: '/unified-meetings',
+    getParentRoute: () => AlysonNotetakerAnalyticsRoute,
+  } as any)
+const ApiAnalyticsUnifiedMeetingsScheduleBotsRoute =
+  ApiAnalyticsUnifiedMeetingsScheduleBotsRouteImport.update({
+    id: '/schedule-bots',
+    path: '/schedule-bots',
+    getParentRoute: () => ApiAnalyticsUnifiedMeetingsRoute,
+  } as any)
+const ApiAnalyticsUnifiedMeetingsRefreshRoute =
+  ApiAnalyticsUnifiedMeetingsRefreshRouteImport.update({
+    id: '/refresh',
+    path: '/refresh',
+    getParentRoute: () => ApiAnalyticsUnifiedMeetingsRoute,
+  } as any)
+const ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute =
+  ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRouteImport.update({
+    id: '/$meetingId/schedule',
+    path: '/$meetingId/schedule',
+    getParentRoute: () => ApiAnalyticsUnifiedMeetingsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -193,8 +235,9 @@ export interface FileRoutesByFullPath {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRoute
+  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
+  '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/approvals': typeof BonusApprovalsRoute
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
@@ -202,6 +245,11 @@ export interface FileRoutesByFullPath {
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
+  '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
+  '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
+  '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
+  '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -220,8 +268,9 @@ export interface FileRoutesByTo {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRoute
+  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
+  '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/approvals': typeof BonusApprovalsRoute
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
@@ -229,6 +278,11 @@ export interface FileRoutesByTo {
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/alyson-notetaker': typeof AlysonNotetakerIndexRoute
   '/bonus': typeof BonusIndexRoute
+  '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
+  '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
+  '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
+  '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -250,8 +304,9 @@ export interface FileRoutesById {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRoute
+  '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
+  '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/approvals': typeof BonusApprovalsRoute
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
@@ -259,6 +314,11 @@ export interface FileRoutesById {
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
+  '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
+  '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
+  '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
+  '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -283,6 +343,7 @@ export interface FileRouteTypes {
     | '/workflows'
     | '/alyson-notetaker/analytics'
     | '/alyson-notetaker/calendar'
+    | '/alyson-notetaker/unified-meetings'
     | '/bonus/approvals'
     | '/bonus/audit'
     | '/bonus/plans'
@@ -290,6 +351,11 @@ export interface FileRouteTypes {
     | '/time-dashboard/$userId'
     | '/alyson-notetaker/'
     | '/bonus/'
+    | '/alyson-notetaker/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings/refresh'
+    | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/analytics/unified-meetings/$meetingId/schedule'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -310,6 +376,7 @@ export interface FileRouteTypes {
     | '/workflows'
     | '/alyson-notetaker/analytics'
     | '/alyson-notetaker/calendar'
+    | '/alyson-notetaker/unified-meetings'
     | '/bonus/approvals'
     | '/bonus/audit'
     | '/bonus/plans'
@@ -317,6 +384,11 @@ export interface FileRouteTypes {
     | '/time-dashboard/$userId'
     | '/alyson-notetaker'
     | '/bonus'
+    | '/alyson-notetaker/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings/refresh'
+    | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/analytics/unified-meetings/$meetingId/schedule'
   id:
     | '__root__'
     | '/'
@@ -339,6 +411,7 @@ export interface FileRouteTypes {
     | '/workflows'
     | '/alyson-notetaker/analytics'
     | '/alyson-notetaker/calendar'
+    | '/alyson-notetaker/unified-meetings'
     | '/bonus/approvals'
     | '/bonus/audit'
     | '/bonus/plans'
@@ -346,6 +419,11 @@ export interface FileRouteTypes {
     | '/time-dashboard/$userId'
     | '/alyson-notetaker/'
     | '/bonus/'
+    | '/alyson-notetaker/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings'
+    | '/api/analytics/unified-meetings/refresh'
+    | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/analytics/unified-meetings/$meetingId/schedule'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -367,6 +445,7 @@ export interface RootRouteChildren {
   TeamRoute: typeof TeamRoute
   TimeDashboardRoute: typeof TimeDashboardRouteWithChildren
   WorkflowsRoute: typeof WorkflowsRoute
+  ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -546,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BonusApprovalsRouteImport
       parentRoute: typeof BonusRouteRoute
     }
+    '/alyson-notetaker/unified-meetings': {
+      id: '/alyson-notetaker/unified-meetings'
+      path: '/unified-meetings'
+      fullPath: '/alyson-notetaker/unified-meetings'
+      preLoaderRoute: typeof AlysonNotetakerUnifiedMeetingsRouteImport
+      parentRoute: typeof AlysonNotetakerRouteRoute
+    }
     '/alyson-notetaker/calendar': {
       id: '/alyson-notetaker/calendar'
       path: '/calendar'
@@ -560,18 +646,70 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlysonNotetakerAnalyticsRouteImport
       parentRoute: typeof AlysonNotetakerRouteRoute
     }
+    '/api/analytics/unified-meetings': {
+      id: '/api/analytics/unified-meetings'
+      path: '/api/analytics/unified-meetings'
+      fullPath: '/api/analytics/unified-meetings'
+      preLoaderRoute: typeof ApiAnalyticsUnifiedMeetingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alyson-notetaker/analytics/unified-meetings': {
+      id: '/alyson-notetaker/analytics/unified-meetings'
+      path: '/unified-meetings'
+      fullPath: '/alyson-notetaker/analytics/unified-meetings'
+      preLoaderRoute: typeof AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport
+      parentRoute: typeof AlysonNotetakerAnalyticsRoute
+    }
+    '/api/analytics/unified-meetings/schedule-bots': {
+      id: '/api/analytics/unified-meetings/schedule-bots'
+      path: '/schedule-bots'
+      fullPath: '/api/analytics/unified-meetings/schedule-bots'
+      preLoaderRoute: typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRouteImport
+      parentRoute: typeof ApiAnalyticsUnifiedMeetingsRoute
+    }
+    '/api/analytics/unified-meetings/refresh': {
+      id: '/api/analytics/unified-meetings/refresh'
+      path: '/refresh'
+      fullPath: '/api/analytics/unified-meetings/refresh'
+      preLoaderRoute: typeof ApiAnalyticsUnifiedMeetingsRefreshRouteImport
+      parentRoute: typeof ApiAnalyticsUnifiedMeetingsRoute
+    }
+    '/api/analytics/unified-meetings/$meetingId/schedule': {
+      id: '/api/analytics/unified-meetings/$meetingId/schedule'
+      path: '/$meetingId/schedule'
+      fullPath: '/api/analytics/unified-meetings/$meetingId/schedule'
+      preLoaderRoute: typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRouteImport
+      parentRoute: typeof ApiAnalyticsUnifiedMeetingsRoute
+    }
   }
 }
 
+interface AlysonNotetakerAnalyticsRouteChildren {
+  AlysonNotetakerAnalyticsUnifiedMeetingsRoute: typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
+}
+
+const AlysonNotetakerAnalyticsRouteChildren: AlysonNotetakerAnalyticsRouteChildren =
+  {
+    AlysonNotetakerAnalyticsUnifiedMeetingsRoute:
+      AlysonNotetakerAnalyticsUnifiedMeetingsRoute,
+  }
+
+const AlysonNotetakerAnalyticsRouteWithChildren =
+  AlysonNotetakerAnalyticsRoute._addFileChildren(
+    AlysonNotetakerAnalyticsRouteChildren,
+  )
+
 interface AlysonNotetakerRouteRouteChildren {
-  AlysonNotetakerAnalyticsRoute: typeof AlysonNotetakerAnalyticsRoute
+  AlysonNotetakerAnalyticsRoute: typeof AlysonNotetakerAnalyticsRouteWithChildren
   AlysonNotetakerCalendarRoute: typeof AlysonNotetakerCalendarRoute
+  AlysonNotetakerUnifiedMeetingsRoute: typeof AlysonNotetakerUnifiedMeetingsRoute
   AlysonNotetakerIndexRoute: typeof AlysonNotetakerIndexRoute
 }
 
 const AlysonNotetakerRouteRouteChildren: AlysonNotetakerRouteRouteChildren = {
-  AlysonNotetakerAnalyticsRoute: AlysonNotetakerAnalyticsRoute,
+  AlysonNotetakerAnalyticsRoute: AlysonNotetakerAnalyticsRouteWithChildren,
   AlysonNotetakerCalendarRoute: AlysonNotetakerCalendarRoute,
+  AlysonNotetakerUnifiedMeetingsRoute: AlysonNotetakerUnifiedMeetingsRoute,
   AlysonNotetakerIndexRoute: AlysonNotetakerIndexRoute,
 }
 
@@ -610,6 +748,27 @@ const TimeDashboardRouteWithChildren = TimeDashboardRoute._addFileChildren(
   TimeDashboardRouteChildren,
 )
 
+interface ApiAnalyticsUnifiedMeetingsRouteChildren {
+  ApiAnalyticsUnifiedMeetingsRefreshRoute: typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
+  ApiAnalyticsUnifiedMeetingsScheduleBotsRoute: typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute: typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
+}
+
+const ApiAnalyticsUnifiedMeetingsRouteChildren: ApiAnalyticsUnifiedMeetingsRouteChildren =
+  {
+    ApiAnalyticsUnifiedMeetingsRefreshRoute:
+      ApiAnalyticsUnifiedMeetingsRefreshRoute,
+    ApiAnalyticsUnifiedMeetingsScheduleBotsRoute:
+      ApiAnalyticsUnifiedMeetingsScheduleBotsRoute,
+    ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute:
+      ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute,
+  }
+
+const ApiAnalyticsUnifiedMeetingsRouteWithChildren =
+  ApiAnalyticsUnifiedMeetingsRoute._addFileChildren(
+    ApiAnalyticsUnifiedMeetingsRouteChildren,
+  )
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlysonNotetakerRouteRoute: AlysonNotetakerRouteRouteWithChildren,
@@ -629,6 +788,8 @@ const rootRouteChildren: RootRouteChildren = {
   TeamRoute: TeamRoute,
   TimeDashboardRoute: TimeDashboardRouteWithChildren,
   WorkflowsRoute: WorkflowsRoute,
+  ApiAnalyticsUnifiedMeetingsRoute:
+    ApiAnalyticsUnifiedMeetingsRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
