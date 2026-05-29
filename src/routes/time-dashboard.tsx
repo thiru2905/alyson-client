@@ -118,6 +118,7 @@ function TimeDashboardPage() {
           name: e.name,
           email: e.email,
           dailySeconds: e.dailySeconds ?? 0,
+          weeklySeconds: e.weeklySeconds ?? 0,
           monthlySeconds: e.monthlySeconds ?? 0,
         };
       })
@@ -145,6 +146,7 @@ function TimeDashboardPage() {
       name: e.name,
       email: e.email,
       daily_hours: Number(((e.dailySeconds ?? 0) / 3600).toFixed(2)),
+      weekly_hours: Number(((e.weeklySeconds ?? 0) / 3600).toFixed(2)),
       monthly_hours: Number(((e.monthlySeconds ?? 0) / 3600).toFixed(2)),
     }));
 
@@ -184,6 +186,7 @@ function TimeDashboardPage() {
         employee: e.name,
         email: e.email,
         daily_hours: ((e.dailySeconds ?? 0) / 3600).toFixed(2),
+        weekly_hours: ((e.weeklySeconds ?? 0) / 3600).toFixed(2),
         monthly_hours: ((e.monthlySeconds ?? 0) / 3600).toFixed(2),
       })),
     );
@@ -203,7 +206,7 @@ function TimeDashboardPage() {
       <PageHeader
         eyebrow="People"
         title="Time Dashboard"
-        description={`Real-time Time Doctor employees — ${data.company.name}.`}
+        description={`Real-time Time Doctor employees — ${data.company.name}. Weekly = Mon–selected day; monthly = month-to-date.`}
         dense
         actions={
           <>
@@ -271,8 +274,9 @@ function TimeDashboardPage() {
           <table className="ops-table w-full table-fixed">
             <colgroup>
               <col />
+              <col className="w-[6.75rem]" />
+              <col className="w-[6.75rem]" />
               <col className="w-[7.5rem]" />
-              <col className="w-[8.5rem]" />
             </colgroup>
             <thead>
               <tr>
@@ -281,6 +285,9 @@ function TimeDashboardPage() {
                   Daily hours
                 </th>
                 <th align="right" className="whitespace-nowrap">
+                  Weekly hours
+                </th>
+                <th align="right" className="whitespace-nowrap !pr-6">
                   Monthly hours
                 </th>
               </tr>
@@ -322,6 +329,9 @@ function TimeDashboardPage() {
                     {((e.dailySeconds ?? 0) / 3600).toFixed(2)}
                   </td>
                   <td align="right" className="font-mono tabular-nums align-middle">
+                    {((e.weeklySeconds ?? 0) / 3600).toFixed(2)}
+                  </td>
+                  <td align="right" className="font-mono tabular-nums align-middle !pr-6">
                     {((e.monthlySeconds ?? 0) / 3600).toFixed(2)}
                   </td>
                 </tr>
