@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { format, parseISO, startOfWeek, subDays } from "date-fns";
+import { format, subDays } from "date-fns";
 
 /**
  * Server-only Time Doctor integration.
@@ -57,7 +57,6 @@ export type TimeDoctorEmployeeRow = {
   email: string;
   title: string;
   dailySeconds: number;
-  weeklySeconds: number;
   monthlySeconds: number;
 };
 
@@ -366,16 +365,14 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
     const day = data.day ?? format(new Date(), "yyyy-MM-dd");
     const company = await getCompany({ auth: "access_only" });
 
-    const [usersR, dailyR, weeklyR, monthlyR] = await Promise.allSettled([
+    const [usersR, dailyR, monthlyR] = await Promise.allSettled([
       listUsers(company.id, { auth: "access_only" }),
       listDailyWorkSecondsByUser(company.id, day, { auth: "access_only" }),
-      listWeekToDateWorkSecondsByUser(company.id, day, { auth: "access_only" }),
       listMonthToDateWorkSecondsByUser(company.id, day, { auth: "access_only" }),
     ]);
 
     const users = usersR.status === "fulfilled" ? usersR.value : [];
     const daily = dailyR.status === "fulfilled" ? dailyR.value : new Map<string, number>();
-    const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : new Map<string, number>();
     const monthly = monthlyR.status === "fulfilled" ? monthlyR.value : new Map<string, number>();
 
     const rows: TimeDoctorEmployeeRow[] = users
@@ -385,7 +382,6 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
         email: u.email,
         title: u.title ?? "",
         dailySeconds: daily.get(u.id) ?? 0,
-        weeklySeconds: weekly.get(u.id) ?? 0,
         monthlySeconds: monthly.get(u.id) ?? 0,
       }))
       .sort((a, b) => (b.dailySeconds ?? 0) - (a.dailySeconds ?? 0));
@@ -396,7 +392,6 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
       warnings: [
         ...(usersR.status === "rejected" ? [`users: ${String(usersR.reason)}`] : []),
         ...(dailyR.status === "rejected" ? [`daily-worklogs: ${String(dailyR.reason)}`] : []),
-        ...(weeklyR.status === "rejected" ? [`weekly-worklogs: ${String(weeklyR.reason)}`] : []),
         ...(monthlyR.status === "rejected" ? [`monthly-worklogs: ${String(monthlyR.reason)}`] : []),
       ].slice(0, 5),
       employees: rows,
@@ -1150,18 +1145,13 @@ async function listDailyWorkSecondsByUser(
   return out;
 }
 
-function weekStartIso(day: string): string {
-  const monday = startOfWeek(parseISO(day), { weekStartsOn: 1 });
-  return format(monday, "yyyy-MM-dd");
-}
-
-async function sumWorkSecondsForDayRange(
+async function listMonthToDateWorkSecondsByUser(
   companyId: string,
-  rangeStart: string,
-  rangeEnd: string,
+  day: string,
   opts?: { auth?: "auto_refresh" | "access_only" },
 ): Promise<Map<string, number>> {
-  const days = enumerateDays(rangeStart, rangeEnd);
+  const monthStart = `${day.slice(0, 8)}01`;
+  const days = enumerateDays(monthStart, day);
   const out = new Map<string, number>();
 
   const concurrency = 6;
@@ -1176,23 +1166,6 @@ async function sumWorkSecondsForDayRange(
   }
 
   return out;
-}
-
-async function listWeekToDateWorkSecondsByUser(
-  companyId: string,
-  day: string,
-  opts?: { auth?: "auto_refresh" | "access_only" },
-): Promise<Map<string, number>> {
-  return sumWorkSecondsForDayRange(companyId, weekStartIso(day), day, opts);
-}
-
-async function listMonthToDateWorkSecondsByUser(
-  companyId: string,
-  day: string,
-  opts?: { auth?: "auto_refresh" | "access_only" },
-): Promise<Map<string, number>> {
-  const monthStart = `${day.slice(0, 8)}01`;
-  return sumWorkSecondsForDayRange(companyId, monthStart, day, opts);
 }
 
 async function seedUsersFromWorklogs(companyId: string): Promise<Array<{ id: string; name: string; email?: string; title?: string }>> {

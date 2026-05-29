@@ -117,8 +117,8 @@ function TimeDashboardPage() {
           employee_id: e.id,
           name: e.name,
           email: e.email,
+          title: e.title ?? "",
           dailySeconds: e.dailySeconds ?? 0,
-          weeklySeconds: e.weeklySeconds ?? 0,
           monthlySeconds: e.monthlySeconds ?? 0,
         };
       })
@@ -126,7 +126,8 @@ function TimeDashboardPage() {
         if (!normalizedQ) return true;
         return (
           r.name.toLowerCase().includes(normalizedQ) ||
-          r.email.toLowerCase().includes(normalizedQ)
+          r.email.toLowerCase().includes(normalizedQ) ||
+          r.title.toLowerCase().includes(normalizedQ)
         );
       })
       .sort((a, b) => (b.dailySeconds ?? 0) - (a.dailySeconds ?? 0));
@@ -145,8 +146,8 @@ function TimeDashboardPage() {
       employee_id: e.employee_id,
       name: e.name,
       email: e.email,
+      title: e.title,
       daily_hours: Number(((e.dailySeconds ?? 0) / 3600).toFixed(2)),
-      weekly_hours: Number(((e.weeklySeconds ?? 0) / 3600).toFixed(2)),
       monthly_hours: Number(((e.monthlySeconds ?? 0) / 3600).toFixed(2)),
     }));
 
@@ -185,8 +186,8 @@ function TimeDashboardPage() {
       employeeRollups.map((e) => ({
         employee: e.name,
         email: e.email,
+        title: e.title,
         daily_hours: ((e.dailySeconds ?? 0) / 3600).toFixed(2),
-        weekly_hours: ((e.weeklySeconds ?? 0) / 3600).toFixed(2),
         monthly_hours: ((e.monthlySeconds ?? 0) / 3600).toFixed(2),
       })),
     );
@@ -206,7 +207,7 @@ function TimeDashboardPage() {
       <PageHeader
         eyebrow="People"
         title="Time Dashboard"
-        description={`Real-time Time Doctor employees — ${data.company.name}. Weekly = Mon–selected day; monthly = month-to-date.`}
+        description={`Real-time Time Doctor employees — ${data.company.name}.`}
         dense
         actions={
           <>
@@ -261,7 +262,7 @@ function TimeDashboardPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by name or email…"
+              placeholder="Search employees, roles, departments…"
               className="w-full h-8 px-3 rounded-md border border-border bg-background text-[13px]"
             />
           </div>
@@ -271,25 +272,13 @@ function TimeDashboardPage() {
         </div>
 
         <TableScroll>
-          <table className="ops-table w-full table-fixed">
-            <colgroup>
-              <col />
-              <col className="w-[6.75rem]" />
-              <col className="w-[6.75rem]" />
-              <col className="w-[7.5rem]" />
-            </colgroup>
+          <table className="ops-table w-full">
             <thead>
               <tr>
                 <th align="left">Employee</th>
-                <th align="right" className="whitespace-nowrap">
-                  Daily hours
-                </th>
-                <th align="right" className="whitespace-nowrap">
-                  Weekly hours
-                </th>
-                <th align="right" className="whitespace-nowrap !pr-6">
-                  Monthly hours
-                </th>
+                <th align="left">Title</th>
+                <th align="right">Daily hours</th>
+                <th align="right">Monthly hours</th>
               </tr>
             </thead>
             <tbody>
@@ -308,7 +297,7 @@ function TimeDashboardPage() {
                     });
                   }}
                 >
-                  <td className="align-middle">
+                  <td>
                     <div className="font-medium text-[13px]">
                       <Link
                         to="/time-dashboard/$userId"
@@ -318,22 +307,15 @@ function TimeDashboardPage() {
                           end: isIsoDate(end) ? end : undefined,
                         }}
                         className="hover:underline"
-                        onClick={(ev) => ev.stopPropagation()}
                       >
                         {e.name}
                       </Link>
                     </div>
-                    <div className="text-[11px] text-muted-foreground truncate">{e.email}</div>
+                    <div className="text-[11px] text-muted-foreground truncate max-w-[280px]">{e.email}</div>
                   </td>
-                  <td align="right" className="font-mono tabular-nums align-middle">
-                    {((e.dailySeconds ?? 0) / 3600).toFixed(2)}
-                  </td>
-                  <td align="right" className="font-mono tabular-nums align-middle">
-                    {((e.weeklySeconds ?? 0) / 3600).toFixed(2)}
-                  </td>
-                  <td align="right" className="font-mono tabular-nums align-middle !pr-6">
-                    {((e.monthlySeconds ?? 0) / 3600).toFixed(2)}
-                  </td>
+                  <td className="text-muted-foreground">{e.title || "—"}</td>
+                  <td align="right" className="font-mono">{((e.dailySeconds ?? 0) / 3600).toFixed(2)}</td>
+                  <td align="right" className="font-mono">{((e.monthlySeconds ?? 0) / 3600).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
