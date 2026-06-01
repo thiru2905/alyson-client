@@ -8,7 +8,13 @@ import {
 } from "@/lib/notetaker-analytics-session";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { PageHeader } from "@/components/AppShell";
-import { BarChart3, CalendarDays, Captions, Sparkles, X } from "lucide-react";
+import { BarChart3, CalendarDays, Captions, Download, FileText, Sparkles, X } from "lucide-react";
+import {
+  analyticsExportFilename,
+  buildAnalyticsExportHtml,
+  downloadAnalyticsHtml,
+  printAnalyticsExport,
+} from "@/lib/notetaker-analytics-export";
 import {
   Bar,
   BarChart,
@@ -354,6 +360,28 @@ function AnalyticsPage() {
     });
   };
 
+  const exportReport = (mode: "html" | "print") => {
+    if (!report) return;
+    try {
+      const html = buildAnalyticsExportHtml({
+        report,
+        origin: window.location.origin,
+        periodLabel: applied ? formatAppliedPeriod(applied) : undefined,
+        insightsMd,
+      });
+      const base = analyticsExportFilename(report);
+      if (mode === "html") {
+        downloadAnalyticsHtml(html, base);
+        toast.success("Report downloaded — open the HTML file and click meeting titles for transcripts");
+      } else {
+        printAnalyticsExport(html);
+        toast.message("In the print dialog, choose Save as PDF. Meeting links stay clickable in Chrome/Edge.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed");
+    }
+  };
+
   return (
     <div className="ops-dense">
       <PageHeader
@@ -537,6 +565,25 @@ function AnalyticsPage() {
 
         {report && applied !== null && (
           <>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => exportReport("html")}
+                className="h-8 px-3 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export HTML
+              </button>
+              <button
+                type="button"
+                onClick={() => exportReport("print")}
+                className="h-8 px-3 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Save as PDF
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Kpi label="Meetings in range" value={String(report.meetingCount)} />
               <Kpi label="Analyzed (transcript)" value={String(report.analyzedCount)} />
@@ -711,7 +758,7 @@ function AnalyticsPage() {
             <p className="text-[11px] text-muted-foreground">
               Crawler reads <code className="text-[10px]">alyson-notetaker/transcripts/…/transcript.txt</code> lines as{" "}
               <code className="text-[10px]">Name: utterance</code>. Speaker names with colons may parse incorrectly. Max 100 meetings per
-              request.
+              request. Export includes talk-time % (pie + table) and clickable transcript links on Meeting Calendar.
             </p>
           </>
         )}
@@ -787,7 +834,7 @@ function ParticipationPieTooltip({
       <div className="text-[11px] text-muted-foreground mt-1">
         {utterances} utterance{utterances === 1 ? "" : "s"}
       </div>
-      <div className="text-[11px] font-medium mt-0.5">{pct}% spoken</div>
+      <div className="text-[11px] font-medium mt-0.5">{pct}% of utterances</div>
     </div>
   );
 }
