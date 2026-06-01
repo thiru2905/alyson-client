@@ -35,9 +35,16 @@ const PIE_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(-
 const PERIOD_DAYS = [7, 15, 30, 45, 60, 90] as const;
 type PeriodDays = (typeof PERIOD_DAYS)[number];
 const DEFAULT_PERIOD: PeriodDays = 30;
+const MAX_CUSTOM_RANGE_DAYS = 365;
+
+type PeriodMode = "preset" | "custom";
 
 function isoDay(d: Date) {
   return d.toISOString().slice(0, 10);
+}
+
+function isIsoDate(v: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v);
 }
 
 function rangeForLastDays(days: number) {
@@ -47,7 +54,32 @@ function rangeForLastDays(days: number) {
   return { start: isoDay(start), end: isoDay(end) };
 }
 
+function daysBetweenInclusive(start: string, end: string) {
+  const s = new Date(`${start}T00:00:00Z`).getTime();
+  const e = new Date(`${end}T00:00:00Z`).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e)) return 0;
+  return Math.floor((e - s) / 86400000) + 1;
+}
+
+function validateCustomRange(start: string, end: string): string | null {
+  if (!isIsoDate(start) || !isIsoDate(end)) return "Enter valid start and end dates (YYYY-MM-DD).";
+  if (start > end) return "Start date must be on or before end date.";
+  const today = isoDay(new Date());
+  if (end > today) return "End date cannot be in the future.";
+  const span = daysBetweenInclusive(start, end);
+  if (span < 1) return "Range must include at least one day.";
+  if (span > MAX_CUSTOM_RANGE_DAYS) return `Range cannot exceed ${MAX_CUSTOM_RANGE_DAYS} days.`;
+  return null;
+}
+
+function inferPeriodMode(applied: { periodDays: number; start: string; end: string }): PeriodMode {
+  const expected = rangeForLastDays(asPeriodDays(applied.periodDays));
+  if (applied.start === expected.start && applied.end === expected.end) return "preset";
+  return "custom";
+}
+
 type AppliedFilters = {
+  periodMode: PeriodMode;
   periodDays: PeriodDays;
   start: string;
   end: string;
@@ -64,17 +96,32 @@ function speakersEqual(a: string[], b: string[]) {
 }
 
 function draftMatchesApplied(
+  periodMode: PeriodMode,
   periodDays: PeriodDays,
+  customStart: string,
+  customEnd: string,
   speakers: string[],
   meetingTitleFilter: string,
   applied: AppliedFilters | null,
 ) {
   if (!applied) return false;
+  const periodMatch =
+    periodMode === applied.periodMode &&
+    (periodMode === "preset"
+      ? periodDays === applied.periodDays
+      : customStart === applied.start && customEnd === applied.end);
   return (
-    periodDays === applied.periodDays &&
+    periodMatch &&
     speakersEqual(speakers, applied.speakers) &&
     meetingTitleFilter.trim() === applied.title
   );
+}
+
+function formatAppliedPeriod(applied: AppliedFilters) {
+  if (applied.periodMode === "custom") {
+    return `${applied.start} → ${applied.end}`;
+  }
+  return `Last ${applied.periodDays} days (${applied.start} → ${applied.end})`;
 }
 
 type MeetingNavTarget = {
@@ -91,8 +138,11 @@ function asPeriodDays(n: number): PeriodDays {
 function bootstrapFromSession() {
   const s = loadAnalyticsSession();
   if (!s) return null;
+  const periodDays = asPeriodDays(s.applied.periodDays);
+  const periodMode = s.applied.periodMode ?? s.periodMode ?? inferPeriodMode(s.applied);
   const applied: AppliedFilters = {
-    periodDays: asPeriodDays(s.applied.periodDays),
+    periodMode,
+    periodDays,
     start: s.applied.start,
     end: s.applied.end,
     speakers: s.applied.speakers,
@@ -100,7 +150,10 @@ function bootstrapFromSession() {
   };
   return {
     applied,
+    periodMode,
     periodDays: asPeriodDays(s.periodDays),
+    customStart: s.customStart ?? s.applied.start,
+    customEnd: s.customEnd ?? s.applied.end,
     speakerChips: s.speakerChips,
     meetingTitleFilter: s.meetingTitleFilter,
     insightsMd: s.insightsMd,
@@ -111,7 +164,10 @@ function AnalyticsPage() {
   const navigate = useNavigate();
   const boot = useMemo(() => bootstrapFromSession(), []);
 
+  const [periodMode, setPeriodMode] = useState<PeriodMode>(() => boot?.periodMode ?? "preset");
   const [periodDays, setPeriodDays] = useState<PeriodDays>(() => boot?.periodDays ?? DEFAULT_PERIOD);
+  const [customStart, setCustomStart] = useState(() => boot?.customStart ?? rangeForLastDays(DEFAULT_PERIOD).start);
+  const [customEnd, setCustomEnd] = useState(() => boot?.customEnd ?? rangeForLastDays(DEFAULT_PERIOD).end);
   const [speakerChips, setSpeakerChips] = useState<string[]>(() => boot?.speakerChips ?? []);
   const [meetingTitleFilter, setMeetingTitleFilter] = useState(() => boot?.meetingTitleFilter ?? "");
   /** Set when user clicks Apply; restored from session when returning to this page. */
@@ -119,9 +175,20 @@ function AnalyticsPage() {
   const [insightsMd, setInsightsMd] = useState<string | null>(() => boot?.insightsMd ?? null);
   const [goToMeeting, setGoToMeeting] = useState<MeetingNavTarget | null>(null);
 
-  const draftRange = useMemo(() => rangeForLastDays(periodDays), [periodDays]);
+  const draftRange = useMemo(
+    () => (periodMode === "preset" ? rangeForLastDays(periodDays) : { start: customStart, end: customEnd }),
+    [periodMode, periodDays, customStart, customEnd],
+  );
 
-  const filtersDirty = !draftMatchesApplied(periodDays, speakerChips, meetingTitleFilter, applied);
+  const filtersDirty = !draftMatchesApplied(
+    periodMode,
+    periodDays,
+    customStart,
+    customEnd,
+    speakerChips,
+    meetingTitleFilter,
+    applied,
+  );
 
   const q = useQuery({
     queryKey: analyticsQueryKey(
@@ -190,18 +257,22 @@ function AnalyticsPage() {
     if (!applied) return;
     saveAnalyticsSession({
       applied: {
+        periodMode: applied.periodMode,
         periodDays: applied.periodDays,
         start: applied.start,
         end: applied.end,
         speakers: applied.speakers,
         title: applied.title,
       },
+      periodMode,
       periodDays,
+      customStart,
+      customEnd,
       speakerChips,
       meetingTitleFilter,
       insightsMd,
     });
-  }, [applied, periodDays, speakerChips, meetingTitleFilter, insightsMd]);
+  }, [applied, periodMode, periodDays, customStart, customEnd, speakerChips, meetingTitleFilter, insightsMd]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !report) return;
@@ -216,8 +287,21 @@ function AnalyticsPage() {
   }, [report]);
 
   const applyFilters = () => {
-    const { start, end } = rangeForLastDays(periodDays);
+    let start: string;
+    let end: string;
+    if (periodMode === "custom") {
+      const err = validateCustomRange(customStart, customEnd);
+      if (err) {
+        toast.error(err);
+        return;
+      }
+      start = customStart;
+      end = customEnd;
+    } else {
+      ({ start, end } = rangeForLastDays(periodDays));
+    }
     setApplied({
+      periodMode,
       periodDays,
       start,
       end,
@@ -313,10 +397,13 @@ function AnalyticsPage() {
                 <button
                   key={d}
                   type="button"
-                  onClick={() => setPeriodDays(d)}
+                  onClick={() => {
+                    setPeriodMode("preset");
+                    setPeriodDays(d);
+                  }}
                   className={
                     "h-7 px-3 rounded-full text-[11.5px] font-medium border transition-colors " +
-                    (periodDays === d
+                    (periodMode === "preset" && periodDays === d
                       ? "bg-foreground text-background border-foreground"
                       : "bg-paper border-border text-muted-foreground hover:text-foreground")
                   }
@@ -324,9 +411,51 @@ function AnalyticsPage() {
                   Last {d} days
                 </button>
               ))}
-              <span className="text-[11px] text-muted-foreground ml-1">
-                {draftRange.start} → {draftRange.end}
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriodMode("custom");
+                  if (!isIsoDate(customStart) || !isIsoDate(customEnd)) {
+                    const r = rangeForLastDays(periodDays);
+                    setCustomStart(r.start);
+                    setCustomEnd(r.end);
+                  }
+                }}
+                className={
+                  "h-7 px-3 rounded-full text-[11.5px] font-medium border transition-colors " +
+                  (periodMode === "custom"
+                    ? "bg-foreground text-background border-foreground"
+                    : "bg-paper border-border text-muted-foreground hover:text-foreground")
+                }
+              >
+                Custom
+              </button>
+              {periodMode === "preset" ? (
+                <span className="text-[11px] text-muted-foreground ml-1">
+                  {draftRange.start} → {draftRange.end}
+                </span>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 ml-1 rounded-md border border-border bg-paper px-2 py-1">
+                  <input
+                    type="date"
+                    value={customStart}
+                    max={customEnd || isoDay(new Date())}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="h-7 rounded bg-transparent text-[12px] text-foreground"
+                    aria-label="Custom range start"
+                  />
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    min={customStart}
+                    max={isoDay(new Date())}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    className="h-7 rounded bg-transparent text-[12px] text-foreground"
+                    aria-label="Custom range end"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -365,10 +494,10 @@ function AnalyticsPage() {
           </div>
           <p className="text-[11px] text-muted-foreground">
             {applied === null
-              ? `Pick a period (default: last ${DEFAULT_PERIOD} days). Add speakers with Enter, then Apply to crawl S3 transcripts.`
+              ? `Pick a period (default: last ${DEFAULT_PERIOD} days) or Custom dates. Add speakers with Enter, then Apply to crawl S3 transcripts.`
               : filtersDirty
                 ? "Filters changed — click Apply to refresh charts (previous results stay visible until then)."
-                : `Last ${applied.periodDays} days (${applied.start} → ${applied.end})${
+                : `${formatAppliedPeriod(applied)}${
                     applied.speakers.length ? ` · speakers: ${applied.speakers.join(", ")} (any match)` : ""
                   }${applied.title ? ` · title: ${applied.title}` : ""}`}
           </p>

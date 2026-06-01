@@ -2,16 +2,22 @@
 
 const STORAGE_KEY = "alyson-notetaker-analytics-session";
 
+export type AnalyticsPeriodMode = "preset" | "custom";
+
 export type AnalyticsSessionState = {
   version: 1;
   applied: {
+    periodMode?: AnalyticsPeriodMode;
     periodDays: number;
     start: string;
     end: string;
     speakers: string[];
     title: string;
   };
+  periodMode?: AnalyticsPeriodMode;
   periodDays: number;
+  customStart?: string;
+  customEnd?: string;
   speakerChips: string[];
   meetingTitleFilter: string;
   insightsMd: string | null;
