@@ -15,6 +15,7 @@ import {
   downloadAnalyticsHtml,
   printAnalyticsExport,
 } from "@/lib/notetaker-analytics-export";
+import { downloadAnalyticsPdf } from "@/lib/notetaker-analytics-pdf";
 import {
   Bar,
   BarChart,
@@ -360,25 +361,48 @@ function AnalyticsPage() {
     });
   };
 
-  const exportReport = (mode: "html" | "print") => {
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const exportReport = async (mode: "html" | "pdf" | "print") => {
     if (!report) return;
+    const exportArgs = {
+      report,
+      origin: window.location.origin,
+      periodLabel: applied ? formatAppliedPeriod(applied) : undefined,
+      insightsMd,
+    };
     try {
-      const html = buildAnalyticsExportHtml({
-        report,
-        origin: window.location.origin,
-        periodLabel: applied ? formatAppliedPeriod(applied) : undefined,
-        insightsMd,
-      });
-      const base = analyticsExportFilename(report);
+      if (mode === "pdf") {
+        setExportingPdf(true);
+        try {
+          downloadAnalyticsPdf(exportArgs);
+          toast.success("PDF downloaded — meeting titles are clickable links to transcripts");
+        } finally {
+          setExportingPdf(false);
+        }
+        return;
+      }
+
+      const html = buildAnalyticsExportHtml(exportArgs);
       if (mode === "html") {
-        downloadAnalyticsHtml(html, base);
-        toast.success("Report downloaded — open the HTML file and click meeting titles for transcripts");
+        downloadAnalyticsHtml(html, analyticsExportFilename(report));
+        toast.success("HTML downloaded — includes talk-time pie; click meeting titles for transcripts");
       } else {
         printAnalyticsExport(html);
-        toast.message("In the print dialog, choose Save as PDF. Meeting links stay clickable in Chrome/Edge.");
+        toast.message("Print tab opened — choose Save as PDF in the print dialog");
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Export failed");
+      if (mode === "pdf") {
+        try {
+          const html = buildAnalyticsExportHtml(exportArgs);
+          printAnalyticsExport(html);
+          toast.message("PDF build failed — opened print view instead. Use Save as PDF in the dialog.");
+        } catch (fallbackErr) {
+          toast.error(fallbackErr instanceof Error ? fallbackErr.message : "Export failed");
+        }
+      } else {
+        toast.error(e instanceof Error ? e.message : "Export failed");
+      }
     }
   };
 
@@ -576,11 +600,20 @@ function AnalyticsPage() {
               </button>
               <button
                 type="button"
-                onClick={() => exportReport("print")}
-                className="h-8 px-3 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted"
+                disabled={exportingPdf}
+                onClick={() => void exportReport("pdf")}
+                className="h-8 px-3 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
               >
                 <FileText className="h-3.5 w-3.5" />
-                Save as PDF
+                {exportingPdf ? "Building PDF…" : "Download PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => exportReport("print")}
+                className="h-8 px-3 rounded-md border border-border text-xs font-medium inline-flex items-center gap-1.5 hover:bg-muted"
+                title="Opens print preview in a new tab"
+              >
+                Print
               </button>
             </div>
 

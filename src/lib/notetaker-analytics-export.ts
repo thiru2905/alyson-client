@@ -299,28 +299,30 @@ export function downloadAnalyticsHtml(html: string, filenameBase: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Opens a print dialog (Save as PDF) with the same HTML; links work in Chrome/Edge PDF output. */
+const PRINT_SCRIPT = `<script>
+(function () {
+  function runPrint() {
+    try { window.focus(); window.print(); } catch (e) {}
+  }
+  if (document.readyState === "complete") setTimeout(runPrint, 500);
+  else window.addEventListener("load", function () { setTimeout(runPrint, 500); });
+})();
+</script>`;
+
+/** Opens HTML in a new tab and triggers print (fallback if direct PDF fails). */
 export function printAnalyticsExport(html: string) {
-  const w = window.open("", "_blank", "noopener,noreferrer");
+  const docHtml = html.includes("</body>")
+    ? html.replace("</body>", `${PRINT_SCRIPT}</body>`)
+    : `${html}${PRINT_SCRIPT}`;
+
+  const blob = new Blob([docHtml], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, "_blank");
   if (!w) {
-    throw new Error("Pop-up blocked. Allow pop-ups for this site to print or save as PDF.");
+    URL.revokeObjectURL(url);
+    throw new Error("Pop-up blocked. Allow pop-ups for this site, or use Export HTML.");
   }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  const runPrint = () => {
-    try {
-      w.print();
-    } catch {
-      // ignore
-    }
-  };
-  if (w.document.readyState === "complete") {
-    setTimeout(runPrint, 250);
-  } else {
-    w.addEventListener("load", () => setTimeout(runPrint, 250));
-  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
 }
 
 export function analyticsExportFilename(report: NotetakerAnalyticsReport) {
