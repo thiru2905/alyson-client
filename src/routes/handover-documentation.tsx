@@ -160,9 +160,11 @@ function HandoverDocumentationPage() {
                           href={r.docUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-primary hover:underline break-all"
+                          title={r.docUrl}
+                          className="text-primary hover:underline inline-flex items-center gap-1.5"
                         >
-                          {r.docUrl}
+                          <Link2 className="h-3.5 w-3.5" />
+                          View documentation
                         </a>
                       </td>
                       <td align="right">
