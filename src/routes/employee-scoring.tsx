@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Download, FileText, RefreshCw, Search, Trophy } from "lucide-react";
+import { Download, FileText, Loader2, RefreshCw, Search, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState, PageHeader, TableScroll } from "@/components/AppShell";
+import { TableSkeleton } from "@/components/Skeleton";
 import { downloadCSV } from "@/lib/csv";
 import { getEmployeeScoring } from "@/lib/employee-scoring-functions";
 import { downloadEmployeeScoringPdf } from "@/lib/employee-scoring-pdf";
@@ -58,10 +59,27 @@ function gradeClass(grade: string) {
   }
 }
 
+function draftToApplied(draftStart: string, draftEnd: string) {
+  const s = new Date(draftStart);
+  const e = new Date(draftEnd);
+  return { start: s.toISOString(), end: e.toISOString() };
+}
+
+function rangesMatch(
+  a: { start: string; end: string } | null,
+  b: { start: string; end: string } | null,
+) {
+  if (!a || !b) return false;
+  return a.start === b.start && a.end === b.end;
+}
+
 function EmployeeScoringPage() {
   const now = useMemo(() => new Date(), []);
   const boot = useMemo(() => loadEmployeeScoringSession(), []);
-  const fallbackStart = useMemo(() => new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(), [now]);
+  const fallbackStart = useMemo(
+    () => new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    [now],
+  );
   const fallbackEnd = useMemo(() => now.toISOString(), [now]);
 
   const [draftEnd, setDraftEnd] = useState(() => boot?.draftEnd ?? isoForInput(now));
@@ -98,24 +116,53 @@ function EmployeeScoringPage() {
     refetchOnWindowFocus: false,
   });
 
+  const draftRange = useMemo(() => {
+    try {
+      return draftToApplied(draftStart, draftEnd);
+    } catch {
+      return null;
+    }
+  }, [draftStart, draftEnd]);
+
+  const draftMatchesApplied = rangesMatch(draftRange, applied);
+  const isBusy = q.isFetching;
+  const showingStaleWindow = q.isPlaceholderData && isBusy;
+  const coldLoad = q.isPending && !q.data;
+
   const filteredRows = useMemo(() => {
     const rows = q.data?.rows ?? [];
     const s = search.trim().toLowerCase();
     if (!s) return rows;
     return rows.filter(
-      (r) =>
-        r.userEmail.toLowerCase().includes(s) ||
-        r.displayName.toLowerCase().includes(s),
+      (r) => r.userEmail.toLowerCase().includes(s) || r.displayName.toLowerCase().includes(s),
     );
   }, [q.data?.rows, search]);
+
+  const lastToastKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!q.isSuccess || q.isPlaceholderData || !q.data || !applied) return;
+    const key = scoringSnapshotKey(applied);
+    if (lastToastKey.current === key) return;
+    if (lastToastKey.current !== null) {
+      toast.success("Scores updated for the selected window");
+    }
+    lastToastKey.current = key;
+  }, [q.isSuccess, q.isPlaceholderData, q.data, applied]);
 
   const apply = () => {
     if (!draftStart || !draftEnd) return toast.error("Select start and end datetime");
     const s = new Date(draftStart);
     const e = new Date(draftEnd);
-    if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) return toast.error("Invalid datetime range");
+    if (!Number.isFinite(s.getTime()) || !Number.isFinite(e.getTime())) {
+      return toast.error("Invalid datetime range");
+    }
     if (s.getTime() >= e.getTime()) return toast.error("Start must be before end");
-    setApplied({ start: s.toISOString(), end: e.toISOString() });
+    const next = draftToApplied(draftStart, draftEnd);
+    if (rangesMatch(next, applied)) {
+      void q.refetch();
+      return;
+    }
+    setApplied(next);
   };
 
   const applyPreset = (days: (typeof PRESET_DAYS)[number]) => {
@@ -127,7 +174,7 @@ function EmployeeScoringPage() {
   };
 
   const exportCsv = () => {
-    if (!filteredRows.length) return toast.error("No rows to export");
+    if (!filteredRows.length || showingStaleWindow) return toast.error("Wait for scores to finish loading");
     const suffix = q.data?.range?.start?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
     downloadCSV(
       `employee-scoring-${suffix}.csv`,
@@ -172,8 +219,8 @@ function EmployeeScoringPage() {
   };
 
   const exportPdf = () => {
-    if (!q.data || !filteredRows.length) {
-      toast.error("No rows to export");
+    if (!q.data || !filteredRows.length || showingStaleWindow) {
+      toast.error("Wait for scores to finish loading");
       return;
     }
     downloadEmployeeScoringPdf({
@@ -192,24 +239,55 @@ function EmployeeScoringPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const payload: EmployeeScoringStoredState = {
+    if (!q.isSuccess || q.isPlaceholderData || !q.data || !applied) {
+      const filtersOnly: EmployeeScoringStoredState = {
+        version: 2,
+        draftStart,
+        draftEnd,
+        applied,
+        search,
+      };
+      saveEmployeeScoringSession(filtersOnly);
+      return;
+    }
+    saveEmployeeScoringSession({
       version: 2,
       draftStart,
       draftEnd,
       applied,
       search,
-      ...(q.data && applied
-        ? {
-            snapshot: q.data,
-            snapshotKey: scoringSnapshotKey(applied),
-            snapshotAt: Date.now(),
-          }
-        : {}),
-    };
-    saveEmployeeScoringSession(payload);
-  }, [draftStart, draftEnd, applied, search, q.data]);
+      snapshot: q.data,
+      snapshotKey: scoringSnapshotKey(applied),
+      snapshotAt: Date.now(),
+    });
+  }, [draftStart, draftEnd, applied, search, q.data, q.isSuccess, q.isPlaceholderData]);
 
   const weightPct = (k: keyof typeof SCORING_WEIGHTS) => Math.round(SCORING_WEIGHTS[k] * 100);
+
+  const statusBanner = (() => {
+    if (coldLoad) {
+      return {
+        tone: "loading" as const,
+        text: "Computing scores from Google Workspace and Time Doctor — this can take a minute for large teams.",
+      };
+    }
+    if (showingStaleWindow) {
+      return {
+        tone: "loading" as const,
+        text: "Updating scores for the new window — previous rankings stay visible until ready.",
+      };
+    }
+    if (isBusy) {
+      return { tone: "loading" as const, text: "Refreshing scores…" };
+    }
+    if (q.isError) {
+      return {
+        tone: "error" as const,
+        text: q.error instanceof Error ? q.error.message : "Failed to load employee scoring",
+      };
+    }
+    return null;
+  })();
 
   return (
     <div className="ops-dense">
@@ -221,15 +299,15 @@ function EmployeeScoringPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => q.refetch()}
-              disabled={!applied || q.isFetching}
+              disabled={!applied || isBusy}
               className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? "animate-spin" : ""}`} />
               Refresh
             </button>
             <button
               onClick={exportCsv}
-              disabled={!filteredRows.length}
+              disabled={!filteredRows.length || showingStaleWindow}
               className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" />
@@ -237,7 +315,7 @@ function EmployeeScoringPage() {
             </button>
             <button
               onClick={exportPdf}
-              disabled={!filteredRows.length}
+              disabled={!filteredRows.length || showingStaleWindow}
               className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
             >
               <FileText className="h-3.5 w-3.5" />
@@ -248,14 +326,17 @@ function EmployeeScoringPage() {
       />
 
       <div className="px-5 md:px-8 py-6 space-y-5">
-        <div className="surface-card p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <div
+          className={`surface-card p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end transition-opacity ${isBusy ? "opacity-90" : ""}`}
+        >
           <label className="space-y-1">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Start (local)</span>
             <input
               type="datetime-local"
               value={draftStart}
               onChange={(e) => setDraftStart(e.target.value)}
-              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm"
+              disabled={isBusy}
+              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm disabled:opacity-60"
             />
           </label>
           <label className="space-y-1">
@@ -264,18 +345,31 @@ function EmployeeScoringPage() {
               type="datetime-local"
               value={draftEnd}
               onChange={(e) => setDraftEnd(e.target.value)}
-              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm"
+              disabled={isBusy}
+              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm disabled:opacity-60"
             />
           </label>
           <button
             type="button"
             onClick={apply}
-            className="h-8 px-4 rounded-md bg-foreground text-background text-xs font-medium"
+            disabled={isBusy}
+            className="h-8 px-4 rounded-md bg-foreground text-background text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-70 min-w-[10.5rem]"
           >
-            Apply scoring window
+            {isBusy ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Computing…
+              </>
+            ) : draftMatchesApplied ? (
+              "Recompute scores"
+            ) : (
+              "Apply scoring window"
+            )}
           </button>
           <div className="text-[11px] text-muted-foreground">
-            Default: last 7 days. All metrics use this same window.
+            {draftMatchesApplied
+              ? "Window applied. Change dates or use a preset to load another range."
+              : "Pick dates, then apply — table stays visible while new scores load."}
           </div>
           <div className="md:col-span-4 flex flex-wrap gap-1.5">
             {PRESET_DAYS.map((d) => (
@@ -283,13 +377,32 @@ function EmployeeScoringPage() {
                 key={d}
                 type="button"
                 onClick={() => applyPreset(d)}
-                className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground"
+                disabled={isBusy}
+                className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 Last {d} days
               </button>
             ))}
           </div>
         </div>
+
+        {statusBanner ? (
+          <div
+            className={
+              "rounded-md border px-3 py-2.5 text-[12px] flex items-center gap-2 " +
+              (statusBanner.tone === "error"
+                ? "border-destructive/40 bg-destructive/5 text-destructive"
+                : "border-border bg-muted/40 text-foreground")
+            }
+            role="status"
+            aria-live="polite"
+          >
+            {statusBanner.tone === "loading" ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+            ) : null}
+            <span>{statusBanner.text}</span>
+          </div>
+        ) : null}
 
         <div className="surface-card p-4">
           <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">
@@ -301,23 +414,48 @@ function EmployeeScoringPage() {
             ))}
           </ul>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-            <span className="px-2 py-0.5 rounded-full border border-border">Work hours {weightPct("workHours")}%</span>
-            <span className="px-2 py-0.5 rounded-full border border-border">Meetings {weightPct("meetings")}%</span>
-            <span className="px-2 py-0.5 rounded-full border border-border">Emails {weightPct("emails")}%</span>
-            <span className="px-2 py-0.5 rounded-full border border-border">Chat {weightPct("chat")}%</span>
-            <span className="px-2 py-0.5 rounded-full border border-border">Docs {weightPct("docs")}%</span>
+            <span className="px-2 py-0.5 rounded-full border border-border">
+              Work hours {weightPct("workHours")}%
+            </span>
+            <span className="px-2 py-0.5 rounded-full border border-border">
+              Meetings {weightPct("meetings")}%
+            </span>
+            <span className="px-2 py-0.5 rounded-full border border-border">
+              Emails {weightPct("emails")}%
+            </span>
+            <span className="px-2 py-0.5 rounded-full border border-border">
+              Chat {weightPct("chat")}%
+            </span>
+            <span className="px-2 py-0.5 rounded-full border border-border">
+              Docs {weightPct("docs")}%
+            </span>
           </div>
         </div>
 
-        {q.data && (
+        {q.data && !coldLoad ? (
           <div className="surface-card p-3 text-[12px] text-muted-foreground">
-            Workspace window (IST): {fmtIso(q.data.range.start)} → {fmtIso(q.data.range.end)} · Time Doctor dates:{" "}
-            {q.data.timeDoctorRange.start} → {q.data.timeDoctorRange.end} ({q.data.windowDays} days) · Ranked:{" "}
-            {q.data.rows.length}
+            {showingStaleWindow ? (
+              <span className="text-foreground font-medium">Pending window (IST): </span>
+            ) : (
+              <span>Workspace window (IST): </span>
+            )}
+            {applied ? (
+              <>
+                {fmtIso(applied.start)} → {fmtIso(applied.end)}
+              </>
+            ) : (
+              "—"
+            )}
+            {!showingStaleWindow && q.data ? (
+              <>
+                {" "}
+                · Time Doctor: {q.data.timeDoctorRange.start} → {q.data.timeDoctorRange.end} ({q.data.windowDays}{" "}
+                days) · Ranked: {q.data.rows.length}
+              </>
+            ) : null}
             {search.trim() ? ` · Showing: ${filteredRows.length}` : ""}
-            {q.isFetching ? " · Refreshing…" : persisted && !q.isFetching ? " · Restored from session" : ""}
           </div>
-        )}
+        ) : null}
 
         <div className="relative max-w-sm">
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -325,13 +463,16 @@ function EmployeeScoringPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search name or email..."
-            className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
+            disabled={coldLoad}
+            className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px] disabled:opacity-60"
           />
         </div>
 
-        {q.data?.warnings?.length ? (
+        {q.data?.warnings?.length && !showingStaleWindow ? (
           <div className="surface-card p-4">
-            <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">Warnings</div>
+            <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">
+              Warnings
+            </div>
             <ul className="text-xs text-muted-foreground space-y-1">
               {q.data.warnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -340,88 +481,100 @@ function EmployeeScoringPage() {
           </div>
         ) : null}
 
-        {q.isLoading && !q.data ? (
-          <div className="text-sm text-muted-foreground">Computing scores (Workspace + Time Doctor)...</div>
+        {coldLoad ? <TableSkeleton rows={10} /> : null}
+
+        {!coldLoad && !isBusy && q.data && filteredRows.length === 0 ? (
+          <EmptyState
+            icon={Trophy}
+            title="No scored users"
+            description="No users matched your search in this window."
+          />
         ) : null}
 
-        {q.isFetching && q.data ? (
-          <div className="text-[11px] text-muted-foreground">Refreshing scores in background...</div>
-        ) : null}
-
-        {!q.isLoading && !q.isFetching && q.isError ? (
-          <div className="surface-card p-4 text-sm text-destructive">
-            {q.error instanceof Error ? q.error.message : "Failed to load employee scoring"}
+        {!coldLoad && !!filteredRows.length ? (
+          <div className="relative min-h-[12rem]">
+            {showingStaleWindow ? (
+              <div
+                className="absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-8"
+                aria-hidden
+              >
+                <span className="text-[12px] text-muted-foreground bg-paper border border-border px-3 py-1.5 rounded-full shadow-sm">
+                  Updating rankings…
+                </span>
+              </div>
+            ) : null}
+            <div
+              className={
+                showingStaleWindow ? "opacity-60 pointer-events-none select-none transition-opacity" : ""
+              }
+            >
+              <TableScroll>
+                <table className="ops-table w-full">
+                  <thead>
+                    <tr>
+                      <th align="left">Rank</th>
+                      <th align="left">Employee</th>
+                      <th align="center">Grade</th>
+                      <th align="right">Score</th>
+                      <th align="right">Work hrs</th>
+                      <th align="right">Hrs/day</th>
+                      <th align="right">Meetings</th>
+                      <th align="right">Emails</th>
+                      <th align="right">Chat</th>
+                      <th align="right">Docs</th>
+                      <th align="right" title="Percentile contributions">
+                        %ile mix
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((r) => (
+                      <tr key={r.userEmail}>
+                        <td className="font-mono text-muted-foreground">#{r.rank}</td>
+                        <td>
+                          <div className="font-medium text-[13px]">{r.displayName}</div>
+                          <div className="text-[11px] text-muted-foreground">{r.userEmail}</div>
+                        </td>
+                        <td align="center">
+                          <span
+                            className={`inline-flex px-2 py-0.5 rounded text-[11px] font-semibold ${gradeClass(r.grade)}`}
+                          >
+                            {r.grade}
+                          </span>
+                        </td>
+                        <td align="right" className="font-mono font-medium">
+                          {r.compositeScore.toFixed(1)}
+                        </td>
+                        <td align="right" className="font-mono">
+                          {r.workHours.toFixed(1)}
+                        </td>
+                        <td align="right" className="font-mono text-muted-foreground">
+                          {r.hoursPerDay.toFixed(2)}
+                        </td>
+                        <td align="right" className="font-mono">
+                          {r.meetingsCreated}
+                        </td>
+                        <td align="right" className="font-mono">
+                          {r.emailsSent}
+                        </td>
+                        <td align="right" className="font-mono">
+                          {r.chatMessagesSent}
+                        </td>
+                        <td align="right" className="font-mono">
+                          {r.docsCreated}
+                        </td>
+                        <td align="right" className="text-[10px] text-muted-foreground font-mono">
+                          {r.percentile.workHours}/{r.percentile.meetings}/{r.percentile.emails}/
+                          {r.percentile.chat}/{r.percentile.docs}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScroll>
+            </div>
           </div>
         ) : null}
-
-        {!q.isLoading && !q.isFetching && q.data && filteredRows.length === 0 ? (
-          <EmptyState icon={Trophy} title="No scored users" description="No users matched your search in this window." />
-        ) : null}
-
-        {!!filteredRows.length && (
-          <TableScroll>
-            <table className="ops-table w-full">
-              <thead>
-                <tr>
-                  <th align="left">Rank</th>
-                  <th align="left">Employee</th>
-                  <th align="center">Grade</th>
-                  <th align="right">Score</th>
-                  <th align="right">Work hrs</th>
-                  <th align="right">Hrs/day</th>
-                  <th align="right">Meetings</th>
-                  <th align="right">Emails</th>
-                  <th align="right">Chat</th>
-                  <th align="right">Docs</th>
-                  <th align="right" title="Percentile contributions">
-                    %ile mix
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((r) => (
-                  <tr key={r.userEmail}>
-                    <td className="font-mono text-muted-foreground">#{r.rank}</td>
-                    <td>
-                      <div className="font-medium text-[13px]">{r.displayName}</div>
-                      <div className="text-[11px] text-muted-foreground">{r.userEmail}</div>
-                    </td>
-                    <td align="center">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-semibold ${gradeClass(r.grade)}`}>
-                        {r.grade}
-                      </span>
-                    </td>
-                    <td align="right" className="font-mono font-medium">
-                      {r.compositeScore.toFixed(1)}
-                    </td>
-                    <td align="right" className="font-mono">
-                      {r.workHours.toFixed(1)}
-                    </td>
-                    <td align="right" className="font-mono text-muted-foreground">
-                      {r.hoursPerDay.toFixed(2)}
-                    </td>
-                    <td align="right" className="font-mono">
-                      {r.meetingsCreated}
-                    </td>
-                    <td align="right" className="font-mono">
-                      {r.emailsSent}
-                    </td>
-                    <td align="right" className="font-mono">
-                      {r.chatMessagesSent}
-                    </td>
-                    <td align="right" className="font-mono">
-                      {r.docsCreated}
-                    </td>
-                    <td align="right" className="text-[10px] text-muted-foreground font-mono">
-                      {r.percentile.workHours}/{r.percentile.meetings}/{r.percentile.emails}/{r.percentile.chat}/
-                      {r.percentile.docs}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TableScroll>
-        )}
       </div>
     </div>
   );

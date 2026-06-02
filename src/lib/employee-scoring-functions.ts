@@ -29,6 +29,9 @@ export type EmployeeScoringResponse = {
   warnings: string[];
 };
 
+const CACHE_TTL_MS = 90_000;
+const scoringCache = new Map<string, { at: number; data: EmployeeScoringResponse }>();
+
 function isoToDate(iso: string) {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) throw new Error("Invalid datetime in scoring window.");
@@ -50,6 +53,15 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
 
     if (new Date(startIso).getTime() >= new Date(endIso).getTime()) {
       throw new Error("Start time must be earlier than end time.");
+    }
+
+    const cacheKey = `${startIso}|${endIso}`;
+    const cached = scoringCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      return {
+        ...cached.data,
+        warnings: [...cached.data.warnings, "served_from_cache"],
+      };
     }
 
     const tdRaw = { start: isoToDate(startIso), end: isoToDate(endIso) };
@@ -114,7 +126,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
 
     const rows = computeEmployeeScores(inputs);
 
-    return {
+    const result: EmployeeScoringResponse = {
       range: workspace.range,
       timeDoctorRange: { start: tdRange.start, end: tdRange.end, clipped: tdRange.clipped },
       windowDays,
@@ -124,4 +136,6 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
       rows,
       warnings,
     };
+    scoringCache.set(cacheKey, { at: Date.now(), data: result });
+    return result;
   });
