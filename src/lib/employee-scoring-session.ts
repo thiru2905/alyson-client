@@ -8,7 +8,6 @@ export type EmployeeScoringStoredState = {
   draftEnd: string;
   applied: { start: string; end: string } | null;
   search: string;
-  selectedUserEmail?: string | null;
   snapshotKey?: string;
   snapshotAt?: number;
   snapshot?: EmployeeScoringResponse;
