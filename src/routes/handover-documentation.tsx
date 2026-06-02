@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Download, Link2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { EmptyState, PageHeader, TableScroll } from "@/components/AppShell";
 import { downloadCSV } from "@/lib/csv";
 import {
@@ -20,6 +21,10 @@ function HandoverDocumentationPage() {
   const qc = useQueryClient();
   const [employeeName, setEmployeeName] = useState("");
   const [docUrl, setDocUrl] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteName, setDeleteName] = useState("");
+  const [deleteCode, setDeleteCode] = useState("");
 
   const q = useQuery({
     queryKey: ["handover-documentation"],
@@ -44,9 +49,13 @@ function HandoverDocumentationPage() {
   });
 
   const deleteM = useMutation({
-    mutationFn: async (id: string) => deleteHandoverDoc({ data: { id } }),
+    mutationFn: async () => deleteHandoverDoc({ data: { id: deleteId! } }),
     onSuccess: () => {
       toast.success("Entry deleted");
+      setDeleteOpen(false);
+      setDeleteId(null);
+      setDeleteName("");
+      setDeleteCode("");
       void qc.invalidateQueries({ queryKey: ["handover-documentation"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to delete"),
@@ -76,6 +85,8 @@ function HandoverDocumentationPage() {
     if (!docUrl.trim()) return toast.error("Documentation link is required");
     upsertM.mutate();
   };
+
+  const canDelete = deleteCode.trim().toUpperCase() === "DELETE";
 
   return (
     <div className="ops-dense">
@@ -170,7 +181,12 @@ function HandoverDocumentationPage() {
                       <td align="right">
                         <button
                           type="button"
-                          onClick={() => deleteM.mutate(r.id)}
+                          onClick={() => {
+                            setDeleteId(r.id);
+                            setDeleteName(r.employeeName);
+                            setDeleteCode("");
+                            setDeleteOpen(true);
+                          }}
                           disabled={deleteM.isPending}
                           className="h-7 px-2.5 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
                         >
@@ -186,6 +202,54 @@ function HandoverDocumentationPage() {
           </div>
         )}
       </div>
+
+      <AlertDialog.Root open={deleteOpen} onOpenChange={(open) => !open && setDeleteOpen(false)}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/40 z-[70]" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[92vw] max-w-md surface-card p-4">
+            <AlertDialog.Title className="font-medium text-[14px]">Delete handover row?</AlertDialog.Title>
+            <AlertDialog.Description className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
+              This will permanently remove the row for{" "}
+              <span className="font-medium text-foreground">{deleteName || "this employee"}</span>.
+            </AlertDialog.Description>
+            <div className="mt-3">
+              <label className="text-[11px] text-muted-foreground">
+                Type <span className="font-mono text-foreground">DELETE</span> to confirm
+              </label>
+              <input
+                value={deleteCode}
+                onChange={(e) => setDeleteCode(e.target.value)}
+                className="mt-1 w-full h-8 px-2 rounded-md border border-border bg-background text-sm"
+                placeholder="DELETE"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <AlertDialog.Cancel asChild>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border text-xs hover:bg-muted"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteCode("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  type="button"
+                  disabled={!canDelete || deleteM.isPending}
+                  onClick={() => deleteM.mutate()}
+                  className="h-8 px-3 rounded-md bg-destructive text-destructive-foreground text-xs font-medium disabled:opacity-50"
+                >
+                  {deleteM.isPending ? "Deleting..." : "Delete row"}
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
     </div>
   );
 }
