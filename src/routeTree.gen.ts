@@ -17,6 +17,7 @@ import { Route as PerformanceRouteImport } from './routes/performance'
 import { Route as PayrollRouteImport } from './routes/payroll'
 import { Route as LeaveRouteImport } from './routes/leave'
 import { Route as HelpRouteImport } from './routes/help'
+import { Route as HandoverDocumentationRouteImport } from './routes/handover-documentation'
 import { Route as EquityRouteImport } from './routes/equity'
 import { Route as DocumentsRouteImport } from './routes/documents'
 import { Route as BoardingRouteImport } from './routes/boarding'
@@ -81,6 +82,11 @@ const LeaveRoute = LeaveRouteImport.update({
 const HelpRoute = HelpRouteImport.update({
   id: '/help',
   path: '/help',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HandoverDocumentationRoute = HandoverDocumentationRouteImport.update({
+  id: '/handover-documentation',
+  path: '/handover-documentation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EquityRoute = EquityRouteImport.update({
@@ -227,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
   '/equity': typeof EquityRoute
+  '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
   '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
@@ -260,6 +267,7 @@ export interface FileRoutesByTo {
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
   '/equity': typeof EquityRoute
+  '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
   '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
@@ -296,6 +304,7 @@ export interface FileRoutesById {
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
   '/equity': typeof EquityRoute
+  '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
   '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
@@ -333,6 +342,7 @@ export interface FileRouteTypes {
     | '/boarding'
     | '/documents'
     | '/equity'
+    | '/handover-documentation'
     | '/help'
     | '/leave'
     | '/payroll'
@@ -366,6 +376,7 @@ export interface FileRouteTypes {
     | '/boarding'
     | '/documents'
     | '/equity'
+    | '/handover-documentation'
     | '/help'
     | '/leave'
     | '/payroll'
@@ -401,6 +412,7 @@ export interface FileRouteTypes {
     | '/boarding'
     | '/documents'
     | '/equity'
+    | '/handover-documentation'
     | '/help'
     | '/leave'
     | '/payroll'
@@ -437,6 +449,7 @@ export interface RootRouteChildren {
   BoardingRoute: typeof BoardingRoute
   DocumentsRoute: typeof DocumentsRoute
   EquityRoute: typeof EquityRoute
+  HandoverDocumentationRoute: typeof HandoverDocumentationRoute
   HelpRoute: typeof HelpRoute
   LeaveRoute: typeof LeaveRoute
   PayrollRoute: typeof PayrollRoute
@@ -504,6 +517,13 @@ declare module '@tanstack/react-router' {
       path: '/help'
       fullPath: '/help'
       preLoaderRoute: typeof HelpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/handover-documentation': {
+      id: '/handover-documentation'
+      path: '/handover-documentation'
+      fullPath: '/handover-documentation'
+      preLoaderRoute: typeof HandoverDocumentationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/equity': {
@@ -780,6 +800,7 @@ const rootRouteChildren: RootRouteChildren = {
   BoardingRoute: BoardingRoute,
   DocumentsRoute: DocumentsRoute,
   EquityRoute: EquityRoute,
+  HandoverDocumentationRoute: HandoverDocumentationRoute,
   HelpRoute: HelpRoute,
   LeaveRoute: LeaveRoute,
   PayrollRoute: PayrollRoute,

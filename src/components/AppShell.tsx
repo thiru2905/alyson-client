@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
-  Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send,
+  Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send, Link2,
   Captions, UserPlus, CalendarDays, Paintbrush,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { to: "/equity", label: "Equity", icon: PieChart, group: "Money" },
   { to: "/workflows", label: "Workflows", icon: GitBranch, group: "Ops" },
   { to: "/documents", label: "Documents", icon: FileText, group: "Ops" },
+  { to: "/handover-documentation", label: "Handover Docs", icon: Link2, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "Ops", roles: ["super_admin", "ceo", "finance", "hr"] },
   { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops", roles: ["super_admin"] },
   { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops", roles: ["super_admin"] },
