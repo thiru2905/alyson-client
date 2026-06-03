@@ -68,6 +68,9 @@ function ReportsPage() {
           >
             <Clock className="h-3.5 w-3.5" />
             Hourly activity
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-1.5 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300">
+              New
+            </span>
           </button>
           <button
             type="button"

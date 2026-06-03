@@ -1299,19 +1299,62 @@ async function seedUsersFromWorklogs(companyId: string): Promise<Array<{ id: str
   return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const TD_LIGHT_CACHE_MS = 5 * 60_000;
+let tdUsersLightCache: {
+  at: number;
+  users: Array<{ id: string; name: string; email: string }>;
+} | null = null;
+let tdCompanyCache: { at: number; id: string; name: string } | null = null;
+
+async function getCompanyIdCached(): Promise<string> {
+  if (tdCompanyCache && Date.now() - tdCompanyCache.at < TD_LIGHT_CACHE_MS) {
+    return tdCompanyCache.id;
+  }
+  const company = await getCompany({ auth: "access_only" });
+  tdCompanyCache = { at: Date.now(), id: company.id, name: company.name };
+  return company.id;
+}
+
 /** Lightweight user list for pickers / hourly reports (no worklog aggregation). */
 export async function listTimeDoctorUsersLight(): Promise<
   Array<{ id: string; name: string; email: string }>
 > {
-  const company = await getCompany({ auth: "access_only" });
-  const users = await listUsers(company.id, { auth: "access_only" });
-  return users
+  if (tdUsersLightCache && Date.now() - tdUsersLightCache.at < TD_LIGHT_CACHE_MS) {
+    return tdUsersLightCache.users;
+  }
+  const companyId = await getCompanyIdCached();
+  const users = await listUsers(companyId, { auth: "access_only" });
+  const mapped = users
     .map((u) => ({
       id: u.id,
       name: (u.name || u.email || "").trim(),
       email: (u.email || "").trim().toLowerCase(),
     }))
     .filter((u) => u.email);
+  tdUsersLightCache = { at: Date.now(), users: mapped };
+  return mapped;
+}
+
+/** Direct worklog fetch for hourly reports (avoids extra server-fn + company round-trips). */
+export async function fetchHourlyTimeDoctorSegments(
+  userId: string,
+  start: string,
+  end: string,
+): Promise<{
+  worklogs: Array<{ totalSeconds: number; startedAt?: string }>;
+  poorTime: Array<{ totalSeconds: number; startedAt?: string }>;
+} | null> {
+  try {
+    const companyId = await getCompanyIdCached();
+    const range = clampRange(start, end);
+    const [worklogs, poorTime] = await Promise.all([
+      listCompanyWorklogs(companyId, range, userId, { auth: "access_only" }),
+      listCompanyPoorTime(companyId, range, userId, { auth: "access_only" }),
+    ]);
+    return { worklogs, poorTime };
+  } catch {
+    return null;
+  }
 }
 
 const WorklogEntriesInput = z.object({

@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import { medalEmojiForRank, medalTierForRank, type MedalTier } from "@/lib/rank-medals-core";
 
 export type { MedalTier } from "@/lib/rank-medals-core";
-export { medalTierForRank, medalEmojiForRank, workspaceActivityRank, MEDAL_ROW_RGB } from "@/lib/rank-medals-core";
+export {
+  medalTierForRank,
+  medalEmojiForRank,
+  workspaceActivityRank,
+  timeDashboardRank,
+  MEDAL_ROW_RGB,
+} from "@/lib/rank-medals-core";
 
 export function medalRowClass(rank: number): string {
   const tier = medalTierForRank(rank);

@@ -23,6 +23,8 @@ export function resolveEmployeeFromQuery(
   if (looksLikeEmail(q)) {
     const exact = merged.find((e) => e.email === q);
     if (exact) return exact;
+    const fromRoster = merged.find((e) => e.email === q);
+    if (fromRoster) return fromRoster;
     return { email: q, name: q.split("@")[0] || q };
   }
 

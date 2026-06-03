@@ -194,6 +194,12 @@ Run the notetaker backend alongside this client (`npm run dev:ops` only wires th
 | `ALYSON_HR_ORGCHART_S3_BUCKET` | Org chart bucket (default `alyson-hr-orgchart`) |
 | `ALYSON_HR_S3_BUCKET` / `ALYSON_HR_S3_KEY` | Team overview snapshot |
 | `VITE_HR_OVERVIEW_SOURCE` | Optional: `s3` or `supabase` for team directory |
+| `RESEND_API_KEY` | Daily stakeholder report emails |
+| `DAILY_REPORT_RECIPIENTS` | Comma-separated stakeholder inboxes |
+| `DAILY_REPORT_CRON_SECRET` | Bearer token for `/api/cron/daily-reports` |
+| `RESEND_FROM_EMAIL` | Verified sender (e.g. `Alyson HR <reports@yourdomain.com>`) |
+
+See **[docs/DAILY_STAKEHOLDER_REPORTS.md](./docs/DAILY_STAKEHOLDER_REPORTS.md)** (daily ZIP to stakeholders) and **[docs/VERCEL_PRODUCTION.md](./docs/VERCEL_PRODUCTION.md)** (deploy checklist for [alyson-client.vercel.app](https://alyson-client.vercel.app)).
 
 ---
 

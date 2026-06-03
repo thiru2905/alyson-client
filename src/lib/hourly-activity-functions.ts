@@ -4,7 +4,11 @@ import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import { fetchUserWorklogEntriesForRange, listTimeDoctorUsersLight } from "@/lib/time-doctor-functions";
+import { listReportActivities } from "@/lib/google-reports-activities";
+import {
+  fetchHourlyTimeDoctorSegments,
+  listTimeDoctorUsersLight,
+} from "@/lib/time-doctor-functions";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/admin.directory.user.readonly",
@@ -13,13 +17,19 @@ const SCOPES = [
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly";
 const IST = "Asia/Kolkata";
 const MAX_RANGE_MS = 7 * 24 * 60 * 60 * 1000;
-const CACHE_TTL_MS = 90_000;
+const CACHE_TTL_MS = 5 * 60_000;
 const hourlyCache = new Map<string, { at: number; data: HourlyActivityResponse }>();
+const tdEmailIndexCache = new Map<string, { at: number; id: string; name: string }>();
+
+let adminReportsAuth: { at: number; jwt: JWT } | null = null;
+const ADMIN_AUTH_TTL_MS = 10 * 60_000;
 
 const Input = z.object({
   start: z.string().datetime(),
   end: z.string().datetime(),
   userEmail: z.string().email(),
+  timeDoctorUserId: z.string().min(1).optional(),
+  displayName: z.string().min(1).optional(),
 });
 
 export type HourlyActivityRow = {
@@ -54,6 +64,16 @@ function env(name: string) {
 
 function isoZ(dt: Date) {
   return dt.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+async function getAdminReportsJwt() {
+  if (adminReportsAuth && Date.now() - adminReportsAuth.at < ADMIN_AUTH_TTL_MS) {
+    return adminReportsAuth.jwt;
+  }
+  const adminSubject = env("GOOGLE_WORKSPACE_ADMIN_SUBJECT_EMAIL");
+  const jwt = await loadServiceAccountJwtForSubject(adminSubject, SCOPES);
+  adminReportsAuth = { at: Date.now(), jwt };
+  return jwt;
 }
 
 async function loadServiceAccountJwtForSubject(subject: string, scopes: string[]) {
@@ -154,7 +174,7 @@ function incrementBucket(map: Map<BucketKey, number>, isoTime: string) {
 }
 
 async function listUserTimedAuditCounts(args: {
-  reports: ReturnType<typeof google.admin>;
+  reportsClient: ReturnType<typeof google.admin>;
   userEmail: string;
   applicationName: "gmail" | "drive" | "chat";
   eventName: string;
@@ -165,7 +185,7 @@ async function listUserTimedAuditCounts(args: {
   const counts = new Map<BucketKey, number>();
   let pageToken: string | undefined;
   do {
-    const resp = await args.reports.activities().list({
+    const resp = await listReportActivities(args.reportsClient, {
       userKey: args.userEmail,
       applicationName: args.applicationName,
       eventName: args.eventName,
@@ -184,9 +204,88 @@ async function listUserTimedAuditCounts(args: {
         incrementBucket(counts, time);
       }
     }
-    pageToken = resp.data.nextPageToken || undefined;
+    pageToken = resp.data.nextPageToken ?? undefined;
   } while (pageToken);
   return counts;
+}
+
+async function resolveTimeDoctorUser(
+  userEmail: string,
+  timeDoctorUserId?: string,
+  displayName?: string,
+): Promise<{ id: string | null; name: string }> {
+  if (timeDoctorUserId) {
+    return { id: timeDoctorUserId, name: displayName?.trim() || userEmail.split("@")[0] || userEmail };
+  }
+  const cached = tdEmailIndexCache.get(userEmail);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+    return { id: cached.id, name: cached.name };
+  }
+  const users = await listTimeDoctorUsersLight().catch(() => [] as Awaited<ReturnType<typeof listTimeDoctorUsersLight>>);
+  const now = Date.now();
+  for (const u of users) {
+    tdEmailIndexCache.set(u.email, { at: now, id: u.id, name: u.name });
+  }
+  const match = tdEmailIndexCache.get(userEmail);
+  return match
+    ? { id: match.id, name: displayName?.trim() || match.name }
+    : { id: null, name: displayName?.trim() || userEmail.split("@")[0] || userEmail };
+}
+
+async function fetchGoogleHourlyCounts(
+  userEmail: string,
+  startTime: string,
+  endTime: string,
+  warnings: string[],
+) {
+  const auth = await getAdminReportsJwt();
+  const reportsClient = google.admin({ version: "reports_v1", auth });
+  const [emailCounts, docsCounts, chatCounts, meetingCounts] = await Promise.all([
+    listUserTimedAuditCounts({
+      reportsClient,
+      userEmail,
+      applicationName: "gmail",
+      eventName: "delivery",
+      startTime,
+      endTime,
+      includeEvent: (meta) =>
+        String(meta.flattened_destinations || "")
+          .toLowerCase()
+          .includes("smtp-outbound"),
+    }).catch((e) => {
+      warnings.push(`gmail: ${e instanceof Error ? e.message : String(e)}`);
+      return new Map<BucketKey, number>();
+    }),
+    listUserTimedAuditCounts({
+      reportsClient,
+      userEmail,
+      applicationName: "drive",
+      eventName: "create",
+      startTime,
+      endTime,
+      includeEvent: (meta) => {
+        const docType = String(meta.doc_type || "").toLowerCase();
+        const mimeType = String(meta.mime_type || "").toLowerCase();
+        return docType.includes("document") || mimeType.includes("application/vnd.google-apps.document");
+      },
+    }).catch((e) => {
+      warnings.push(`drive: ${e instanceof Error ? e.message : String(e)}`);
+      return new Map<BucketKey, number>();
+    }),
+    listUserTimedAuditCounts({
+      reportsClient,
+      userEmail,
+      applicationName: "chat",
+      eventName: "message_posted",
+      startTime,
+      endTime,
+    }).catch((e) => {
+      warnings.push(`chat: ${e instanceof Error ? e.message : String(e)}`);
+      return new Map<BucketKey, number>();
+    }),
+    calendarMeetingsByHour(userEmail, startTime, endTime, warnings),
+  ]);
+  return { emailCounts, docsCounts, chatCounts, meetingCounts };
 }
 
 async function calendarMeetingsByHour(
@@ -252,85 +351,35 @@ export const getHourlyActivityReport = createServerFn({ method: "GET" })
     const tdStart = format(new Date(data.start), "yyyy-MM-dd");
     const tdEnd = format(new Date(data.end), "yyyy-MM-dd");
 
-    const tdUsers = await listTimeDoctorUsersLight().catch((e) => {
-      warnings.push(`time_doctor: ${e instanceof Error ? e.message : String(e)}`);
-      return [] as Awaited<ReturnType<typeof listTimeDoctorUsersLight>>;
-    });
-
-    const tdUser = tdUsers.find((e) => e.email === userEmail);
-    const displayName = tdUser?.name?.trim() || userEmail.split("@")[0] || userEmail;
-
     const activeSecondsByHour = new Map<BucketKey, number>();
     const poorSecondsByHour = new Map<BucketKey, number>();
 
-    if (tdUser?.id) {
-      const segments = await fetchUserWorklogEntriesForRange({
-        data: { userId: tdUser.id, start: tdStart, end: tdEnd },
-      }).catch((e) => {
-        warnings.push(`worklogs: ${e instanceof Error ? e.message : String(e)}`);
-        return null;
-      });
-      if (segments) {
-        for (const w of segments.worklogs) {
-          addSecondsToBucket(activeSecondsByHour, w.startedAt, w.totalSeconds);
-        }
-        for (const p of segments.poorTime) {
-          addSecondsToBucket(poorSecondsByHour, p.startedAt, p.totalSeconds);
-        }
+    const tdPath = (async () => {
+      const tdUser = await resolveTimeDoctorUser(
+        userEmail,
+        data.timeDoctorUserId,
+        data.displayName,
+      );
+      if (!tdUser.id) {
+        warnings.push(`No Time Doctor user matched ${userEmail}`);
+        return { displayName: tdUser.name, segments: null as Awaited<ReturnType<typeof fetchHourlyTimeDoctorSegments>> };
       }
-    } else {
-      warnings.push(`No Time Doctor user matched ${userEmail}`);
+      const segments = await fetchHourlyTimeDoctorSegments(tdUser.id, tdStart, tdEnd);
+      if (!segments) warnings.push("worklogs: Time Doctor fetch failed");
+      return { displayName: tdUser.name, segments };
+    })();
+
+    const [{ displayName, segments }, { emailCounts, docsCounts, chatCounts, meetingCounts }] =
+      await Promise.all([tdPath, fetchGoogleHourlyCounts(userEmail, startTime, endTime, warnings)]);
+
+    if (segments) {
+      for (const w of segments.worklogs) {
+        addSecondsToBucket(activeSecondsByHour, w.startedAt, w.totalSeconds);
+      }
+      for (const p of segments.poorTime) {
+        addSecondsToBucket(poorSecondsByHour, p.startedAt, p.totalSeconds);
+      }
     }
-
-    const adminSubject = env("GOOGLE_WORKSPACE_ADMIN_SUBJECT_EMAIL");
-    const auth = await loadServiceAccountJwtForSubject(adminSubject, SCOPES);
-    const reports = google.admin({ version: "reports_v1", auth });
-
-    const [emailCounts, docsCounts, chatCounts, meetingCounts] = await Promise.all([
-      listUserTimedAuditCounts({
-        reports,
-        userEmail,
-        applicationName: "gmail",
-        eventName: "delivery",
-        startTime,
-        endTime,
-        includeEvent: (meta) =>
-          String(meta.flattened_destinations || "")
-            .toLowerCase()
-            .includes("smtp-outbound"),
-      }).catch((e) => {
-        warnings.push(`gmail: ${e instanceof Error ? e.message : String(e)}`);
-        return new Map<BucketKey, number>();
-      }),
-      listUserTimedAuditCounts({
-        reports,
-        userEmail,
-        applicationName: "drive",
-        eventName: "create",
-        startTime,
-        endTime,
-        includeEvent: (meta) => {
-          const docType = String(meta.doc_type || "").toLowerCase();
-          const mimeType = String(meta.mime_type || "").toLowerCase();
-          return docType.includes("document") || mimeType.includes("application/vnd.google-apps.document");
-        },
-      }).catch((e) => {
-        warnings.push(`drive: ${e instanceof Error ? e.message : String(e)}`);
-        return new Map<BucketKey, number>();
-      }),
-      listUserTimedAuditCounts({
-        reports,
-        userEmail,
-        applicationName: "chat",
-        eventName: "message_posted",
-        startTime,
-        endTime,
-      }).catch((e) => {
-        warnings.push(`chat: ${e instanceof Error ? e.message : String(e)}`);
-        return new Map<BucketKey, number>();
-      }),
-      calendarMeetingsByHour(userEmail, startTime, endTime, warnings),
-    ]);
 
     const activityKeys = new Set<BucketKey>([
       ...activeSecondsByHour.keys(),

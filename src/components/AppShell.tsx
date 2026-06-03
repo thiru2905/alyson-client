@@ -37,6 +37,7 @@ const NEW_BADGE_ROUTES = new Set<string>([
   "/handover-documentation",
   "/workspace-activity",
   "/employee-scoring",
+  "/reports",
   "/help",
 ]);
 

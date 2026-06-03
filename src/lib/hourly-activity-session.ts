@@ -7,7 +7,13 @@ export type HourlyActivityStoredState = {
   draftStart: string;
   draftEnd: string;
   search: string;
-  applied: { start: string; end: string; userEmail: string } | null;
+  applied: {
+    start: string;
+    end: string;
+    userEmail: string;
+    timeDoctorUserId?: string;
+    displayName?: string;
+  } | null;
   snapshotKey?: string;
   snapshotAt?: number;
   snapshot?: HourlyActivityResponse;

@@ -9,6 +9,8 @@ const DIRECTORY_SCOPE = "https://www.googleapis.com/auth/admin.directory.user.re
 export type EmployeePickerEntry = {
   email: string;
   name: string;
+  /** When known from Time Doctor — skips a full user-list fetch on hourly reports. */
+  timeDoctorUserId?: string;
 };
 
 export type EmployeePickerResponse = {
@@ -100,7 +102,7 @@ export const getEmployeePickerDirectory = createServerFn({ method: "GET" }).hand
         if (!email) continue;
         const existing = byEmail.get(email);
         const name = u.name?.trim() || existing?.name || email.split("@")[0] || email;
-        byEmail.set(email, { email, name });
+        byEmail.set(email, { email, name, timeDoctorUserId: u.id });
       }
     } else {
       warnings.push(`time_doctor: ${String(tdR.reason)}`);

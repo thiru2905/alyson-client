@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Download, Loader2, RefreshCw, Search } from "lucide-react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Download, FileText, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { EmployeeEmailPicker, resolveEmployeeFromQuery } from "@/components/EmployeeEmailPicker";
 import { EmptyState, TableScroll } from "@/components/AppShell";
 import { downloadCSV } from "@/lib/csv";
-import { getEmployeePickerDirectory } from "@/lib/employee-picker-functions";
+import { downloadHourlyActivityPdf } from "@/lib/hourly-activity-pdf";
+import {
+  getEmployeePickerDirectory,
+  type EmployeePickerEntry,
+} from "@/lib/employee-picker-functions";
 import { getHourlyActivityReport } from "@/lib/hourly-activity-functions";
 import {
   hourlySnapshotKey,
@@ -41,10 +45,32 @@ function looksLikeEmail(s: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
-function draftToApplied(draftStart: string, draftEnd: string, email: string) {
+type HourlyApplied = NonNullable<HourlyActivityStoredState["applied"]>;
+
+function draftToApplied(
+  draftStart: string,
+  draftEnd: string,
+  emp: Pick<EmployeePickerEntry, "email" | "name" | "timeDoctorUserId">,
+): HourlyApplied {
   const s = new Date(draftStart);
   const e = new Date(draftEnd);
-  return { start: s.toISOString(), end: e.toISOString(), userEmail: email.trim().toLowerCase() };
+  return {
+    start: s.toISOString(),
+    end: e.toISOString(),
+    userEmail: emp.email.trim().toLowerCase(),
+    timeDoctorUserId: emp.timeDoctorUserId,
+    displayName: emp.name,
+  };
+}
+
+function hourlyReportRequest(applied: HourlyApplied) {
+  return {
+    start: applied.start,
+    end: applied.end,
+    userEmail: applied.userEmail,
+    timeDoctorUserId: applied.timeDoctorUserId,
+    displayName: applied.displayName,
+  };
 }
 
 function rangesMatch(
@@ -69,6 +95,7 @@ export function HourlyActivityReport({
   employeeOptions,
 }: HourlyActivityReportProps) {
   const now = useMemo(() => new Date(), []);
+  const qc = useQueryClient();
   const boot = useMemo(() => loadHourlyActivitySession(), []);
 
   const [draftEnd, setDraftEnd] = useState(() => boot?.draftEnd ?? isoForInput(now));
@@ -117,21 +144,23 @@ export function HourlyActivityReport({
     return { snapshot, at: stored?.snapshotAt ?? Date.now() };
   }, [applied]);
 
+  const prefetchHourly = (next: HourlyApplied) => {
+    if (!looksLikeEmail(next.userEmail)) return;
+    void qc.prefetchQuery({
+      queryKey: ["hourly-activity", next.start, next.end, next.userEmail],
+      queryFn: () => getHourlyActivityReport({ data: hourlyReportRequest(next) }),
+      staleTime: 5 * 60_000,
+    });
+  };
+
   const q = useQuery({
     queryKey: ["hourly-activity", applied?.start, applied?.end, applied?.userEmail],
-    queryFn: () =>
-      getHourlyActivityReport({
-        data: {
-          start: applied!.start,
-          end: applied!.end,
-          userEmail: applied!.userEmail,
-        },
-      }),
+    queryFn: () => getHourlyActivityReport({ data: hourlyReportRequest(applied!) }),
     enabled: applied !== null && looksLikeEmail(applied.userEmail),
     initialData: persisted?.snapshot,
     initialDataUpdatedAt: persisted?.at,
     placeholderData: keepPreviousData,
-    staleTime: 120_000,
+    staleTime: 5 * 60_000,
     gcTime: 24 * 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -148,7 +177,11 @@ export function HourlyActivityReport({
     const email = resolvedEmployee?.email;
     if (!email || !draftStart || !draftEnd) return null;
     try {
-      return draftToApplied(draftStart, draftEnd, email);
+      return draftToApplied(draftStart, draftEnd, {
+        email,
+        name: resolvedEmployee?.name ?? email,
+        timeDoctorUserId: resolvedEmployee?.timeDoctorUserId,
+      });
     } catch {
       return null;
     }
@@ -202,7 +235,7 @@ export function HourlyActivityReport({
       toast.error("Hourly report supports up to 7 days — use a shorter range or a preset");
       return;
     }
-    const next = draftToApplied(draftStart, draftEnd, email);
+    const next = draftToApplied(draftStart, draftEnd, resolved);
     if (rangesMatch(next, applied)) {
       void q.refetch();
       return;
@@ -222,7 +255,28 @@ export function HourlyActivityReport({
     const start = new Date(end.getTime() - hours * 60 * 60 * 1000);
     setDraftStart(isoForInput(start));
     setDraftEnd(isoForInput(end));
-    setApplied({ start: start.toISOString(), end: end.toISOString(), userEmail: email });
+    const next = draftToApplied(isoForInput(start), isoForInput(end), {
+      email,
+      name: resolved.name,
+      timeDoctorUserId: resolved.timeDoctorUserId,
+    });
+    setApplied(next);
+    prefetchHourly(next);
+  };
+
+  const exportPdf = () => {
+    if (!filteredRows.length || !q.data || showingStaleWindow) {
+      toast.error("Wait for the hourly report to finish loading");
+      return;
+    }
+    downloadHourlyActivityPdf({
+      rows: filteredRows,
+      displayName: q.data.displayName,
+      userEmail: q.data.userEmail,
+      range: q.data.range,
+      generatedAt: q.data.generatedAt,
+    });
+    toast.success("Hourly report PDF downloaded");
   };
 
   const exportCsv = () => {
@@ -294,17 +348,25 @@ export function HourlyActivityReport({
     const email = selectedEmailFromParent.trim().toLowerCase();
     const span = new Date(syncRange.end).getTime() - new Date(syncRange.start).getTime();
     if (span > MAX_RANGE_MS) return;
-    const next = { start: syncRange.start, end: syncRange.end, userEmail: email };
+    const match = roster.find((e) => e.email === email);
+    const next = {
+      start: syncRange.start,
+      end: syncRange.end,
+      userEmail: email,
+      timeDoctorUserId: match?.timeDoctorUserId,
+      displayName: match?.name,
+    };
     if (rangesMatch(next, applied)) return;
     setSelectedEmail(email);
     setApplied(next);
+    prefetchHourly(next);
   }, [compact, selectedEmailFromParent, syncRange?.start, syncRange?.end, applied]);
 
   const statusBanner = (() => {
     if (coldLoad) {
       return {
         tone: "loading" as const,
-        text: "Building hourly breakdown — usually 15–45 seconds. Previous data stays visible when you change employee or window.",
+        text: "Building hourly breakdown — Time Doctor and Workspace load in parallel. Picking an employee from the list prefetches the next load.",
       };
     }
     if (showingStaleWindow) {
@@ -344,6 +406,17 @@ export function HourlyActivityReport({
             onSelect={(emp) => {
               setSelectedEmail(emp.email);
               setSearch(emp.name);
+              try {
+                const next = draftToApplied(draftStart, draftEnd, emp);
+                if (
+                  new Date(next.end).getTime() - new Date(next.start).getTime() <= MAX_RANGE_MS &&
+                  new Date(next.start).getTime() < new Date(next.end).getTime()
+                ) {
+                  prefetchHourly(next);
+                }
+              } catch {
+                // invalid draft range — skip prefetch
+              }
             }}
             disabled={isBusy}
             extraOptions={employeeOptions}
@@ -410,12 +483,22 @@ export function HourlyActivityReport({
           </button>
           <button
             type="button"
+            onClick={exportPdf}
+            disabled={!filteredRows.length || showingStaleWindow}
+            className="h-7 px-3 rounded-full text-[11px] font-medium bg-foreground text-background inline-flex items-center gap-1 hover:opacity-90 disabled:opacity-50"
+          >
+            <FileText className="h-3 w-3" />
+            Export PDF
+          </button>
+          <button
+            type="button"
             onClick={exportCsv}
             disabled={!filteredRows.length || showingStaleWindow}
             className="h-7 px-3 rounded-full text-[11px] font-medium border border-border inline-flex items-center gap-1 hover:bg-muted disabled:opacity-50"
+            title="Comma-separated spreadsheet"
           >
             <Download className="h-3 w-3" />
-            Export CSV
+            CSV
           </button>
         </div>
         <div className="md:col-span-4 text-[11px] text-muted-foreground">

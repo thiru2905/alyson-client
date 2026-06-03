@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { google } from "googleapis";
+import { listReportActivities } from "@/lib/google-reports-activities";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
@@ -167,7 +168,7 @@ async function countAppEvents(args: {
   const counts = new Map<string, number>();
   let pageToken: string | undefined;
   do {
-    const resp = await args.reports.activities.list({
+    const resp = await listReportActivities(args.reports, {
       userKey: "all",
       applicationName: args.applicationName,
       eventName: args.eventName,
