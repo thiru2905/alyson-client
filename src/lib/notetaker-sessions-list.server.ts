@@ -37,7 +37,7 @@ export async function buildNotetakerSessionsList(): Promise<NotetakerSessionsLis
 
   const [unifiedScheduledSessions, s3Sessions] = await Promise.all([
     listUnifiedScheduledSessions(),
-    listPersistedSessionsFromS3({ includeBotIndex: false }).catch(() => [] as NotetakerSession[]),
+    listPersistedSessionsFromS3({ includeBotIndex: true }).catch(() => [] as NotetakerSession[]),
   ]);
 
   if (source === "s3") {

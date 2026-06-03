@@ -44,8 +44,11 @@ export function MedalBadge({ rank }: { rank: number }) {
   );
 }
 
-/** Top 3: cute medal emoji only; everyone else: #rank */
+/** Top 3: medal emoji; rank 4+ : #4, #5, … */
 export function rankCellContent(rank: number): ReactNode {
+  if (!Number.isFinite(rank) || rank < 1) {
+    return <span className="font-mono text-muted-foreground">—</span>;
+  }
   const emoji = medalEmojiForRank(rank);
   if (emoji) {
     const label = rank === 1 ? "Gold" : rank === 2 ? "Silver" : "Bronze";

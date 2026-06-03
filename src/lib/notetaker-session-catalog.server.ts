@@ -2,9 +2,8 @@ import type {
   NotetakerSession,
   NotetakerSessionPayload,
 } from "@/lib/alyson-notetaker-functions";
-import { autoPersistEndedMeetingToS3 } from "@/lib/notetaker-auto-persist.server";
+import { autoPersistEndedMeetingToS3, maybeCheckpointTranscriptToS3 } from "@/lib/notetaker-auto-persist.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
-import { isMeetingPersistedInS3 } from "@/lib/notetaker-sessions-history.server";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 import { listAllUnifiedScheduledBotSessions } from "@/lib/unifiedMeetingsService";
 
@@ -44,12 +43,6 @@ export async function autoPersistUnifiedScheduledBots() {
   await Promise.allSettled(
     rows.map(async (row) => {
       const botId = row.botId;
-      try {
-        if (await isMeetingPersistedInS3(botId)) return;
-      } catch {
-        // continue
-      }
-
       try {
         const res = await notetakerUpstream(`/api/session/${encodeURIComponent(botId)}`);
         const payload = normalizeSessionPayload(res, botId);
@@ -98,26 +91,29 @@ export async function autoPersistDiscoverableSessions(sessions: NotetakerSession
     const botId = String(s.botId || "").trim();
     if (!botId) return false;
     const st = String(s.status || "").toLowerCase();
-    if (st === "persisted") return false;
-    return ENDED_SESSION_STATUSES.has(st);
+    return st !== "persisted";
   });
 
   await Promise.allSettled(
     candidates.map(async (s) => {
       const botId = String(s.botId || "").trim();
-      try {
-        if (await isMeetingPersistedInS3(botId)) return;
-      } catch {
-        // proceed if S3 check fails
-      }
+      const st = String(s.status || "").toLowerCase();
+      const ended = ENDED_SESSION_STATUSES.has(st);
       try {
         const res = await notetakerUpstream(`/api/session/${encodeURIComponent(botId)}`);
         const payload = normalizeSessionPayload(res, botId);
         if (!payload?.lines?.length) return;
-        await autoPersistEndedMeetingToS3({
-          session: await withResolvedMeetingTitle(payload.session),
-          lines: payload.lines,
-        });
+        if (ended) {
+          await autoPersistEndedMeetingToS3({
+            session: await withResolvedMeetingTitle(payload.session),
+            lines: payload.lines,
+          });
+        } else {
+          await maybeCheckpointTranscriptToS3(
+            await withResolvedMeetingTitle(payload.session),
+            payload.lines,
+          );
+        }
       } catch {
         // upstream may have already evicted the session
       }

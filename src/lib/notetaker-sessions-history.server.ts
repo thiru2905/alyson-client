@@ -63,6 +63,7 @@ type BotIndexDoc = {
   transcriptKey?: string;
   notesKey?: string | null;
   finalizedAt?: string;
+  lineCount?: number;
 };
 
 function linesFromPlainTranscript(transcriptText: string) {
@@ -215,7 +216,7 @@ export async function isMeetingPersistedInS3(botId: string): Promise<boolean> {
   return Boolean(doc?.botId && doc.transcriptKey);
 }
 
-async function loadBotIndexDoc(botId: string): Promise<BotIndexDoc | null> {
+export async function loadBotIndexDoc(botId: string): Promise<BotIndexDoc | null> {
   const client = s3();
   const bucket = bucketName();
   const key = `alyson-notetaker/bot-index/${encodeURIComponent(botId)}.json`;

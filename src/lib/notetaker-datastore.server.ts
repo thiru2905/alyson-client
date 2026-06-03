@@ -69,9 +69,11 @@ export async function persistSession({
   notes?: { notes: string; model?: string } | null;
 }) {
   const existing = await getPersistedSession(session.botId);
-  if (existing?.finalizedAt) return existing;
 
   const sorted = [...lines].sort((a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime());
+  if (existing?.transcript?.lineCount >= sorted.length && sorted.length > 0) {
+    return existing;
+  }
   const transcriptText = sorted
     .map((L) => {
       const who = (L.participant?.name || "Speaker").trim();

@@ -497,6 +497,7 @@ function SessionPanel({
   });
 
   const [live, setLive] = useState<NotetakerTranscriptLine[]>([]);
+  const lastStaticLinesRef = useRef<NotetakerTranscriptLine[]>([]);
   const [notes, setNotes] = useState<string>("");
   const [notesModel, setNotesModel] = useState<string>("");
   const [copied, setCopied] = useState(false);
@@ -511,7 +512,9 @@ function SessionPanel({
   const [chatLoading, setChatLoading] = useState(false);
 
   const mergedLines = useMemo(() => {
-    const staticLines = q.data?.lines ?? [];
+    const fetched = q.data?.lines ?? [];
+    if (fetched.length) lastStaticLinesRef.current = fetched;
+    const staticLines = fetched.length ? fetched : lastStaticLinesRef.current;
     const all = [...staticLines, ...live];
     const seen = new Set<string>();
     const uniq: NotetakerTranscriptLine[] = [];
@@ -565,6 +568,7 @@ function SessionPanel({
 
   useEffect(() => {
     setLive([]);
+    lastStaticLinesRef.current = [];
     setNotes("");
     setNotesModel("");
     setChatMsgs([{ role: "assistant", content: "Ask me questions about this meeting only. I will answer using the transcript + notes." }]);

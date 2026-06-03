@@ -59,37 +59,21 @@ export function timeDashboardMetricSeconds(
   }
 }
 
-/** Top 3 medals for Time Dashboard — highest values for the active sort column (period when sorted by name). */
-export function timeDashboardRank(
-  rows: TimeDashboardRollup[],
-  sortBy: "range" | "daily" | "weekly" | "monthly" | "name",
-): Map<string, number> {
-  const metric = sortBy === "name" ? "range" : sortBy;
-  const sorted = [...rows].sort(
-    (a, b) =>
-      timeDashboardMetricSeconds(b, metric) - timeDashboardMetricSeconds(a, metric) ||
-      a.employee_id.localeCompare(b.employee_id),
-  );
+/** Display-order rank 1…n; top 3 also get medal styling via medalTierForRank. */
+export function timeDashboardRank(orderedRows: TimeDashboardRollup[]): Map<string, number> {
   const map = new Map<string, number>();
-  sorted.slice(0, 3).forEach((r, i) => map.set(r.employee_id, i + 1));
+  orderedRows.forEach((r, i) => map.set(r.employee_id, i + 1));
   return map;
 }
 
+/**
+ * Display-order rank 1…n for every row (same sort as the table).
+ * Rows 1–3 show medal emojis; 4+ show #4, #5, …
+ */
 export function workspaceActivityRank(
-  rows: Array<{
-    userEmail: string;
-    emailsSent: number;
-    meetingsCreated: number;
-    docsCreated: number;
-    chatMessagesSent: number;
-  }>,
+  orderedRows: Array<{ userEmail: string }>,
 ): Map<string, number> {
-  const sorted = [...rows].sort((a, b) => {
-    const ta = a.emailsSent + a.meetingsCreated + a.docsCreated + a.chatMessagesSent;
-    const tb = b.emailsSent + b.meetingsCreated + b.docsCreated + b.chatMessagesSent;
-    return tb - ta || b.emailsSent - a.emailsSent;
-  });
   const map = new Map<string, number>();
-  sorted.forEach((r, i) => map.set(r.userEmail, i + 1));
+  orderedRows.forEach((r, i) => map.set(r.userEmail, i + 1));
   return map;
 }

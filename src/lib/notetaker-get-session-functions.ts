@@ -6,7 +6,7 @@ import type {
   NotetakerTranscriptLine,
 } from "@/lib/alyson-notetaker-functions";
 import { getPersistedSession, persistSession } from "@/lib/notetaker-datastore.server";
-import { autoPersistEndedMeetingToS3 } from "@/lib/notetaker-auto-persist.server";
+import { autoPersistEndedMeetingToS3, maybeCheckpointTranscriptToS3 } from "@/lib/notetaker-auto-persist.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { loadPersistedSessionPayloadFromS3 } from "@/lib/notetaker-sessions-history.server";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
@@ -99,46 +99,55 @@ export const getNotetakerSession = createServerFn({ method: "POST" })
       const res = await notetakerUpstream(`/api/session/${encodeURIComponent(data.botId)}`);
       const typed = normalizeSessionPayload(res, data.botId);
 
-      const needsS3Content =
-        typed.lines.length === 0 ||
-        ["ended", "completed", "disconnected", "left", "finished", "persisted"].includes(
-          String(typed.session?.status || "").toLowerCase(),
-        );
-      if (needsS3Content) {
-        const fromS3 = await loadPersistedSessionPayloadFromS3(data.botId);
-        if (fromS3) {
-          if (!typed.lines.length && fromS3.lines.length) typed.lines = fromS3.lines;
-          if (!typed.notesMd && fromS3.notesMd) {
-            typed.notesMd = fromS3.notesMd;
-            typed.notesModel = fromS3.notesModel;
-          }
-          if (fromS3.persistedInS3) typed.persistedInS3 = true;
-          typed.participantCount = Math.max(typed.participantCount, fromS3.participantCount);
+      const fromS3 = await loadPersistedSessionPayloadFromS3(data.botId);
+      if (fromS3) {
+        const upstreamCount = typed.lines.length;
+        const s3Count = fromS3.lines.length;
+        if (s3Count > upstreamCount) typed.lines = fromS3.lines;
+        if (!typed.notesMd && fromS3.notesMd) {
+          typed.notesMd = fromS3.notesMd;
+          typed.notesModel = fromS3.notesModel;
+        }
+        if (fromS3.persistedInS3) typed.persistedInS3 = true;
+        typed.participantCount = Math.max(typed.participantCount, fromS3.participantCount);
+        if (!typed.session.title || typed.session.title === "Meeting") {
+          typed.session = { ...typed.session, title: fromS3.session.title };
+        }
+      }
+
+      if (typed.session?.botId && typed.lines.length > 0) {
+        try {
+          await persistSession({ session: typed.session, lines: typed.lines, notes: null });
+        } catch {
+          // local checkpoint is best-effort
+        }
+        try {
+          await maybeCheckpointTranscriptToS3(typed.session, typed.lines);
+        } catch {
+          // S3 checkpoint must not block the session view
         }
       }
 
       const st = String(typed.session?.status || "").toLowerCase();
       const ended = ["ended", "completed", "disconnected", "left", "finished"].includes(st);
 
-      if (typed.session?.botId && typed.lines.length > 0) {
-        if (ended) {
-          const existing = await getPersistedSession(typed.session.botId);
-          if (!existing?.finalizedAt) {
-            let notes: { notes: string; model?: string } | null = null;
-            try {
-              notes = (await notetakerUpstream(`/api/session/${encodeURIComponent(data.botId)}/notes`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: "" }),
-              })) as { notes: string; model?: string };
-            } catch {
-              // Notes generation can fail; local persistence should still work.
-            }
-            await persistSession({ session: typed.session, lines: typed.lines ?? [], notes });
-            if (notes?.notes) {
-              typed.notesMd = notes.notes;
-              typed.notesModel = notes.model;
-            }
+      if (typed.session?.botId && typed.lines.length > 0 && ended) {
+        const existing = await getPersistedSession(typed.session.botId);
+        if (!existing?.finalizedAt || (existing.transcript?.lineCount ?? 0) < typed.lines.length) {
+          let notes: { notes: string; model?: string } | null = null;
+          try {
+            notes = (await notetakerUpstream(`/api/session/${encodeURIComponent(data.botId)}/notes`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: "" }),
+            })) as { notes: string; model?: string };
+          } catch {
+            // Notes generation can fail; local persistence should still work.
+          }
+          await persistSession({ session: typed.session, lines: typed.lines ?? [], notes });
+          if (notes?.notes) {
+            typed.notesMd = notes.notes;
+            typed.notesModel = notes.model;
           }
         }
 

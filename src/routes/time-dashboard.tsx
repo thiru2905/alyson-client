@@ -136,8 +136,8 @@ function TimeDashboardPage() {
   }, [filteredRollups, sortBy, sortDir]);
 
   const rankByEmployeeId = useMemo(
-    () => timeDashboardRank(filteredRollups, sortBy),
-    [filteredRollups, sortBy],
+    () => timeDashboardRank(employeeRollups),
+    [employeeRollups],
   );
 
   const medalSortLabel =
@@ -465,8 +465,8 @@ function TimeDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {employeeRollups.map((e) => {
-                    const rank = rankByEmployeeId.get(e.employee_id) ?? 0;
+                  {employeeRollups.map((e, rowIndex) => {
+                    const rank = rankByEmployeeId.get(e.employee_id) ?? rowIndex + 1;
                     return (
                     <tr
                       key={e.employee_id}
@@ -482,7 +482,7 @@ function TimeDashboardPage() {
                       }}
                     >
                       <td align="center" className="align-middle">
-                        {rank > 0 ? rankCellContent(rank) : "—"}
+                        {rankCellContent(rank)}
                       </td>
                       <td className="align-middle">
                         <div className="font-medium text-[13px]">

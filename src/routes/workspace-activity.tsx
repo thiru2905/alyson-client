@@ -133,7 +133,7 @@ function WorkspaceActivityPage() {
     });
   }, [rows, search, sortBy, sortDir]);
 
-  const rankByEmail = useMemo(() => workspaceActivityRank(rows), [rows]);
+  const rankByEmail = useMemo(() => workspaceActivityRank(filteredRows), [filteredRows]);
 
   const hourlyEmployeeOptions = useMemo(
     () =>
@@ -523,8 +523,8 @@ function WorkspaceActivityPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((r) => {
-                    const rank = rankByEmail.get(r.userEmail) ?? 0;
+                  {filteredRows.map((r, rowIndex) => {
+                    const rank = rankByEmail.get(r.userEmail) ?? rowIndex + 1;
                     return (
                     <tr
                       key={r.userEmail}
@@ -536,7 +536,7 @@ function WorkspaceActivityPage() {
                       onClick={() => setHourlyEmployeeEmail(r.userEmail)}
                       title="Click to load hourly breakdown below"
                     >
-                      <td align="center">{rank > 0 ? rankCellContent(rank) : "—"}</td>
+                      <td align="center">{rankCellContent(rank)}</td>
                       <td>{r.userEmail}</td>
                       <td align="right" className="font-mono">
                         {r.emailsSent}

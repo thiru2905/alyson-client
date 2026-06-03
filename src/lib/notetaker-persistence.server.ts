@@ -2,6 +2,17 @@ import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } fr
 import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 
+export type NotetakerBotIndexDoc = {
+  version: number;
+  botId: string;
+  title?: string;
+  prefix: string;
+  transcriptKey?: string;
+  notesKey?: string | null;
+  finalizedAt?: string;
+  lineCount?: number;
+};
+
 function requireEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing ${name} (required for persistence)`);
@@ -91,17 +102,28 @@ export async function persistMeetingToS3({
   session,
   lines,
   notes,
+  existingIndex,
 }: {
   session: NotetakerSession;
   lines: NotetakerTranscriptLine[];
   notes: { notesMd: string; model?: string } | null;
+  /** Reuse stable S3 keys when updating an in-progress or growing transcript. */
+  existingIndex?: NotetakerBotIndexDoc | null;
 }) {
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
   await ensureBucketExists(bucket);
   session = await withResolvedMeetingTitle(session);
-  const prefix = buildS3Prefix(session);
-  const transcriptKey = `alyson-notetaker/transcripts/${prefix}/transcript.txt`;
-  const notesKey = `alyson-notetaker/meetingnotes/${prefix}/notes.md`;
+
+  const prefix =
+    existingIndex?.prefix && String(existingIndex.prefix).trim()
+      ? String(existingIndex.prefix)
+      : buildS3Prefix(session);
+  const transcriptKey =
+    existingIndex?.transcriptKey ||
+    `alyson-notetaker/transcripts/${prefix}/transcript.txt`;
+  const notesKey =
+    existingIndex?.notesKey ||
+    `alyson-notetaker/meetingnotes/${prefix}/notes.md`;
   const botIndexKey = `alyson-notetaker/bot-index/${encodeURIComponent(session.botId)}.json`;
 
   const endedAt = new Date().toISOString();
@@ -150,8 +172,9 @@ export async function persistMeetingToS3({
           title: session.title,
           prefix,
           transcriptKey,
-          notesKey: notes?.notesMd ? notesKey : null,
+          notesKey: notes?.notesMd ? notesKey : existingIndex?.notesKey ?? null,
           finalizedAt: endedAt,
+          lineCount: transcript.lineCount,
         },
         null,
         2,

@@ -5,8 +5,11 @@ import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { generateSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
 import {
   isMeetingPersistedInS3,
+  loadBotIndexDoc,
+  loadPersistedSessionPayloadFromS3,
   mergeNotetakerSessions,
 } from "@/lib/notetaker-sessions-history.server";
+import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { getNotetakerSessionsIndexFromS3, putNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3.server";
 
 function autoPersistEnabled() {
@@ -72,6 +75,75 @@ export type AutoPersistResult = {
   notesModel?: string;
 };
 
+const checkpointThrottle = new Map<string, { at: number; lineCount: number }>();
+const CHECKPOINT_MIN_MS = 25_000;
+
+function endedStatus(status?: string) {
+  return ["ended", "completed", "disconnected", "left", "finished", "persisted"].includes(
+    String(status || "").toLowerCase(),
+  );
+}
+
+/**
+ * Incrementally write transcript to S3 while a meeting is live (or after upstream TTL).
+ * Overwrites transcript.txt when line count grows; reuses bot-index prefix.
+ */
+export async function maybeCheckpointTranscriptToS3(
+  session: NotetakerSession,
+  lines: NotetakerTranscriptLine[],
+): Promise<void> {
+  if (!autoPersistEnabled()) return;
+
+  const botId = String(session.botId || "").trim();
+  if (!botId || !lines.length) return;
+
+  const transcript = composeTranscript(lines);
+  if (!transcript.transcriptText.trim()) return;
+
+  const prev = checkpointThrottle.get(botId);
+  if (prev && Date.now() - prev.at < CHECKPOINT_MIN_MS && lines.length <= prev.lineCount) {
+    return;
+  }
+
+  let existingIndex = await loadBotIndexDoc(botId);
+  if (existingIndex?.lineCount != null && lines.length <= existingIndex.lineCount) {
+    checkpointThrottle.set(botId, { at: Date.now(), lineCount: lines.length });
+    return;
+  }
+
+  const resolved = await withResolvedMeetingTitle(session);
+  await persistMeetingToS3({
+    session: resolved,
+    lines,
+    notes: null,
+    existingIndex: existingIndex
+      ? {
+          version: 1,
+          botId,
+          title: existingIndex.title,
+          prefix: existingIndex.prefix,
+          transcriptKey: existingIndex.transcriptKey,
+          notesKey: existingIndex.notesKey,
+          finalizedAt: existingIndex.finalizedAt,
+          lineCount: existingIndex.lineCount,
+        }
+      : null,
+  });
+
+  try {
+    await registerScheduledBotInSessionsCatalog({
+      ...resolved,
+      status: endedStatus(resolved.status) ? "persisted" : resolved.status || "in_call",
+    });
+    const { invalidatePersistedSessionsS3Cache } = await import("@/lib/notetaker-sessions-history.server");
+    invalidatePersistedSessionsS3Cache();
+  } catch {
+    // best-effort catalog touch
+  }
+
+  checkpointThrottle.set(botId, { at: Date.now(), lineCount: lines.length });
+}
+
 /**
  * Write transcript (+ optional notes) to S3 when a meeting ends.
  * Idempotent: skips if bot-index already exists unless force=true.
@@ -96,10 +168,17 @@ export async function autoPersistEndedMeetingToS3(args: {
     return { persisted: false, skipped: "empty_transcript" };
   }
 
+  let existingIndex = await loadBotIndexDoc(botId).catch(() => null);
+
   if (!args.force) {
     try {
       if (await isMeetingPersistedInS3(botId)) {
-        return { persisted: false, skipped: "already_in_s3" };
+        const s3Payload = await loadPersistedSessionPayloadFromS3(botId);
+        const s3LineCount = s3Payload?.lines?.length ?? 0;
+        if (args.lines.length <= s3LineCount) {
+          return { persisted: false, skipped: "already_in_s3" };
+        }
+        // More lines than S3 — update transcript (notes only when forced or missing).
       }
     } catch {
       // proceed if S3 check fails (e.g. creds) — manual persist still available
@@ -121,6 +200,18 @@ export async function autoPersistEndedMeetingToS3(args: {
     session,
     lines: args.lines,
     notes: notes ? { notesMd: notes.notesMd, model: notes.model } : null,
+    existingIndex: existingIndex
+      ? {
+          version: 1,
+          botId,
+          title: existingIndex.title,
+          prefix: existingIndex.prefix,
+          transcriptKey: existingIndex.transcriptKey,
+          notesKey: existingIndex.notesKey,
+          finalizedAt: existingIndex.finalizedAt,
+          lineCount: existingIndex.lineCount,
+        }
+      : null,
   });
 
   try {

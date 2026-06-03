@@ -167,7 +167,7 @@ export function downloadWorkspaceActivityPdf(args: {
       "Chat Messages",
     ]],
     body: rowsWithRank.map((r) => [
-      medalTierForRank(r.rank) ? rankColumnBodyPlaceholder() : r.rank > 0 ? `#${r.rank}` : "—",
+      medalTierForRank(r.rank) ? rankColumnBodyPlaceholder() : `#${r.rank}`,
       r.userEmail,
       String(r.emailsSent),
       String(r.meetingsCreated),

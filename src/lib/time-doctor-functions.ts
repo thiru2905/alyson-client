@@ -109,9 +109,9 @@ export const fetchTimeDoctorUserDetail = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const range = getRange({ start: data.start, end: data.end });
     const tab = data.tab ?? "overview";
-    const company = await getCompany({ auth: "access_only" });
+    const company = await getCompany();
 
-    const users = await listUsers(company.id, { auth: "access_only" }).catch(() => []);
+    const users = await listUsers(company.id, ).catch(() => []);
     const user = users.find((u) => u.id === data.userId) ?? { id: data.userId, name: `Employee ${data.userId}`, email: "", title: "" };
 
     const warnings: string[] = [];
@@ -120,7 +120,7 @@ export const fetchTimeDoctorUserDetail = createServerFn({ method: "GET" })
     }
 
     if (tab === "apps") {
-      const appUsage = await listCompanyAppUsage(company.id, range, data.userId, { auth: "access_only" }).catch((e) => {
+      const appUsage = await listCompanyAppUsage(company.id, range, data.userId, ).catch((e) => {
         warnings.push(`apps: ${String(e)}`);
         return [];
       });
@@ -149,7 +149,7 @@ export const fetchTimeDoctorUserDetail = createServerFn({ method: "GET" })
     }
 
     if (tab === "work") {
-      const worklogs = await listCompanyWorklogs(company.id, range, data.userId, { auth: "access_only" }).catch((e) => {
+      const worklogs = await listCompanyWorklogs(company.id, range, data.userId, ).catch((e) => {
         warnings.push(`worklogs: ${String(e)}`);
         return [];
       });
@@ -195,7 +195,7 @@ export const fetchTimeDoctorUserDetail = createServerFn({ method: "GET" })
     // Important: `/companies/{id}/worklogs` does not reliably honor `user_id` filtering for this token,
     // so pulling raw worklogs can require paging thousands of rows.
     // For a "cards + rollups" profile view (like your screenshots), we compute daily totals via per-day consolidated calls.
-    const rollup = await buildUserRollups(company.id, range, data.userId, { auth: "access_only", warnings }).catch((e) => {
+    const rollup = await buildUserRollups(company.id, range, data.userId, { warnings }).catch((e) => {
       warnings.push(`rollups: ${String(e)}`);
       return { daily: [], weekly: [], monthly: [], totals: { productiveSeconds: 0, poorSeconds: 0 } };
     });
@@ -376,14 +376,14 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
     const start = data.start ?? defaults.start;
     const day = end;
     const period = clampRange(start, end);
-    const company = await getCompany({ auth: "access_only" });
+    const company = await getCompany();
 
     const [usersR, dailyR, weeklyR, monthlyR, periodR] = await Promise.allSettled([
-      listUsers(company.id, { auth: "access_only" }),
-      listDailyWorkSecondsByUser(company.id, day, { auth: "access_only" }),
-      listWeekToDateWorkSecondsByUser(company.id, day, { auth: "access_only" }),
-      listMonthToDateWorkSecondsByUser(company.id, day, { auth: "access_only" }),
-      listWorkSecondsByUserForRange(company.id, period.start, period.end, { auth: "access_only" }),
+      listUsers(company.id, ),
+      listDailyWorkSecondsByUser(company.id, day, ),
+      listWeekToDateWorkSecondsByUser(company.id, day, ),
+      listMonthToDateWorkSecondsByUser(company.id, day, ),
+      listWorkSecondsByUserForRange(company.id, period.start, period.end, ),
     ]);
 
     const users = usersR.status === "fulfilled" ? usersR.value : [];
@@ -617,17 +617,48 @@ function timeDoctorEnv() {
 type TokenState = { accessToken: string; refreshToken: string; expiresAtMs: number | null };
 const tokenState: TokenState = { accessToken: "", refreshToken: "", expiresAtMs: null };
 let refreshInFlight: Promise<string> | null = null;
+let lastSuccessfulRefreshMs = 0;
+
+/** Re-use refreshed access token within a warm server process (~45 min). */
+const REFRESH_INTERVAL_MS = 45 * 60 * 1000;
+
+export function canConfigureTimeDoctorRefresh() {
+  try {
+    const env = timeDoctorEnv();
+    return !!(env.API_REFRESH_TOKEN && env.OAUTH_CLIENT_ID && env.OAUTH_CLIENT_SECRET);
+  } catch {
+    return false;
+  }
+}
+
+function parseAccessTokenExpiresAtMs(): number | null {
+  const raw = process.env.API_ACCESS_TOKEN_EXPIRES_AT?.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const n = Number(raw);
+    return n > 1e12 ? n : n * 1000;
+  }
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d.getTime() : null;
+}
 
 function initTokensOnce() {
   const env = timeDoctorEnv();
   // Always reflect latest env values (dev-friendly).
   tokenState.accessToken = env.API_ACCESS_TOKEN;
   tokenState.refreshToken = env.API_REFRESH_TOKEN || "";
+  const envExpiry = parseAccessTokenExpiresAtMs();
+  if (envExpiry != null) tokenState.expiresAtMs = envExpiry;
 }
 
 function shouldProactivelyRefresh(skewMs = 60_000): boolean {
   if (!tokenState.expiresAtMs) return false;
   return Date.now() + skewMs >= tokenState.expiresAtMs;
+}
+
+function shouldRefreshByAge(): boolean {
+  if (!lastSuccessfulRefreshMs) return true;
+  return Date.now() - lastSuccessfulRefreshMs >= REFRESH_INTERVAL_MS;
 }
 
 function tokenEndpointFromBaseUrl(baseUrl: string): string {
@@ -704,8 +735,9 @@ async function refreshAccessToken(): Promise<string> {
     if (typeof json.expires_in === "number" && Number.isFinite(json.expires_in)) {
       tokenState.expiresAtMs = Date.now() + Math.max(0, json.expires_in - 30) * 1000;
     } else {
-      tokenState.expiresAtMs = null;
+      tokenState.expiresAtMs = Date.now() + 55 * 60 * 1000;
     }
+    lastSuccessfulRefreshMs = Date.now();
 
     return tokenState.accessToken;
   })().finally(() => {
@@ -758,13 +790,14 @@ async function upstreamFetch<T>(
     !!env.OAUTH_CLIENT_SECRET;
 
   let token = tokenState.accessToken || env.API_ACCESS_TOKEN;
-  // Proactive refresh only when we have an expiry (or token missing).
-  // If refresh token is invalid but access token still works, we should not fail the request.
-  if (canRefresh && (!token || shouldProactivelyRefresh())) {
+
+  if (canRefresh && (shouldRefreshByAge() || shouldProactivelyRefresh() || !token)) {
     try {
       token = await refreshAccessToken();
-    } catch {
-      // ignore
+    } catch (refreshErr) {
+      if (!token) {
+        throw refreshErr instanceof Error ? refreshErr : new Error(String(refreshErr));
+      }
     }
   }
 
@@ -773,9 +806,13 @@ async function upstreamFetch<T>(
 
   if (!res.ok && (res.status === 401 || res.status === 403)) {
     if (canRefresh) {
-      const newToken = await refreshAccessToken();
-      res = await doFetch(newToken);
-      text = await res.text().catch(() => "");
+      try {
+        const newToken = await refreshAccessToken();
+        res = await doFetch(newToken);
+        text = await res.text().catch(() => "");
+      } catch (refreshErr) {
+        throw refreshErr instanceof Error ? refreshErr : new Error(String(refreshErr));
+      }
     }
   }
 
@@ -1310,7 +1347,7 @@ async function getCompanyIdCached(): Promise<string> {
   if (tdCompanyCache && Date.now() - tdCompanyCache.at < TD_LIGHT_CACHE_MS) {
     return tdCompanyCache.id;
   }
-  const company = await getCompany({ auth: "access_only" });
+  const company = await getCompany();
   tdCompanyCache = { at: Date.now(), id: company.id, name: company.name };
   return company.id;
 }
@@ -1323,7 +1360,7 @@ export async function listTimeDoctorUsersLight(): Promise<
     return tdUsersLightCache.users;
   }
   const companyId = await getCompanyIdCached();
-  const users = await listUsers(companyId, { auth: "access_only" });
+  const users = await listUsers(companyId, );
   const mapped = users
     .map((u) => ({
       id: u.id,
@@ -1348,8 +1385,8 @@ export async function fetchHourlyTimeDoctorSegments(
     const companyId = await getCompanyIdCached();
     const range = clampRange(start, end);
     const [worklogs, poorTime] = await Promise.all([
-      listCompanyWorklogs(companyId, range, userId, { auth: "access_only" }),
-      listCompanyPoorTime(companyId, range, userId, { auth: "access_only" }),
+      listCompanyWorklogs(companyId, range, userId, ),
+      listCompanyPoorTime(companyId, range, userId, ),
     ]);
     return { worklogs, poorTime };
   } catch {
@@ -1367,11 +1404,11 @@ const WorklogEntriesInput = z.object({
 export const fetchUserWorklogEntriesForRange = createServerFn({ method: "GET" })
   .inputValidator((data: unknown) => WorklogEntriesInput.parse(data))
   .handler(async ({ data }) => {
-    const company = await getCompany({ auth: "access_only" });
+    const company = await getCompany();
     const range = clampRange(data.start, data.end);
     const [worklogs, poorTime] = await Promise.all([
-      listCompanyWorklogs(company.id, range, data.userId, { auth: "access_only" }),
-      listCompanyPoorTime(company.id, range, data.userId, { auth: "access_only" }),
+      listCompanyWorklogs(company.id, range, data.userId, ),
+      listCompanyPoorTime(company.id, range, data.userId, ),
     ]);
     return { range, worklogs, poorTime };
   });
