@@ -3,6 +3,12 @@ import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
+import {
+  readUnifiedScheduledStateFromS3,
+  unifiedScheduledStateUsesS3,
+  writeUnifiedScheduledStateToS3,
+  type UnifiedScheduledStateEntry,
+} from "@/lib/unified-scheduled-s3.server";
 
 export type UnifiedBotStatus = "not_required" | "pending" | "scheduled" | "failed";
 export type UnifiedMeetingPlatform = "google_meet" | "unknown";
@@ -48,21 +54,7 @@ type UnifiedScheduleSummary = {
   errors: string[];
 };
 
-type StateEntry = {
-  dedupeKey: string;
-  googleEventId: string;
-  iCalUID: string;
-  calendarUserEmail: string;
-  title?: string;
-  meetingUrl: string;
-  startTime: string;
-  endTime?: string;
-  botJoinAt: string;
-  recallBotId: string;
-  creationSource?: "notetaker_managed" | "direct_recall_fallback";
-  scheduledAt: string;
-  status: "scheduled";
-};
+type StateEntry = UnifiedScheduledStateEntry;
 
 type ScheduledState = {
   scheduled: StateEntry[];
@@ -70,6 +62,9 @@ type ScheduledState = {
 
 const CACHE_TTL_MS = 60_000;
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
+/** Recall needs join_at slightly in the future for "join now". */
+const IMMEDIATE_JOIN_DELAY_MS = 20 * 1000;
+const MEETING_END_GRACE_MS = 20 * 60 * 1000;
 
 let cache: { at: number; meetings: UnifiedMeeting[]; summary: UnifiedMeetingsScanSummary } | null = null;
 
@@ -160,13 +155,35 @@ function computeSkipReason(event: any, meetingUrl: string | null): string | null
   return null;
 }
 
-function computeBotJoinAt(startTime: string): string | null {
+/**
+ * When the meeting is in progress, schedule join ASAP (not only at calendar start − 2 min).
+ * Returns null only after the meeting window has ended.
+ */
+export function resolveBotJoinAt(startTime: string, endTime?: string): string | null {
   const startMs = new Date(startTime).getTime();
   if (!Number.isFinite(startMs)) return null;
   const now = Date.now();
+  const endMs = endTime ? new Date(endTime).getTime() : NaN;
+  const effectiveEnd = Number.isFinite(endMs) ? endMs + MEETING_END_GRACE_MS : startMs + 3 * 60 * 60 * 1000;
+
+  if (now > effectiveEnd) return null;
+
+  const plannedJoinMs = startMs - BOT_JOIN_OFFSET_MS;
+  const inMeetingWindow = now >= plannedJoinMs && now <= effectiveEnd;
+
+  if (inMeetingWindow) {
+    return new Date(now + IMMEDIATE_JOIN_DELAY_MS).toISOString();
+  }
+
   if (startMs <= now) return null;
-  const joinMs = startMs - BOT_JOIN_OFFSET_MS;
-  return new Date(joinMs > now ? joinMs : now).toISOString();
+
+  const joinMs = plannedJoinMs;
+  return new Date(joinMs > now ? joinMs : now + IMMEDIATE_JOIN_DELAY_MS).toISOString();
+}
+
+/** @deprecated Use resolveBotJoinAt */
+function computeBotJoinAt(startTime: string, endTime?: string) {
+  return resolveBotJoinAt(startTime, endTime);
 }
 
 async function loadServiceAccountJwtForSubject(subject: string, scopes: string[]) {
@@ -267,6 +284,14 @@ async function getCalendarEventForUser(email: string, googleEventId: string): Pr
 }
 
 async function readState(): Promise<ScheduledState> {
+  if (unifiedScheduledStateUsesS3()) {
+    try {
+      const fromS3 = await readUnifiedScheduledStateFromS3();
+      return { scheduled: fromS3.scheduled };
+    } catch {
+      // fall through to local file
+    }
+  }
   const file = stateFilePath();
   try {
     const raw = await fs.readFile(file, "utf8");
@@ -278,9 +303,25 @@ async function readState(): Promise<ScheduledState> {
 }
 
 async function writeState(state: ScheduledState): Promise<void> {
+  if (unifiedScheduledStateUsesS3()) {
+    try {
+      await writeUnifiedScheduledStateToS3({
+        version: 1,
+        updatedAt: nowIso(),
+        scheduled: state.scheduled,
+      });
+    } catch (e) {
+      console.error("[unified-schedule] S3 write failed:", e);
+      throw e;
+    }
+  }
   const file = stateFilePath();
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  } catch {
+    if (!unifiedScheduledStateUsesS3()) throw new Error("Failed to write unified scheduled state");
+  }
 }
 
 export type UnifiedScheduledBotSession = {
@@ -475,7 +516,7 @@ function normalizeMeetingEvent(userEmail: string, event: any, stateByKey: Map<st
       : [],
     shouldBotJoin,
     botScheduled: Boolean(stateEntry),
-    botJoinAt: shouldBotJoin ? computeBotJoinAt(startTime) : null,
+    botJoinAt: shouldBotJoin ? resolveBotJoinAt(startTime, endTime) : null,
     recallBotId: stateEntry?.recallBotId ? String(stateEntry.recallBotId) : null,
     botStatus,
     skipReason: reason,
@@ -579,31 +620,52 @@ export async function refreshUnifiedMeetings(): Promise<UnifiedMeetingsScanSumma
   return summary;
 }
 
-async function scheduleMeetingInternal(meeting: UnifiedMeeting): Promise<{ scheduled: boolean; error?: string }> {
+async function dispatchBotForMeeting(
+  meeting: UnifiedMeeting,
+  joinAt: string,
+): Promise<{ botId: string; creationSource: StateEntry["creationSource"] }> {
+  try {
+    const recall = await createNotetakerManagedBot({ meetingUrl: meeting.meetingUrl!, botJoinAt: joinAt, meeting });
+    return { botId: recall.botId, creationSource: "notetaker_managed" };
+  } catch {
+    const recall = await createRecallBot({ meetingUrl: meeting.meetingUrl!, botJoinAt: joinAt, meeting });
+    return { botId: recall.botId, creationSource: "direct_recall_fallback" };
+  }
+}
+
+async function scheduleMeetingInternal(
+  meeting: UnifiedMeeting,
+  options?: { forceRedispatch?: boolean },
+): Promise<{ scheduled: boolean; error?: string; redispatched?: boolean }> {
   if (!meeting.meetingUrl) return { scheduled: false, error: "No meeting URL" };
-  const joinAt = computeBotJoinAt(meeting.startTime);
-  if (!joinAt) return { scheduled: false, error: "Meeting start time is in the past" };
+  const joinAt = resolveBotJoinAt(meeting.startTime, meeting.endTime);
+  if (!joinAt) {
+    return {
+      scheduled: false,
+      error: "Meeting has ended or is not joinable. Pick a future meeting or join while the event is still active.",
+    };
+  }
 
   const state = await readState();
   const key = dedupeKey(meeting.meetingUrl, meeting.startTime);
   const legacyKey = dedupeKeyLegacy(meeting.meetingUrl, meeting.startTime, meeting.calendarUserEmail);
-  if (state.scheduled.some((s) => s.dedupeKey === key || s.dedupeKey === legacyKey)) {
-    return { scheduled: false, error: "Already scheduled (dedupe)" };
+  const existingIdx = state.scheduled.findIndex(
+    (s) => s.dedupeKey === key || s.dedupeKey === legacyKey,
+  );
+
+  const joinAtMs = new Date(joinAt).getTime();
+  const priorJoinPassed = existingIdx >= 0 && new Date(state.scheduled[existingIdx]!.botJoinAt).getTime() < Date.now() - 60_000;
+  const inWindow = resolveBotJoinAt(meeting.startTime, meeting.endTime) != null;
+  const shouldRedispatch =
+    Boolean(options?.forceRedispatch) || (existingIdx >= 0 && inWindow && priorJoinPassed);
+
+  if (existingIdx >= 0 && !shouldRedispatch) {
+    return { scheduled: false, error: "Already scheduled (dedupe). Bot id is stored in S3 state." };
   }
 
   try {
-    let recall: { botId: string };
-    let creationSource: StateEntry["creationSource"] = "notetaker_managed";
-    try {
-      // Preferred path: notetaker-managed creation (manual-like transcript flow).
-      recall = await createNotetakerManagedBot({ meetingUrl: meeting.meetingUrl, botJoinAt: joinAt, meeting });
-    } catch (managedErr) {
-      // Fallback path: direct Recall scheduling if notetaker service cannot create bot
-      // (e.g. provider-side credit/env mismatch).
-      recall = await createRecallBot({ meetingUrl: meeting.meetingUrl, botJoinAt: joinAt, meeting });
-      creationSource = "direct_recall_fallback";
-    }
-    state.scheduled.push({
+    const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt);
+    const entry: StateEntry = {
       dedupeKey: key,
       googleEventId: meeting.googleEventId,
       iCalUID: meeting.iCalUID,
@@ -613,28 +675,44 @@ async function scheduleMeetingInternal(meeting: UnifiedMeeting): Promise<{ sched
       startTime: meeting.startTime,
       endTime: meeting.endTime,
       botJoinAt: joinAt,
-      recallBotId: recall.botId,
+      recallBotId: botId,
       creationSource,
       scheduledAt: nowIso(),
       status: "scheduled",
-    });
+    };
+
+    if (existingIdx >= 0) {
+      state.scheduled[existingIdx] = entry;
+    } else {
+      state.scheduled.push(entry);
+    }
     await writeState(state);
 
     const catalogTitle = buildUnifiedTitle(meeting.title, meeting.startTime);
     await registerScheduledBotInSessionsCatalog({
-      botId: recall.botId,
+      botId,
       title: catalogTitle,
       meetingUrl: meeting.meetingUrl,
       createdAt: nowIso(),
       status: "scheduled",
     });
 
-    return { scheduled: true };
+    return { scheduled: true, redispatched: shouldRedispatch && existingIdx >= 0 };
   } catch (e) {
-    return {
-      scheduled: false,
-      error: e instanceof Error ? e.message : "Failed to schedule bot",
-    };
+    const message = e instanceof Error ? e.message : "Failed to schedule bot";
+    if (existingIdx >= 0) {
+      state.scheduled[existingIdx] = {
+        ...state.scheduled[existingIdx]!,
+        status: "failed",
+        lastError: message,
+      };
+      try {
+        await writeState(state);
+      } catch {
+        // ignore
+      }
+    }
+    return { scheduled: false, error: message };
   }
 }
 
@@ -657,7 +735,10 @@ export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSumm
   return out;
 }
 
-export async function scheduleUnifiedMeetingById(meetingId: string): Promise<{ ok: boolean; message: string }> {
+export async function scheduleUnifiedMeetingById(
+  meetingId: string,
+  options?: { forceRedispatch?: boolean },
+): Promise<{ ok: boolean; message: string; botId?: string; redispatched?: boolean }> {
   const decoded = decodeMeetingId(meetingId);
   if (!decoded) return { ok: false, message: "Invalid meeting id" };
   const state = await readState();
@@ -670,8 +751,18 @@ export async function scheduleUnifiedMeetingById(meetingId: string): Promise<{ o
   if (!meeting.meetingUrl) return { ok: false, message: "Cannot schedule: no meeting URL" };
   if (!meeting.startTime) return { ok: false, message: "Cannot schedule: missing start dateTime" };
 
-  const result = await scheduleMeetingInternal(meeting);
+  const result = await scheduleMeetingInternal(meeting, options);
   cache = null;
   if (!result.scheduled) return { ok: false, message: result.error || "Not scheduled" };
-  return { ok: true, message: "Alyson scheduled" };
+  const updated = await readState();
+  const key = dedupeKey(meeting.meetingUrl!, meeting.startTime);
+  const row = updated.scheduled.find((s) => s.dedupeKey === key);
+  return {
+    ok: true,
+    message: result.redispatched
+      ? "Alyson bot re-dispatched to join now (prior join time had passed)"
+      : "Alyson scheduled",
+    botId: row?.recallBotId,
+    redispatched: result.redispatched,
+  };
 }

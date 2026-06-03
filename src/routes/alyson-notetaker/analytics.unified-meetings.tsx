@@ -82,11 +82,15 @@ export function UnifiedMeetingsPage() {
   // Company-wide bulk schedule + Vercel cron (schedule-bots) disabled — use per-row Schedule Alyson only.
 
   const scheduleOneM = useMutation({
-    mutationFn: async (meetingId: string) => {
-      const res = await fetch(`/api/analytics/unified-meetings/${encodeURIComponent(meetingId)}/schedule`, { method: "POST" });
+    mutationFn: async ({ meetingId, redispatch }: { meetingId: string; redispatch?: boolean }) => {
+      const qs = redispatch ? "?redispatch=1" : "";
+      const res = await fetch(
+        `/api/analytics/unified-meetings/${encodeURIComponent(meetingId)}/schedule${qs}`,
+        { method: "POST" },
+      );
       const json = await res.json();
       if (!res.ok) throw new Error(String(json?.message || json?.error || "Manual schedule failed"));
-      return json as { ok: boolean; message: string };
+      return json as { ok: boolean; message: string; botId?: string };
     },
     onSuccess: (r) => {
       toast.success(r.message);
@@ -189,8 +193,18 @@ export function UnifiedMeetingsPage() {
                 </thead>
                 <tbody>
                   {meetings.map((m) => {
+                    const now = Date.now();
                     const startMs = new Date(m.startTime).getTime();
-                    const canSchedule = Boolean(m.meetingUrl) && Number.isFinite(startMs) && startMs > Date.now();
+                    const endMs = new Date(m.endTime).getTime();
+                    const meetingActive =
+                      Number.isFinite(startMs) &&
+                      now >= startMs - 5 * 60_000 &&
+                      (!Number.isFinite(endMs) || now <= endMs + 20 * 60_000);
+                    const canSchedule =
+                      Boolean(m.meetingUrl) &&
+                      Number.isFinite(startMs) &&
+                      (startMs > now || meetingActive);
+                    const joinNow = m.botStatus === "scheduled" && meetingActive;
                     return (
                       <tr key={m.id} className="hover:bg-muted/30">
                         <td>{fmt(m.startTime)}</td>
@@ -231,10 +245,17 @@ export function UnifiedMeetingsPage() {
                           <button
                             type="button"
                             disabled={!canSchedule || scheduleOneM.isPending}
-                            onClick={() => scheduleOneM.mutate(m.id)}
+                            onClick={() =>
+                              scheduleOneM.mutate({ meetingId: m.id, redispatch: joinNow || undefined })
+                            }
                             className="h-7 px-2 rounded-md border border-border text-[11px] hover:bg-muted disabled:opacity-50"
+                            title={
+                              joinNow
+                                ? "Dispatch a new bot to join now (prior scheduled join time may have passed)"
+                                : "Schedule Alyson for this meeting"
+                            }
                           >
-                            Schedule Alyson
+                            {joinNow ? "Join now" : "Schedule Alyson"}
                           </button>
                         </td>
                       </tr>
