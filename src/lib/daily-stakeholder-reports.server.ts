@@ -8,7 +8,7 @@ import {
 import { getEmployeeScoring } from "@/lib/employee-scoring-functions";
 import { parseEmailList, sendResendEmail } from "@/lib/resend-mail.server";
 import { fetchTimeDoctorEmployeesTable, listTimeDoctorUsersLight } from "@/lib/time-doctor-functions";
-import { getWorkspaceActivity } from "@/lib/workspace-activity-functions";
+import { runGetWorkspaceActivity } from "@/lib/workspace-activity.server";
 
 function esc(s: string) {
   return s
@@ -84,7 +84,7 @@ export async function buildAndSendDailyStakeholderReports(): Promise<DailyReport
 
   const [scoringR, wsR, tdR, tdUsersR] = await Promise.allSettled([
     getEmployeeScoring({ data: { start: window.startIso, end: window.endIso } }),
-    getWorkspaceActivity({ data: { start: window.startIso, end: window.endIso } }),
+    runGetWorkspaceActivity({ start: window.startIso, end: window.endIso }),
     fetchTimeDoctorEmployeesTable({
       data: { start: window.tdStart, end: window.tdEnd, day: window.tdEnd },
     }),

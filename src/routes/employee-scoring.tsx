@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Download, FileText, Loader2, RefreshCw, Search, Trophy } from "lucide-react";
@@ -76,6 +76,7 @@ function rangesMatch(
 }
 
 function EmployeeScoringPage() {
+  const navigate = useNavigate();
   const now = useMemo(() => new Date(), []);
   const boot = useMemo(() => loadEmployeeScoringSession(), []);
   const fallbackStart = useMemo(
@@ -548,8 +549,15 @@ function EmployeeScoringPage() {
                           (hourlyEmployeeEmail === r.userEmail ? " ring-1 ring-inset ring-foreground/25" : "") +
                           " cursor-pointer hover:opacity-95"
                         }
-                        onClick={() => setHourlyEmployeeEmail(r.userEmail)}
-                        title="Click to load hourly breakdown below"
+                        onClick={() => {
+                          if (!applied || showingStaleWindow) return;
+                          navigate({
+                            to: "/employee-scoring/$userEmail",
+                            params: { userEmail: encodeURIComponent(r.userEmail) },
+                            search: { start: applied.start, end: applied.end },
+                          });
+                        }}
+                        title="Open detailed scoring — emails, chat, docs, meetings, Time Doctor focus"
                       >
                         <td align="center">{rankCellContent(r.rank)}</td>
                         <td>
@@ -602,8 +610,9 @@ function EmployeeScoringPage() {
             Hourly breakdown
           </div>
           <p className="text-[12px] text-muted-foreground mb-4 max-w-2xl">
-            Click a row above or pick an employee — uses the same scoring window (max 7 days per hourly load). Top 3
-            get gold, silver, and bronze medals with row highlights.
+            Click a row to open the <span className="text-foreground font-medium">scoring detail page</span> (email
+            subjects, docs, chat context, meetings, Time Doctor apps). Use the picker below for hourly breakdown (max 7
+            days). Top 3 get gold, silver, and bronze medals.
           </p>
           <HourlyActivityReport
             compact

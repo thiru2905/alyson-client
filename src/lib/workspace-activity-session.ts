@@ -1,4 +1,4 @@
-import type { WorkspaceActivityResponse } from "@/lib/workspace-activity-functions";
+import type { WorkspaceActivityResponse } from "@/lib/workspace-activity-types";
 
 export const WORKSPACE_ACTIVITY_STORAGE_KEY = "alyson-workspace-activity-session";
 

@@ -5,6 +5,7 @@ import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
 import { listReportActivities } from "@/lib/google-reports-activities";
+import { isGoogleDocsCreateEvent, isOutboundSmtpDelivery } from "@/lib/workspace-activity-content.server";
 import {
   fetchHourlyTimeDoctorSegments,
   listTimeDoctorUsersLight,
@@ -112,6 +113,19 @@ function extractNestedParameterMap(event: { parameters?: unknown[] }) {
   return data;
 }
 
+function mergeActivityEventsMeta(item: {
+  events?: Array<{ name?: string | null; parameters?: unknown[] }>;
+}): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const event of item.events ?? []) {
+    const meta = extractNestedParameterMap(event as { parameters?: unknown[] });
+    for (const [k, v] of Object.entries(meta)) {
+      if (v?.trim()) merged[k] = v;
+    }
+  }
+  return merged;
+}
+
 type BucketKey = string;
 
 function istBucketKey(isoTime: string): BucketKey | null {
@@ -197,11 +211,14 @@ async function listUserTimedAuditCounts(args: {
     for (const item of resp.data.items ?? []) {
       const time = String((item.id as { time?: string })?.time ?? "");
       if (!time) continue;
+      const fullMeta = mergeActivityEventsMeta(item);
+      let counted = false;
       for (const event of item.events ?? []) {
         if (String(event.name || "") !== args.eventName) continue;
-        const meta = extractNestedParameterMap(event as { parameters?: unknown[] });
-        if (args.includeEvent && !args.includeEvent(meta)) continue;
+        if (args.includeEvent && !args.includeEvent(fullMeta)) continue;
+        if (counted) continue;
         incrementBucket(counts, time);
+        counted = true;
       }
     }
     pageToken = resp.data.nextPageToken ?? undefined;
@@ -248,10 +265,7 @@ async function fetchGoogleHourlyCounts(
       eventName: "delivery",
       startTime,
       endTime,
-      includeEvent: (meta) =>
-        String(meta.flattened_destinations || "")
-          .toLowerCase()
-          .includes("smtp-outbound"),
+      includeEvent: (meta) => isOutboundSmtpDelivery(meta),
     }).catch((e) => {
       warnings.push(`gmail: ${e instanceof Error ? e.message : String(e)}`);
       return new Map<BucketKey, number>();
@@ -263,11 +277,7 @@ async function fetchGoogleHourlyCounts(
       eventName: "create",
       startTime,
       endTime,
-      includeEvent: (meta) => {
-        const docType = String(meta.doc_type || "").toLowerCase();
-        const mimeType = String(meta.mime_type || "").toLowerCase();
-        return docType.includes("document") || mimeType.includes("application/vnd.google-apps.document");
-      },
+      includeEvent: (meta) => isGoogleDocsCreateEvent(meta),
     }).catch((e) => {
       warnings.push(`drive: ${e instanceof Error ? e.message : String(e)}`);
       return new Map<BucketKey, number>();

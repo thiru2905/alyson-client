@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
-import type { WorkspaceActivityRow } from "@/lib/workspace-activity-functions";
+import type { WorkspaceActivityRow } from "@/lib/workspace-activity-types";
 import { medalTierForRank, workspaceActivityRank } from "@/lib/rank-medals-core";
 import {
   applyMedalRowStyle,

@@ -32,7 +32,9 @@ import { Route as AlysonNotetakerRouteRouteImport } from './routes/alyson-noteta
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BonusIndexRouteImport } from './routes/bonus/index'
 import { Route as AlysonNotetakerIndexRouteImport } from './routes/alyson-notetaker/index'
+import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspace-activity.$userEmail'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
+import { Route as EmployeeScoringUserEmailRouteImport } from './routes/employee-scoring.$userEmail'
 import { Route as BonusSimulateRouteImport } from './routes/bonus/simulate'
 import { Route as BonusPlansRouteImport } from './routes/bonus/plans'
 import { Route as BonusAuditRouteImport } from './routes/bonus/audit'
@@ -162,11 +164,23 @@ const AlysonNotetakerIndexRoute = AlysonNotetakerIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AlysonNotetakerRouteRoute,
 } as any)
+const WorkspaceActivityUserEmailRoute =
+  WorkspaceActivityUserEmailRouteImport.update({
+    id: '/$userEmail',
+    path: '/$userEmail',
+    getParentRoute: () => WorkspaceActivityRoute,
+  } as any)
 const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
   getParentRoute: () => TimeDashboardRoute,
 } as any)
+const EmployeeScoringUserEmailRoute =
+  EmployeeScoringUserEmailRouteImport.update({
+    id: '/$userEmail',
+    path: '/$userEmail',
+    getParentRoute: () => EmployeeScoringRoute,
+  } as any)
 const BonusSimulateRoute = BonusSimulateRouteImport.update({
   id: '/simulate',
   path: '/simulate',
@@ -250,7 +264,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
-  '/employee-scoring': typeof EmployeeScoringRoute
+  '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
@@ -261,7 +275,7 @@ export interface FileRoutesByFullPath {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/workspace-activity': typeof WorkspaceActivityRoute
+  '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -269,7 +283,9 @@ export interface FileRoutesByFullPath {
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
+  '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
@@ -287,7 +303,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
-  '/employee-scoring': typeof EmployeeScoringRoute
+  '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
@@ -298,7 +314,7 @@ export interface FileRoutesByTo {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/workspace-activity': typeof WorkspaceActivityRoute
+  '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -306,7 +322,9 @@ export interface FileRoutesByTo {
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
+  '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker': typeof AlysonNotetakerIndexRoute
   '/bonus': typeof BonusIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
@@ -327,7 +345,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
   '/documents': typeof DocumentsRoute
-  '/employee-scoring': typeof EmployeeScoringRoute
+  '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
@@ -338,7 +356,7 @@ export interface FileRoutesById {
   '/team': typeof TeamRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
   '/workflows': typeof WorkflowsRoute
-  '/workspace-activity': typeof WorkspaceActivityRoute
+  '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -346,7 +364,9 @@ export interface FileRoutesById {
   '/bonus/audit': typeof BonusAuditRoute
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
+  '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
@@ -387,7 +407,9 @@ export interface FileRouteTypes {
     | '/bonus/audit'
     | '/bonus/plans'
     | '/bonus/simulate'
+    | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
     | '/alyson-notetaker/analytics/unified-meetings'
@@ -424,7 +446,9 @@ export interface FileRouteTypes {
     | '/bonus/audit'
     | '/bonus/plans'
     | '/bonus/simulate'
+    | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/workspace-activity/$userEmail'
     | '/alyson-notetaker'
     | '/bonus'
     | '/alyson-notetaker/analytics/unified-meetings'
@@ -463,7 +487,9 @@ export interface FileRouteTypes {
     | '/bonus/audit'
     | '/bonus/plans'
     | '/bonus/simulate'
+    | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
     | '/alyson-notetaker/analytics/unified-meetings'
@@ -484,7 +510,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   BoardingRoute: typeof BoardingRoute
   DocumentsRoute: typeof DocumentsRoute
-  EmployeeScoringRoute: typeof EmployeeScoringRoute
+  EmployeeScoringRoute: typeof EmployeeScoringRouteWithChildren
   EquityRoute: typeof EquityRoute
   HandoverDocumentationRoute: typeof HandoverDocumentationRoute
   HelpRoute: typeof HelpRoute
@@ -495,7 +521,7 @@ export interface RootRouteChildren {
   TeamRoute: typeof TeamRoute
   TimeDashboardRoute: typeof TimeDashboardRouteWithChildren
   WorkflowsRoute: typeof WorkflowsRoute
-  WorkspaceActivityRoute: typeof WorkspaceActivityRoute
+  WorkspaceActivityRoute: typeof WorkspaceActivityRouteWithChildren
   ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
 }
@@ -663,12 +689,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlysonNotetakerIndexRouteImport
       parentRoute: typeof AlysonNotetakerRouteRoute
     }
+    '/workspace-activity/$userEmail': {
+      id: '/workspace-activity/$userEmail'
+      path: '/$userEmail'
+      fullPath: '/workspace-activity/$userEmail'
+      preLoaderRoute: typeof WorkspaceActivityUserEmailRouteImport
+      parentRoute: typeof WorkspaceActivityRoute
+    }
     '/time-dashboard/$userId': {
       id: '/time-dashboard/$userId'
       path: '/$userId'
       fullPath: '/time-dashboard/$userId'
       preLoaderRoute: typeof TimeDashboardUserIdRouteImport
       parentRoute: typeof TimeDashboardRoute
+    }
+    '/employee-scoring/$userEmail': {
+      id: '/employee-scoring/$userEmail'
+      path: '/$userEmail'
+      fullPath: '/employee-scoring/$userEmail'
+      preLoaderRoute: typeof EmployeeScoringUserEmailRouteImport
+      parentRoute: typeof EmployeeScoringRoute
     }
     '/bonus/simulate': {
       id: '/bonus/simulate'
@@ -816,6 +856,18 @@ const BonusRouteRouteWithChildren = BonusRouteRoute._addFileChildren(
   BonusRouteRouteChildren,
 )
 
+interface EmployeeScoringRouteChildren {
+  EmployeeScoringUserEmailRoute: typeof EmployeeScoringUserEmailRoute
+}
+
+const EmployeeScoringRouteChildren: EmployeeScoringRouteChildren = {
+  EmployeeScoringUserEmailRoute: EmployeeScoringUserEmailRoute,
+}
+
+const EmployeeScoringRouteWithChildren = EmployeeScoringRoute._addFileChildren(
+  EmployeeScoringRouteChildren,
+)
+
 interface TimeDashboardRouteChildren {
   TimeDashboardUserIdRoute: typeof TimeDashboardUserIdRoute
 }
@@ -827,6 +879,17 @@ const TimeDashboardRouteChildren: TimeDashboardRouteChildren = {
 const TimeDashboardRouteWithChildren = TimeDashboardRoute._addFileChildren(
   TimeDashboardRouteChildren,
 )
+
+interface WorkspaceActivityRouteChildren {
+  WorkspaceActivityUserEmailRoute: typeof WorkspaceActivityUserEmailRoute
+}
+
+const WorkspaceActivityRouteChildren: WorkspaceActivityRouteChildren = {
+  WorkspaceActivityUserEmailRoute: WorkspaceActivityUserEmailRoute,
+}
+
+const WorkspaceActivityRouteWithChildren =
+  WorkspaceActivityRoute._addFileChildren(WorkspaceActivityRouteChildren)
 
 interface ApiAnalyticsUnifiedMeetingsRouteChildren {
   ApiAnalyticsUnifiedMeetingsRefreshRoute: typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
@@ -859,7 +922,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   BoardingRoute: BoardingRoute,
   DocumentsRoute: DocumentsRoute,
-  EmployeeScoringRoute: EmployeeScoringRoute,
+  EmployeeScoringRoute: EmployeeScoringRouteWithChildren,
   EquityRoute: EquityRoute,
   HandoverDocumentationRoute: HandoverDocumentationRoute,
   HelpRoute: HelpRoute,
@@ -870,7 +933,7 @@ const rootRouteChildren: RootRouteChildren = {
   TeamRoute: TeamRoute,
   TimeDashboardRoute: TimeDashboardRouteWithChildren,
   WorkflowsRoute: WorkflowsRoute,
-  WorkspaceActivityRoute: WorkspaceActivityRoute,
+  WorkspaceActivityRoute: WorkspaceActivityRouteWithChildren,
   ApiAnalyticsUnifiedMeetingsRoute:
     ApiAnalyticsUnifiedMeetingsRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,

@@ -13,7 +13,7 @@ import {
   xlsxBuffer,
 } from "@/lib/report-export-utils.server";
 import { fetchTimeDoctorEmployeesTable, listTimeDoctorUsersLight } from "@/lib/time-doctor-functions";
-import { getWorkspaceActivity } from "@/lib/workspace-activity-functions";
+import type { WorkspaceActivityRow } from "@/lib/workspace-activity-types";
 
 export type DailyReportWindow = {
   startIso: string;
@@ -119,7 +119,7 @@ export async function buildDailyReportZip(args: {
   window: DailyReportWindow;
   employees: EmployeeForDailyReport[];
   scoringRows?: Awaited<ReturnType<typeof getEmployeeScoring>>["rows"];
-  workspaceRows?: Awaited<ReturnType<typeof getWorkspaceActivity>>["rows"];
+  workspaceRows?: WorkspaceActivityRow[];
   timeDoctorEmployees?: Awaited<ReturnType<typeof fetchTimeDoctorEmployeesTable>>["employees"];
   initialWarnings?: string[];
 }): Promise<DailyZipBuildResult> {

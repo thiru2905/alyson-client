@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { z } from "zod";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Activity, ArrowDownAZ, ArrowUpAZ, Download, FileText, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState, PageHeader, TableScroll } from "@/components/AppShell";
-import { TableSkeleton } from "@/components/Skeleton";
+import { FetchingBar, PageSkeleton, Shimmer, TableSkeleton } from "@/components/Skeleton";
 import { downloadCSV } from "@/lib/csv";
 import {
   loadWorkspaceActivitySession,
@@ -13,19 +14,17 @@ import {
   workspaceSnapshotKey,
 } from "@/lib/workspace-activity-session";
 import { getWorkspaceActivity } from "@/lib/workspace-activity-functions";
-import { downloadWorkspaceActivityPdf } from "@/lib/workspace-activity-pdf";
 import { medalRowClass, rankCellContent, workspaceActivityRank } from "@/lib/rank-medals";
-import { HourlyActivityReport } from "@/components/HourlyActivityReport";
+import { WorkspaceActivityRangePicker, workspacePresetRange } from "@/components/WorkspaceActivityRangePicker";
 import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  CartesianGrid,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-} from "recharts";
+  defaultWorkspaceRange,
+  fmtWorkspaceWhen,
+  isoForInput,
+} from "@/lib/workspace-activity-range";
+
+const WorkspaceActivityCharts = lazy(() =>
+  import("@/components/WorkspaceActivityCharts").then((m) => ({ default: m.WorkspaceActivityCharts })),
+);
 
 const PRESET_DAYS = [1, 7, 30, 45, 90] as const;
 
@@ -39,40 +38,45 @@ function rangesMatch(
 
 export const Route = createFileRoute("/workspace-activity")({
   head: () => ({ meta: [{ title: "Workspace Activity — Alyson HR" }] }),
+  validateSearch: z
+    .object({
+      start: z.string().datetime().optional(),
+      end: z.string().datetime().optional(),
+    })
+    .parse,
   component: WorkspaceActivityPage,
 });
 
-function isoForInput(d: Date) {
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function fmtIso(iso: string) {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(d);
-}
-
 function WorkspaceActivityPage() {
-  const now = useMemo(() => new Date(), []);
-  const boot = useMemo(() => loadWorkspaceActivitySession(), []);
-  const fallbackStart = useMemo(() => new Date(now.getTime() - 23 * 60 * 60 * 1000).toISOString(), [now]);
-  const fallbackEnd = useMemo(() => now.toISOString(), [now]);
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const showingUserDetail =
+    pathname.startsWith("/workspace-activity/") && pathname !== "/workspace-activity";
+  const urlSearch = Route.useSearch();
 
-  const [draftEnd, setDraftEnd] = useState(() => boot?.draftEnd ?? isoForInput(now));
-  const [draftStart, setDraftStart] = useState(() => boot?.draftStart ?? isoForInput(new Date(now.getTime() - 23 * 60 * 60 * 1000)));
-  const [applied, setApplied] = useState<{ start: string; end: string } | null>(() => boot?.applied ?? { start: fallbackStart, end: fallbackEnd });
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+
+  const now = useMemo(() => new Date(), []);
+  const boot = useMemo(() => (hydrated ? loadWorkspaceActivitySession() : null), [hydrated]);
+  const listDefaults = useMemo(() => defaultWorkspaceRange(), []);
+  const fallbackStart = urlSearch.start ?? boot?.applied?.start ?? listDefaults.start;
+  const fallbackEnd = urlSearch.end ?? boot?.applied?.end ?? listDefaults.end;
+
+  const [draftEnd, setDraftEnd] = useState(() => boot?.draftEnd ?? isoForInput(new Date(fallbackEnd)));
+  const [draftStart, setDraftStart] = useState(() => boot?.draftStart ?? isoForInput(new Date(fallbackStart)));
+  const [applied, setApplied] = useState<{ start: string; end: string } | null>(() => ({
+    start: fallbackStart,
+    end: fallbackEnd,
+  }));
+
+  useEffect(() => {
+    if (!hydrated || !urlSearch.start || !urlSearch.end) return;
+    setApplied({ start: urlSearch.start, end: urlSearch.end });
+    setDraftStart(isoForInput(new Date(urlSearch.start)));
+    setDraftEnd(isoForInput(new Date(urlSearch.end)));
+  }, [hydrated, urlSearch.start, urlSearch.end]);
   const [search, setSearch] = useState(() => boot?.search ?? "");
-  const [hourlyEmployeeEmail, setHourlyEmployeeEmail] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"emails" | "meetings" | "docs" | "chat">(() => boot?.sortBy ?? "emails");
   const [sortDir, setSortDir] = useState<"asc" | "desc">(() => boot?.sortDir ?? "desc");
 
@@ -94,7 +98,8 @@ function WorkspaceActivityPage() {
             }
           : undefined,
       }),
-    enabled: applied !== null,
+    enabled: hydrated && applied !== null,
+    retry: 1,
     initialData: persisted?.snapshot,
     initialDataUpdatedAt: persisted?.at,
     placeholderData: keepPreviousData,
@@ -114,7 +119,7 @@ function WorkspaceActivityPage() {
   const draftMatchesApplied = rangesMatch(draftRange, applied);
   const isBusy = q.isFetching;
   const showingStaleWindow = q.isPlaceholderData && isBusy;
-  const coldLoad = q.isPending && !q.data;
+  const coldLoad = !hydrated || (q.isPending && !q.data);
 
   const rows = q.data?.rows ?? [];
   const filteredRows = useMemo(() => {
@@ -134,53 +139,6 @@ function WorkspaceActivityPage() {
   }, [rows, search, sortBy, sortDir]);
 
   const rankByEmail = useMemo(() => workspaceActivityRank(filteredRows), [filteredRows]);
-
-  const hourlyEmployeeOptions = useMemo(
-    () =>
-      rows.slice(0, 80).map((r) => ({
-        email: r.userEmail,
-        label: r.userEmail,
-      })),
-    [rows],
-  );
-
-  const totalsComparison = useMemo(() => {
-    return [
-      {
-        metric: "Meetings",
-        value: filteredRows.reduce((n, r) => n + r.meetingsCreated, 0),
-      },
-      {
-        metric: "Docs",
-        value: filteredRows.reduce((n, r) => n + r.docsCreated, 0),
-      },
-      {
-        metric: "Chat",
-        value: filteredRows.reduce((n, r) => n + r.chatMessagesSent, 0),
-      },
-      {
-        metric: "Emails",
-        value: filteredRows.reduce((n, r) => n + r.emailsSent, 0),
-      },
-    ];
-  }, [filteredRows]);
-
-  const topUsersComparison = useMemo(() => {
-    return [...filteredRows]
-      .sort((a, b) => {
-        const ta = a.meetingsCreated + a.docsCreated + a.chatMessagesSent;
-        const tb = b.meetingsCreated + b.docsCreated + b.chatMessagesSent;
-        return tb - ta || b.emailsSent - a.emailsSent;
-      })
-      .slice(0, 12)
-      .map((r) => ({
-        user: r.userEmail,
-        meetings: r.meetingsCreated,
-        docs: r.docsCreated,
-        chat: r.chatMessagesSent,
-        emails: r.emailsSent,
-      }));
-  }, [filteredRows]);
 
   const lastToastKey = useRef<string | null>(null);
   useEffect(() => {
@@ -205,14 +163,35 @@ function WorkspaceActivityPage() {
       return;
     }
     setApplied(next);
+    navigate({
+      to: "/workspace-activity",
+      search: { start: next.start, end: next.end },
+      replace: true,
+    });
   };
 
   const applyPreset = (days: (typeof PRESET_DAYS)[number]) => {
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-    setDraftStart(isoForInput(start));
-    setDraftEnd(isoForInput(end));
-    setApplied({ start: start.toISOString(), end: end.toISOString() });
+    const preset = workspacePresetRange(days);
+    setDraftStart(preset.draftStart);
+    setDraftEnd(preset.draftEnd);
+    const start = new Date(preset.draftStart).toISOString();
+    const end = new Date(preset.draftEnd).toISOString();
+    const next = { start, end };
+    setApplied(next);
+    navigate({
+      to: "/workspace-activity",
+      search: next,
+      replace: true,
+    });
+  };
+
+  const openEmployeeDetail = (email: string) => {
+    if (!applied) return;
+    navigate({
+      to: "/workspace-activity/$userEmail",
+      params: { userEmail: encodeURIComponent(email) },
+      search: { start: applied.start, end: applied.end },
+    });
   };
 
   const exportCsv = () => {
@@ -238,18 +217,23 @@ function WorkspaceActivityPage() {
     toast.success("Workspace activity exported");
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
     if (!q.data || !filteredRows.length || showingStaleWindow) {
       toast.error("Wait for activity to finish loading");
       return;
     }
-    downloadWorkspaceActivityPdf({
-      rows: filteredRows,
-      range: q.data.range,
-      generatedAt: q.data.generatedAt,
-      filteredBy: search,
-    });
-    toast.success("Workspace activity PDF exported");
+    try {
+      const { downloadWorkspaceActivityPdf } = await import("@/lib/workspace-activity-pdf");
+      downloadWorkspaceActivityPdf({
+        rows: filteredRows,
+        range: q.data.range,
+        generatedAt: q.data.generatedAt,
+        filteredBy: search,
+      });
+      toast.success("Workspace activity PDF exported");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "PDF export failed");
+    }
   };
 
   const applySort = (field: "emails" | "meetings" | "docs" | "chat") => {
@@ -293,7 +277,7 @@ function WorkspaceActivityPage() {
     if (coldLoad) {
       return {
         tone: "loading" as const,
-        text: "Loading Google Workspace activity — this can take a minute for large teams.",
+        text: "Loading workspace activity from Google (first load is slower; cached for 5 minutes).",
       };
     }
     if (showingStaleWindow) {
@@ -312,12 +296,30 @@ function WorkspaceActivityPage() {
     return null;
   })();
 
+  if (!hydrated) {
+    return (
+      <div className="ops-dense min-h-[50vh]">
+        <PageHeader
+          eyebrow="Operations"
+          title="Workspace Activity"
+          description="Loading page…"
+        />
+        <div className="px-5 md:px-8 py-6">
+          <PageSkeleton />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="ops-dense">
+    <div className="ops-dense min-h-[50vh]">
+      {showingUserDetail ? <Outlet /> : null}
+      {!showingUserDetail ? (
+        <>
       <PageHeader
         eyebrow="Operations"
         title="Workspace Activity"
-        description="Google Workspace activity metrics (emails, meetings, docs, chat) for a custom datetime window."
+        description="Google Workspace activity by employee. Click any row to open a full workspace detail page (like Time Dashboard)."
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -348,51 +350,19 @@ function WorkspaceActivityPage() {
         }
       />
 
+      <FetchingBar active={isBusy} />
+
       <div className="px-5 md:px-8 py-6 space-y-5">
-        <div
-          className={`surface-card p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end transition-opacity ${isBusy ? "opacity-90" : ""}`}
-        >
-          <label className="space-y-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Start (local)</span>
-            <input
-              type="datetime-local"
-              value={draftStart}
-              onChange={(e) => setDraftStart(e.target.value)}
-              disabled={isBusy}
-              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm disabled:opacity-60"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">End (local)</span>
-            <input
-              type="datetime-local"
-              value={draftEnd}
-              onChange={(e) => setDraftEnd(e.target.value)}
-              disabled={isBusy}
-              className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm disabled:opacity-60"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={apply}
-            disabled={isBusy}
-            className="h-8 px-4 rounded-md bg-foreground text-background text-xs font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-70 min-w-[9rem]"
-          >
-            {isBusy ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
-              </>
-            ) : draftMatchesApplied ? (
-              "Recompute"
-            ) : (
-              "Apply window"
-            )}
-          </button>
-          <div className="text-[11px] text-muted-foreground">
-            Default: last 23 hours. Table stays visible while new data loads (IST).
-          </div>
-          <div className="md:col-span-4 flex flex-wrap gap-1.5">
+        <WorkspaceActivityRangePicker
+          draftStart={draftStart}
+          draftEnd={draftEnd}
+          onStartChange={setDraftStart}
+          onEndChange={setDraftEnd}
+          onApply={apply}
+          isBusy={isBusy}
+          draftMatchesApplied={draftMatchesApplied}
+        />
+          <div className="flex flex-wrap gap-1.5 -mt-2">
             {PRESET_DAYS.map((d) => (
               <button
                 key={d}
@@ -404,7 +374,6 @@ function WorkspaceActivityPage() {
               </button>
             ))}
           </div>
-        </div>
 
         {statusBanner ? (
           <div
@@ -427,7 +396,7 @@ function WorkspaceActivityPage() {
         {q.data && !coldLoad ? (
           <div className="surface-card p-3 text-[12px] text-muted-foreground">
             {showingStaleWindow ? <span className="font-medium text-foreground">Pending window · </span> : null}
-            Window (IST): {fmtIso(q.data.range.start)} → {fmtIso(q.data.range.end)} · Users processed:{" "}
+            Window (IST): {fmtWorkspaceWhen(q.data.range.start)} → {fmtWorkspaceWhen(q.data.range.end)} · Users processed:{" "}
             {q.data.usersProcessed}
             {search.trim() ? ` · Showing: ${filteredRows.length}` : ""}
             {persisted && !isBusy && !showingStaleWindow ? " · Restored from session" : ""}
@@ -488,6 +457,22 @@ function WorkspaceActivityPage() {
 
         {coldLoad ? <TableSkeleton rows={10} /> : null}
 
+        {q.isError && !coldLoad ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p className="font-medium">Could not load workspace activity</p>
+            <p className="mt-1 text-[13px] opacity-90">
+              {q.error instanceof Error ? q.error.message : String(q.error)}
+            </p>
+            <button
+              type="button"
+              onClick={() => void q.refetch()}
+              className="mt-3 h-8 px-3 rounded-md border border-destructive/30 text-xs hover:bg-destructive/10"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+
         {!coldLoad && !isBusy && q.data && filteredRows.length === 0 ? (
           <EmptyState icon={Activity} title="No activity rows" description="No users or no activity events in this window." />
         ) : null}
@@ -528,16 +513,29 @@ function WorkspaceActivityPage() {
                     return (
                     <tr
                       key={r.userEmail}
-                      className={
-                        medalRowClass(rank) +
-                        (hourlyEmployeeEmail === r.userEmail ? " ring-1 ring-inset ring-foreground/25" : "") +
-                        " cursor-pointer hover:opacity-95"
-                      }
-                      onClick={() => setHourlyEmployeeEmail(r.userEmail)}
-                      title="Click to load hourly breakdown below"
+                      className={medalRowClass(rank) + " hover:bg-muted/40 cursor-pointer"}
+                      onClick={() => openEmployeeDetail(r.userEmail)}
+                      title="Open workspace detail page"
                     >
                       <td align="center">{rankCellContent(rank)}</td>
-                      <td>{r.userEmail}</td>
+                      <td className="align-middle">
+                        <div className="font-medium text-[13px]">
+                          {applied ? (
+                            <Link
+                              to="/workspace-activity/$userEmail"
+                              params={{ userEmail: encodeURIComponent(r.userEmail) }}
+                              search={{ start: applied.start, end: applied.end }}
+                              className="hover:underline"
+                              onClick={(ev) => ev.stopPropagation()}
+                            >
+                              {r.userEmail.split("@")[0]}
+                            </Link>
+                          ) : (
+                            r.userEmail.split("@")[0]
+                          )}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">{r.userEmail}</div>
+                      </td>
                       <td align="right" className="font-mono">
                         {r.emailsSent}
                       </td>
@@ -558,69 +556,21 @@ function WorkspaceActivityPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <div className="surface-card p-4 md:p-5">
-                <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">
-                  Totals comparison
+            <Suspense
+              fallback={
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <Shimmer className="h-[18rem]" />
+                  <Shimmer className="h-[18rem]" />
                 </div>
-                <h3 className="font-display text-lg mt-0.5 mb-3">Meetings vs Docs vs Chat vs Emails</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={totalsComparison} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="metric" stroke="var(--muted-foreground)" fontSize={11} />
-                    <YAxis stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} />
-                    <Tooltip contentStyle={{ background: "var(--paper)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 }} />
-                    <Bar dataKey="value" name="Count" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="surface-card p-4 md:p-5">
-                <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">
-                  Top users
-                </div>
-                <h3 className="font-display text-lg mt-0.5 mb-3">Meetings / Docs / Chat comparison</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <BarChart data={topUsersComparison} margin={{ top: 5, right: 10, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke="var(--border)" vertical={false} />
-                    <XAxis
-                      dataKey="user"
-                      stroke="var(--muted-foreground)"
-                      fontSize={10}
-                      interval={0}
-                      angle={-25}
-                      textAnchor="end"
-                      height={70}
-                    />
-                    <YAxis stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} />
-                    <Tooltip contentStyle={{ background: "var(--paper)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="meetings" name="Meetings" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="docs" name="Docs" fill="var(--chart-4)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="chat" name="Chat" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-border">
-              <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-3">
-                Hourly breakdown
-              </div>
-              <p className="text-[12px] text-muted-foreground mb-4 max-w-2xl">
-                Hour-by-hour activity for one employee (emails, chat, docs, meetings, Time Doctor). Top 3 rows above
-                use gold / silver / bronze highlights by total activity in the window.
-              </p>
-              <HourlyActivityReport
-                compact
-                syncRange={applied}
-                selectedEmail={hourlyEmployeeEmail}
-                employeeOptions={hourlyEmployeeOptions}
-              />
-            </div>
+              }
+            >
+              <WorkspaceActivityCharts filteredRows={filteredRows} />
+            </Suspense>
           </>
         )}
       </div>
+      </>
+      ) : null}
     </div>
   );
 }
