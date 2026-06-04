@@ -96,12 +96,23 @@ function TimeDashboardPage() {
         timeZone?: string;
         timeZoneLabel?: string;
         range?: { start: string; end: string };
+        rollups?: {
+          today: string;
+          week: { start: string; end: string };
+          calendarMonth: { start: string; end: string };
+        };
         warnings: string[];
         employees: TimeDoctorEmployeeRow[];
       }
     | undefined;
   const employees = data?.employees ?? [];
   const activeRange = data?.range ?? { start: appliedStart, end: appliedEnd };
+  const calMonthLabel = data?.rollups?.calendarMonth
+    ? formatRangeLabel(data.rollups.calendarMonth.start, data.rollups.calendarMonth.end)
+    : null;
+  const weekLabel = data?.rollups?.week
+    ? formatRangeLabel(data.rollups.week.start, data.rollups.week.end)
+    : null;
 
   const filteredRollups = useMemo(() => {
     const normalizedQ = q.trim().toLowerCase();
@@ -315,7 +326,7 @@ function TimeDashboardPage() {
             description={
               coldLoad
                 ? "Connecting to Time Doctor…"
-                : `Time Doctor — ${data?.company?.name ?? "…"}. Period = ${rangeLabel}. Today / weekly / month use ${data?.day ?? "today"} (${data?.timeZoneLabel ?? "company timezone"}). Top 3 get gold, silver, and bronze by ${medalSortLabel}.`
+                : `Time Doctor — ${data?.company?.name ?? "…"}. Period = ${rangeLabel}. Today / weekly / Cal. month use company timezone (${data?.timeZoneLabel ?? "…"}); Cal. month = ${calMonthLabel ?? "1st → today"}. Top 3 medals by ${medalSortLabel}.`
             }
             dense
             actions={
@@ -574,7 +585,9 @@ function TimeDashboardPage() {
                         onClick={() => applySort("weekly")}
                         className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("weekly")}`}
                       >
-                        Weekly
+                        <span title={weekLabel ? `Week to date: ${weekLabel}` : "Monday → today (company timezone)"}>
+                          Weekly
+                        </span>
                         {sortBy === "weekly" ? (
                           sortDir === "asc" ? (
                             <ArrowUpAZ className="h-3 w-3" />
@@ -590,7 +603,9 @@ function TimeDashboardPage() {
                         onClick={() => applySort("monthly")}
                         className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("monthly")}`}
                       >
-                        Cal. month
+                        <span title={calMonthLabel ? `Calendar month: ${calMonthLabel}` : "Calendar month (1st → today, company timezone)"}>
+                          Cal. month
+                        </span>
                         {sortBy === "monthly" ? (
                           sortDir === "asc" ? (
                             <ArrowUpAZ className="h-3 w-3" />

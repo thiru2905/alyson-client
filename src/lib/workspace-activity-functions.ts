@@ -37,3 +37,24 @@ export const getWorkspaceUserActivityDetail = createServerFn({ method: "GET" })
     const { runGetWorkspaceUserActivityDetail } = await import("@/lib/workspace-activity.server");
     return runGetWorkspaceUserActivityDetail(data);
   });
+
+const InsightInput = z.object({
+  kind: z.enum(["doc", "email", "chat"]),
+  title: z.string().min(1).max(500),
+  preview: z.string().max(8000),
+  at: z.string().min(1),
+  userEmail: z.string().email(),
+  rangeLabel: z.string().max(200).optional(),
+});
+
+export type WorkspaceActivityInsightResult = {
+  summary: string;
+  model: string;
+};
+
+export const getWorkspaceActivityItemInsight = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => InsightInput.parse(data))
+  .handler(async ({ data }): Promise<WorkspaceActivityInsightResult> => {
+    const { summarizeWorkspaceActivityItem } = await import("@/lib/workspace-activity-insight.server");
+    return summarizeWorkspaceActivityItem(data);
+  });

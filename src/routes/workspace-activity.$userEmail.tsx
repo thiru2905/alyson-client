@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { EmptyState, PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar, TableSkeleton } from "@/components/Skeleton";
 import { WorkspaceActivityRangePicker } from "@/components/WorkspaceActivityRangePicker";
-import { getWorkspaceUserActivityDetail } from "@/lib/workspace-activity-functions";
+import {
+  getWorkspaceActivityItemInsight,
+  getWorkspaceUserActivityDetail,
+} from "@/lib/workspace-activity-functions";
 import type { WorkspaceActivityItem } from "@/lib/workspace-activity-types";
 import {
   defaultWorkspaceRange,
@@ -38,14 +41,232 @@ function fmtNum(n: number | undefined) {
   return n.toLocaleString();
 }
 
+function previewText(it: WorkspaceActivityItem) {
+  return it.preview || (it.detail && !it.detail.startsWith("To: smtp") ? it.detail : "") || it.title || "";
+}
+
+type InsightKind = "doc" | "email" | "chat";
+
+function insightKindFromTab(tab: TabKey): InsightKind | null {
+  if (tab === "docs") return "doc";
+  if (tab === "emails") return "email";
+  if (tab === "chat") return "chat";
+  return null;
+}
+
+const CHAT_AUDIT_FLAG_RE =
+  /^(DLP_|EPHEMERAL_|PERMANENT|REGULAR_MESSAGE|NO_ATTACHMENT|HAS_ATTACHMENT|VIDEO_MESSAGE|VOICE_MESSAGE|HUDDLE)/i;
+
+function isMostlyChatAuditFlags(text: string) {
+  const tokens = text.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return false;
+  const flags = tokens.filter((t) => CHAT_AUDIT_FLAG_RE.test(t.replace(/\s+/g, "_")));
+  return flags.length >= Math.max(2, tokens.length - 1);
+}
+
+function canInsightPreview(kind: InsightKind, item: WorkspaceActivityItem) {
+  const text = previewText(item);
+  if (!text.trim() || text.length < 12) return false;
+  if (/body text not available/i.test(text)) return false;
+
+  if (kind === "doc") return true;
+
+  if (kind === "email") {
+    if (text.startsWith("To: smtp") && !/[a-zA-Z]{8,}/.test(text)) return false;
+    return true;
+  }
+
+  if (kind === "chat") {
+    if (item.source === "chat") return true;
+    if (isMostlyChatAuditFlags(text)) return false;
+    if (/^posted in /i.test(text) && text.length < 100) return false;
+    return /[a-zA-Z]{4,}/.test(text);
+  }
+
+  return false;
+}
+
+const INSIGHT_LABELS: Record<
+  InsightKind,
+  { modalTitle: string; loading: string; footer: string; ariaId: string }
+> = {
+  doc: {
+    modalTitle: "Document insight",
+    loading: "Groq is summarizing this document…",
+    footer: "AI summary from preview text — verify in Google Docs if needed.",
+    ariaId: "doc-insight-title",
+  },
+  email: {
+    modalTitle: "Email insight",
+    loading: "Groq is summarizing this email…",
+    footer: "AI summary from subject and preview — verify in Gmail if needed.",
+    ariaId: "email-insight-title",
+  },
+  chat: {
+    modalTitle: "Chat insight",
+    loading: "Groq is summarizing this message…",
+    footer: "AI summary from message preview — verify in Google Chat if needed.",
+    ariaId: "chat-insight-title",
+  },
+};
+
+function ContentPreviewInsight({
+  item,
+  userEmail,
+  rangeLabel,
+  insightKind,
+}: {
+  item: WorkspaceActivityItem;
+  userEmail: string;
+  rangeLabel: string;
+  insightKind: InsightKind;
+}) {
+  const text = previewText(item);
+  const labels = INSIGHT_LABELS[insightKind];
+  const clickable = canInsightPreview(insightKind, item);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const cacheRef = useRef(new Map<string, string>());
+
+  const cacheKey = `${item.at}|${item.title}`;
+
+  const loadInsight = async () => {
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      setSummary(cached);
+      setError(null);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const previewForApi =
+        insightKind === "email" && item.title && !text.toLowerCase().includes(item.title.toLowerCase().slice(0, 24))
+          ? `Subject: ${item.title}\n\n${text}`
+          : text;
+      const r = await getWorkspaceActivityItemInsight({
+        data: {
+          kind: insightKind,
+          title: item.title,
+          preview: previewForApi,
+          at: item.at,
+          userEmail,
+          rangeLabel,
+        },
+      });
+      cacheRef.current.set(cacheKey, r.summary);
+      setSummary(r.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate summary");
+      setSummary(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onOpen = () => {
+    setOpen(true);
+    void loadInsight();
+  };
+
+  if (!text) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <>
+      {clickable ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-left w-full rounded-md px-1 -mx-1 py-0.5 hover:bg-primary/10 hover:text-foreground transition-colors group"
+          title="Click for AI summary (Groq)"
+        >
+          <p className="whitespace-pre-wrap break-words line-clamp-6">{text}</p>
+          <span className="inline-flex items-center gap-1 text-[10px] text-primary/80 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Sparkles className="h-3 w-3" />
+            Summarize
+          </span>
+        </button>
+      ) : (
+        <p className="whitespace-pre-wrap break-words line-clamp-6" title={text}>
+          {text}
+        </p>
+      )}
+
+      {open ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/45"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={labels.ariaId}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="surface-card w-full max-w-lg max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <div
+                  id={labels.ariaId}
+                  className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium"
+                >
+                  {labels.modalTitle}
+                </div>
+                <h3 className="text-[15px] font-medium mt-1 leading-snug">{item.title}</h3>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {fmtWhen(item.at)} · {rangeLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="h-8 w-8 rounded-md border border-border flex items-center justify-center shrink-0"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="text-[11px] text-muted-foreground mb-3 p-2 rounded-md bg-muted/40 border border-border/60 max-h-24 overflow-y-auto">
+              {text.slice(0, 400)}
+              {text.length > 400 ? "…" : ""}
+            </div>
+
+            {loading ? (
+              <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {labels.loading}
+              </div>
+            ) : error ? (
+              <p className="text-[13px] text-destructive">{error}</p>
+            ) : (
+              <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{summary}</div>
+            )}
+
+            <p className="text-[10px] text-muted-foreground mt-4">{labels.footer}</p>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function RichActivityTable({
   items,
   kind,
   empty,
+  userEmail,
+  rangeLabel,
 }: {
   items: WorkspaceActivityItem[];
   kind: TabKey;
   empty: string;
+  userEmail: string;
+  rangeLabel: string;
 }) {
   if (!items.length) {
     return <EmptyState title="No items" description={empty} />;
@@ -116,9 +337,18 @@ function RichActivityTable({
                 </>
               ) : null}
               <td className="text-[12px] text-muted-foreground pt-2 pb-3 max-w-xl">
-                <p className="whitespace-pre-wrap break-words line-clamp-6" title={it.preview ?? it.detail}>
-                  {it.preview || (it.detail && !it.detail.startsWith("To: smtp") ? it.detail : "") || it.title || "—"}
-                </p>
+                {insightKindFromTab(kind) ? (
+                  <ContentPreviewInsight
+                    item={it}
+                    userEmail={userEmail}
+                    rangeLabel={rangeLabel}
+                    insightKind={insightKindFromTab(kind)!}
+                  />
+                ) : (
+                  <p className="whitespace-pre-wrap break-words line-clamp-6" title={previewText(it)}>
+                    {previewText(it) || "—"}
+                  </p>
+                )}
               </td>
             </tr>
           ))}
@@ -172,6 +402,7 @@ function WorkspaceEmployeeDetailPage() {
   };
 
   const listSearch = { start, end };
+  const rangeLabel = useMemo(() => fmtWorkspaceRangeLabel(start, end), [start, end]);
 
   const q = useQuery({
     queryKey: ["workspace-employee-detail", userEmail, start, end],
@@ -415,6 +646,8 @@ function WorkspaceEmployeeDetailPage() {
                   items={data.emails}
                   kind="emails"
                   empty="No sent emails in this window (check Gmail delegation or try a wider range)."
+                  userEmail={userEmail}
+                  rangeLabel={rangeLabel}
                 />
               )}
               {tab === "chat" && (
@@ -422,6 +655,8 @@ function WorkspaceEmployeeDetailPage() {
                   items={data.chats}
                   kind="chat"
                   empty="No chat messages in this window (enable Chat API delegation for full text, or widen the range)."
+                  userEmail={userEmail}
+                  rangeLabel={rangeLabel}
                 />
               )}
               {tab === "docs" && (
@@ -429,6 +664,8 @@ function WorkspaceEmployeeDetailPage() {
                   items={data.docs}
                   kind="docs"
                   empty="No Google Docs created in this window."
+                  userEmail={userEmail}
+                  rangeLabel={rangeLabel}
                 />
               )}
               {tab === "meetings" && (
@@ -436,6 +673,8 @@ function WorkspaceEmployeeDetailPage() {
                   items={data.meetings}
                   kind="meetings"
                   empty="No calendar meetings in this window."
+                  userEmail={userEmail}
+                  rangeLabel={rangeLabel}
                 />
               )}
             </div>

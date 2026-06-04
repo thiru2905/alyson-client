@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { format, parseISO, startOfWeek, subDays } from "date-fns";
+import { format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { clampRange, defaultDetailRange, defaultListRange } from "@/lib/time-dashboard-range";
 
 /**
@@ -341,9 +341,14 @@ function mergeSecondMaps(...maps: Array<Map<string, number>>): Map<string, numbe
 }
 
 function parseWorklogUserId(item: Record<string, unknown>): string | null {
-  const raw = item.user_id ?? item.userId ?? item.user;
-  if (raw == null || raw === "") return null;
-  return String(raw);
+  const raw = item.user_id ?? item.userId ?? item.user ?? item.employee_id ?? item.employeeId;
+  if (raw != null && raw !== "" && typeof raw !== "object") return String(raw);
+  if (raw && typeof raw === "object") {
+    const nested = raw as Record<string, unknown>;
+    const id = nested.id ?? nested.user_id ?? nested.userId;
+    if (id != null && id !== "") return String(id);
+  }
+  return null;
 }
 
 function parseWorklogItemSeconds(item: Record<string, unknown>): number {
@@ -438,16 +443,23 @@ async function sumPoorSecondsForDayRange(
   return out;
 }
 
+/** Worklogs-only rollup for the employees table (skips N/day poor-time calls that often break cal-month). */
+async function listEmployeeTableWorkSecondsByUserForRange(
+  companyId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  opts?: { auth?: "auto_refresh" | "access_only" },
+): Promise<Map<string, number>> {
+  return listWorkSecondsByUserForRange(companyId, rangeStart, rangeEnd, opts);
+}
+
+/** Single bulk worklogs request (same path as period hours) — avoids N/day calls that can fail mid-range. */
 async function listDailyTrackedSecondsByUser(
   companyId: string,
   day: string,
   opts?: { auth?: "auto_refresh" | "access_only" },
 ): Promise<Map<string, number>> {
-  const [work, poor] = await Promise.all([
-    listDailyWorkSecondsByUser(companyId, day, opts),
-    listDailyPoorSecondsByUser(companyId, day, opts).catch(() => new Map<string, number>()),
-  ]);
-  return mergeSecondMaps(work, poor);
+  return listEmployeeTableWorkSecondsByUserForRange(companyId, day, day, opts);
 }
 
 async function listWeekToDateTrackedSecondsByUser(
@@ -455,12 +467,7 @@ async function listWeekToDateTrackedSecondsByUser(
   day: string,
   opts?: { auth?: "auto_refresh" | "access_only" },
 ): Promise<Map<string, number>> {
-  const weekStart = weekStartIso(day);
-  const [work, poor] = await Promise.all([
-    sumWorkSecondsForDayRange(companyId, weekStart, day, opts),
-    sumPoorSecondsForDayRange(companyId, weekStart, day, opts).catch(() => new Map<string, number>()),
-  ]);
-  return mergeSecondMaps(work, poor);
+  return listEmployeeTableWorkSecondsByUserForRange(companyId, weekStartIso(day), day, opts);
 }
 
 async function listMonthToDateTrackedSecondsByUser(
@@ -468,12 +475,26 @@ async function listMonthToDateTrackedSecondsByUser(
   day: string,
   opts?: { auth?: "auto_refresh" | "access_only" },
 ): Promise<Map<string, number>> {
-  const monthStart = `${day.slice(0, 8)}01`;
-  const [work, poor] = await Promise.all([
-    sumWorkSecondsForDayRange(companyId, monthStart, day, opts),
-    sumPoorSecondsForDayRange(companyId, monthStart, day, opts).catch(() => new Map<string, number>()),
-  ]);
-  return mergeSecondMaps(work, poor);
+  return listEmployeeTableWorkSecondsByUserForRange(companyId, monthStartIso(day), day, opts);
+}
+
+function isoRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+async function loadEmployeeTableRangeSeconds(
+  companyId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  cache: Map<string, Map<string, number>>,
+): Promise<Map<string, number>> {
+  if (rangeStart > rangeEnd) return new Map();
+  const key = `${companyId}:${rangeStart}:${rangeEnd}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const map = await listEmployeeTableWorkSecondsByUserForRange(companyId, rangeStart, rangeEnd);
+  cache.set(key, map);
+  return map;
 }
 
 async function listTrackedSecondsByUserForRange(
@@ -582,27 +603,91 @@ async function fetchCompanyPoorSecondsForUserOnDay(
 export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
   .inputValidator((data: unknown) => EmployeesTableInput.parse(data))
   .handler(async ({ data }) => {
-    const defaults = defaultListRange();
-    const end = data.end ?? defaults.end;
-    const start = data.start ?? defaults.start;
-    /** Daily / weekly / monthly always anchor to company TZ "today", not the period end date. */
-    const rollupDay = data.day ?? timeDoctorTodayIso();
-    const period = clampRange(start, end);
     const company = await getCompany();
+    /** Daily / weekly / monthly anchor to company TZ "today" (after getCompany loads TZ). */
+    const rollupDay = data.day ?? timeDoctorTodayIso();
+    const monthStart = monthStartIso(rollupDay);
+    const weekStart = weekStartIso(rollupDay);
 
-    const [usersR, dailyR, weeklyR, monthlyR, periodR] = await Promise.allSettled([
+    const defaults = defaultListRange();
+    let end = data.end ?? rollupDay;
+    const start = data.start ?? defaults.start;
+    // Browser default "this month" often ends on local today while rollups use company TZ today.
+    if (
+      data.end &&
+      start === monthStart &&
+      end < rollupDay &&
+      end.slice(0, 7) === rollupDay.slice(0, 7)
+    ) {
+      end = rollupDay;
+    }
+    if (end > rollupDay) end = rollupDay;
+    const period = clampRange(start, end);
+    const calMonth = { start: monthStart, end: rollupDay };
+    const monthSameAsPeriod = period.start === calMonth.start && period.end === calMonth.end;
+
+    const rangeCache = new Map<string, Map<string, number>>();
+    const rollupErrors: string[] = [];
+
+    const [usersR, periodR] = await Promise.allSettled([
       listUsers(company.id, ),
-      listDailyTrackedSecondsByUser(company.id, rollupDay, ),
-      listWeekToDateTrackedSecondsByUser(company.id, rollupDay, ),
-      listMonthToDateTrackedSecondsByUser(company.id, rollupDay, ),
-      listTrackedSecondsByUserForRange(company.id, period.start, period.end, ),
+      loadEmployeeTableRangeSeconds(company.id, period.start, period.end, rangeCache),
     ]);
 
-    const users = usersR.status === "fulfilled" ? usersR.value : [];
-    const daily = dailyR.status === "fulfilled" ? dailyR.value : new Map<string, number>();
-    const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : new Map<string, number>();
-    const monthly = monthlyR.status === "fulfilled" ? monthlyR.value : new Map<string, number>();
     const periodMap = periodR.status === "fulfilled" ? periodR.value : new Map<string, number>();
+    if (periodR.status === "rejected") rollupErrors.push(`period-worklogs: ${String(periodR.reason)}`);
+
+    let monthly = new Map<string, number>();
+    let monthlyRStatus: "fulfilled" | "rejected" = "fulfilled";
+    try {
+      monthly = monthSameAsPeriod
+        ? periodMap
+        : await loadEmployeeTableRangeSeconds(company.id, calMonth.start, calMonth.end, rangeCache);
+    } catch (e) {
+      monthlyRStatus = "rejected";
+      rollupErrors.push(`monthly-worklogs: ${String(e)}`);
+    }
+
+    let weekly = new Map<string, number>();
+    let weeklyRStatus: "fulfilled" | "rejected" = "fulfilled";
+    let effectiveWeekStart = weekStart;
+    const weekRange = { start: weekStart, end: rollupDay };
+    const weekSameAsPeriod = period.start === weekRange.start && period.end === weekRange.end;
+    try {
+      weekly = weekSameAsPeriod
+        ? periodMap
+        : await loadEmployeeTableRangeSeconds(company.id, weekRange.start, weekRange.end, rangeCache);
+      const weekEmpty = [...weekly.values()].every((s) => s === 0);
+      const monthHas = [...monthly.values()].some((s) => s > 0);
+      if (weekEmpty && monthHas && !weekSameAsPeriod) {
+        const sundayStart = weekStartSundayIso(rollupDay);
+        if (sundayStart !== weekRange.start) {
+          const alt = await loadEmployeeTableRangeSeconds(company.id, sundayStart, rollupDay, rangeCache);
+          if ([...alt.values()].some((s) => s > 0)) {
+            weekly = alt;
+            effectiveWeekStart = sundayStart;
+          }
+        }
+      }
+    } catch (e) {
+      weeklyRStatus = "rejected";
+      rollupErrors.push(`weekly-worklogs: ${String(e)}`);
+    }
+
+    let daily = new Map<string, number>();
+    let dailyRStatus: "fulfilled" | "rejected" = "fulfilled";
+    try {
+      daily = await loadEmployeeTableRangeSeconds(company.id, rollupDay, rollupDay, rangeCache);
+    } catch (e) {
+      dailyRStatus = "rejected";
+      rollupErrors.push(`daily-worklogs: ${String(e)}`);
+    }
+
+    const users = usersR.status === "fulfilled" ? usersR.value : [];
+
+    const periodHasHours = [...periodMap.values()].some((s) => s > 0);
+    const monthHasHours = [...monthly.values()].some((s) => s > 0);
+    const monthOverlapsPeriod = isoRangesOverlap(period.start, period.end, calMonth.start, calMonth.end);
 
     const rows: TimeDoctorEmployeeRow[] = users
       .map((u) => ({
@@ -623,14 +708,34 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
       timeZone: company.timeZone ?? timeDoctorTimezone(),
       timeZoneLabel: company.timeZoneLabel ?? getTimeDoctorTimezoneLabel(),
       range: { start: period.start, end: period.end },
+      rollups: {
+        today: rollupDay,
+        week: { start: effectiveWeekStart, end: rollupDay },
+        calendarMonth: calMonth,
+      },
       warnings: [
         ...(period.clipped ? [`Range capped to last 366 days (requested ${start} → ${end}).`] : []),
+        ...(!monthOverlapsPeriod && periodHasHours
+          ? [
+              `Cal. month is always ${calMonth.start} → ${calMonth.end} (${company.timeZoneLabel ?? getTimeDoctorTimezoneLabel()}). Your selected period (${period.start} → ${period.end}) does not overlap that window, so Cal. month can show 0 while Period hours do not.`,
+            ]
+          : []),
+        ...(monthOverlapsPeriod && periodHasHours && !monthHasHours && monthlyRStatus === "fulfilled"
+          ? [
+              `Cal. month (${calMonth.start} → ${calMonth.end}) returned no worklogs from Time Doctor. Period hours use ${period.start} → ${period.end}.`,
+            ]
+          : []),
         ...(usersR.status === "rejected" ? [`users: ${String(usersR.reason)}`] : []),
-        ...(dailyR.status === "rejected" ? [`daily-worklogs: ${String(dailyR.reason)}`] : []),
-        ...(weeklyR.status === "rejected" ? [`weekly-worklogs: ${String(weeklyR.reason)}`] : []),
-        ...(monthlyR.status === "rejected" ? [`monthly-worklogs: ${String(monthlyR.reason)}`] : []),
-        ...(periodR.status === "rejected" ? [`period-worklogs: ${String(periodR.reason)}`] : []),
-      ].slice(0, 6),
+        ...rollupErrors,
+        ...(weeklyRStatus === "fulfilled" &&
+        [...weekly.values()].every((s) => s === 0) &&
+        [...monthly.values()].some((s) => s > 0) &&
+        isoRangesOverlap(weekRange.start, weekRange.end, calMonth.start, calMonth.end)
+          ? [
+              `Weekly (${weekRange.start} → ${weekRange.end}) returned no worklogs; Cal. month has data. Check Notes or retry.`,
+            ]
+          : []),
+      ].slice(0, 8),
       employees: rows,
     };
   });
@@ -1430,9 +1535,24 @@ async function listDailyWorkSecondsByUser(
   return out;
 }
 
+/** Monday of the ISO week containing `day` (UTC calendar, matches worklog date strings). */
 function weekStartIso(day: string): string {
-  const monday = startOfWeek(parseISO(day), { weekStartsOn: 1 });
-  return format(monday, "yyyy-MM-dd");
+  const d = new Date(`${day}T12:00:00Z`);
+  const dow = d.getUTCDay();
+  const daysFromMonday = (dow + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - daysFromMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Sunday week start (Time Doctor US-style fallback when Monday-based week returns empty). */
+function weekStartSundayIso(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+}
+
+function monthStartIso(day: string): string {
+  return `${day.slice(0, 7)}-01`;
 }
 
 async function sumWorkSecondsForDayRange(
@@ -1447,9 +1567,12 @@ async function sumWorkSecondsForDayRange(
   const concurrency = 6;
   for (let i = 0; i < days.length; i += concurrency) {
     const chunk = days.slice(i, i + concurrency);
-    const results = await Promise.all(chunk.map(async (d) => listDailyWorkSecondsByUser(companyId, d, opts)));
-    for (const m of results) {
-      for (const [userId, seconds] of m.entries()) {
+    const results = await Promise.allSettled(
+      chunk.map((d) => listDailyWorkSecondsByUser(companyId, d, opts)),
+    );
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      for (const [userId, seconds] of r.value.entries()) {
         out.set(userId, (out.get(userId) ?? 0) + (seconds ?? 0));
       }
     }
@@ -1471,8 +1594,7 @@ async function listMonthToDateWorkSecondsByUser(
   day: string,
   opts?: { auth?: "auto_refresh" | "access_only" },
 ): Promise<Map<string, number>> {
-  const monthStart = `${day.slice(0, 8)}01`;
-  return sumWorkSecondsForDayRange(companyId, monthStart, day, opts);
+  return sumWorkSecondsForDayRange(companyId, monthStartIso(day), day, opts);
 }
 
 /** Sum work seconds per user across a date range (paginated company worklogs). */
