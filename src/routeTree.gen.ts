@@ -33,6 +33,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BonusIndexRouteImport } from './routes/bonus/index'
 import { Route as AlysonNotetakerIndexRouteImport } from './routes/alyson-notetaker/index'
 import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspace-activity.$userEmail'
+import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
 import { Route as EmployeeScoringUserEmailRouteImport } from './routes/employee-scoring.$userEmail'
 import { Route as BonusSimulateRouteImport } from './routes/bonus/simulate'
@@ -170,6 +171,11 @@ const WorkspaceActivityUserEmailRoute =
     path: '/$userEmail',
     getParentRoute: () => WorkspaceActivityRoute,
   } as any)
+const TimeDashboardPacingRoute = TimeDashboardPacingRouteImport.update({
+  id: '/pacing',
+  path: '/pacing',
+  getParentRoute: () => TimeDashboardRoute,
+} as any)
 const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
@@ -285,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
@@ -324,6 +331,7 @@ export interface FileRoutesByTo {
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker': typeof AlysonNotetakerIndexRoute
   '/bonus': typeof BonusIndexRoute
@@ -366,6 +374,7 @@ export interface FileRoutesById {
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/pacing'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/pacing'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker'
     | '/bonus'
@@ -489,6 +500,7 @@ export interface FileRouteTypes {
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/pacing'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
@@ -696,6 +708,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceActivityUserEmailRouteImport
       parentRoute: typeof WorkspaceActivityRoute
     }
+    '/time-dashboard/pacing': {
+      id: '/time-dashboard/pacing'
+      path: '/pacing'
+      fullPath: '/time-dashboard/pacing'
+      preLoaderRoute: typeof TimeDashboardPacingRouteImport
+      parentRoute: typeof TimeDashboardRoute
+    }
     '/time-dashboard/$userId': {
       id: '/time-dashboard/$userId'
       path: '/$userId'
@@ -870,10 +889,12 @@ const EmployeeScoringRouteWithChildren = EmployeeScoringRoute._addFileChildren(
 
 interface TimeDashboardRouteChildren {
   TimeDashboardUserIdRoute: typeof TimeDashboardUserIdRoute
+  TimeDashboardPacingRoute: typeof TimeDashboardPacingRoute
 }
 
 const TimeDashboardRouteChildren: TimeDashboardRouteChildren = {
   TimeDashboardUserIdRoute: TimeDashboardUserIdRoute,
+  TimeDashboardPacingRoute: TimeDashboardPacingRoute,
 }
 
 const TimeDashboardRouteWithChildren = TimeDashboardRoute._addFileChildren(

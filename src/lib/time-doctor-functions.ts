@@ -1873,3 +1873,76 @@ export const fetchTimeDoctorMonthlyUnderHoursReport = createServerFn({ method: "
     } satisfies MonthlyUnderHoursReport;
   });
 
+const WeeklyPacingInput = z.object({
+  targetHours: z.number().min(1).max(168).optional(),
+  day: DateSchema.optional(),
+});
+
+/** Current-week pacing: all employees with hours worked, gap/over target, and required daily pace. */
+export const fetchWeeklyPacingReport = createServerFn({ method: "GET" })
+  .inputValidator((data: unknown) => WeeklyPacingInput.parse(data ?? {}))
+  .handler(async ({ data }) => {
+    const { buildPacingRow, computeWeekPacingMetrics } = await import("@/lib/weekly-pacing");
+    const targetHours = data.targetHours ?? 35;
+    const company = await getCompany();
+    const rollupDay = data.day ?? timeDoctorTodayIso();
+    const warnings: string[] = [];
+
+    let weekStart = weekStartIso(rollupDay);
+    const rangeCache = new Map<string, Map<string, number>>();
+
+    let weekly = new Map<string, number>();
+    try {
+      weekly = await loadEmployeeTableRangeSeconds(company.id, weekStart, rollupDay, rangeCache);
+      const weekEmpty = [...weekly.values()].every((s) => s === 0);
+      if (weekEmpty) {
+        const sundayStart = weekStartSundayIso(rollupDay);
+        if (sundayStart !== weekStart) {
+          const alt = await loadEmployeeTableRangeSeconds(company.id, sundayStart, rollupDay, rangeCache);
+          if ([...alt.values()].some((s) => s > 0)) {
+            weekly = alt;
+            weekStart = sundayStart;
+          }
+        }
+      }
+    } catch (e) {
+      warnings.push(`weekly-worklogs: ${String(e)}`);
+    }
+
+    let users: Awaited<ReturnType<typeof listUsers>> = [];
+    try {
+      users = await listUsers(company.id);
+    } catch (e) {
+      warnings.push(`users: ${String(e)}`);
+    }
+
+    const metrics = computeWeekPacingMetrics({ weekStart, today: rollupDay, targetHours });
+    const rows = users
+      .map((u) =>
+        buildPacingRow({
+          id: u.id,
+          email: (u.email || "").trim(),
+          name: (u.name || u.email || "").trim(),
+          title: u.title ?? "",
+          weeklySeconds: weekly.get(u.id) ?? 0,
+          metrics,
+        }),
+      )
+      .filter((r): r is NonNullable<typeof r> => r != null);
+
+    return {
+      company: { id: company.id, name: company.name },
+      targetHours,
+      timeZone: company.timeZone ?? timeDoctorTimezone(),
+      timeZoneLabel: company.timeZoneLabel ?? getTimeDoctorTimezoneLabel(),
+      today: rollupDay,
+      week: { start: weekStart, end: metrics.weekEnd },
+      elapsedWorkDays: metrics.elapsedWorkDays,
+      totalWorkDays: metrics.totalWorkDays,
+      remainingWorkDays: metrics.remainingWorkDays,
+      generatedAt: new Date().toISOString(),
+      rows,
+      warnings: warnings.slice(0, 8),
+    };
+  });
+
