@@ -19,7 +19,7 @@ import { SCORING_WEIGHTS } from "@/lib/employee-scoring-rules";
 import { medalRowClass, rankCellContent } from "@/lib/rank-medals";
 import { HourlyActivityReport } from "@/components/HourlyActivityReport";
 
-const PRESET_DAYS = [7, 14, 30, 45, 90] as const;
+const PRESET_DAYS = [1, 7, 14, 30, 45, 90] as const;
 
 export const Route = createFileRoute("/employee-scoring")({
   head: () => ({ meta: [{ title: "Employee Scoring — Alyson HR" }] }),
@@ -106,7 +106,7 @@ function EmployeeScoringPage() {
   }, [applied, boot?.snapshotAt]);
 
   const q = useQuery({
-    queryKey: ["employee-scoring", applied?.start ?? "idle", applied?.end ?? "idle"],
+    queryKey: ["employee-scoring", applied?.start ?? "idle", applied?.end ?? "idle", "calendar-meetings"],
     queryFn: () =>
       getEmployeeScoring({
         data: applied ? { start: applied.start, end: applied.end } : undefined,
@@ -138,7 +138,10 @@ function EmployeeScoringPage() {
     const s = search.trim().toLowerCase();
     if (!s) return rows;
     return rows.filter(
-      (r) => r.userEmail.toLowerCase().includes(s) || r.displayName.toLowerCase().includes(s),
+      (r) =>
+        r.userEmail.toLowerCase().includes(s) ||
+        r.displayName.toLowerCase().includes(s) ||
+        (r.linkedEmails ?? []).some((linked) => linked.toLowerCase().includes(s)),
     );
   }, [q.data?.rows, search]);
 
@@ -393,7 +396,7 @@ function EmployeeScoringPage() {
                 disabled={isBusy}
                 className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                Last {d} days
+                {d === 1 ? "Last 1 day" : `Last ${d} days`}
               </button>
             ))}
           </div>
@@ -531,7 +534,7 @@ function EmployeeScoringPage() {
                       <th align="right">Score</th>
                       <th align="right">Work hrs</th>
                       <th align="right">Hrs/day</th>
-                      <th align="right">Meetings</th>
+                      <th align="right">Meetings in window</th>
                       <th align="right">Emails</th>
                       <th align="right">Chat</th>
                       <th align="right">Docs</th>
@@ -563,6 +566,11 @@ function EmployeeScoringPage() {
                         <td>
                           <div className="font-medium text-[13px]">{r.displayName}</div>
                           <div className="text-[11px] text-muted-foreground">{r.userEmail}</div>
+                          {r.linkedEmails && r.linkedEmails.length > 1 ? (
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              Also: {r.linkedEmails.filter((e) => e !== r.userEmail).join(", ")}
+                            </div>
+                          ) : null}
                         </td>
                         <td align="center">
                           <span

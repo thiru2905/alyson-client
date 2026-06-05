@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Search, User } from "lucide-react";
-import { getEmployeePickerDirectory, type EmployeePickerEntry } from "@/lib/employee-picker-functions";
+import { getEmployeePickerDirectory } from "@/lib/employee-picker-functions";
+import type { EmployeePickerEntry } from "@/lib/employee-picker-types";
 
 const MAX_SUGGESTIONS = 12;
 

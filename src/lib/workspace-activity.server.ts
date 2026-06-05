@@ -53,6 +53,8 @@ const Input = z
   .object({
     start: z.string().datetime().optional(),
     end: z.string().datetime().optional(),
+    /** When true, count scheduled calendar events in the window (not just audit create_event). */
+    accurateMeetings: z.boolean().optional(),
   })
   .optional();
 
@@ -284,13 +286,13 @@ async function countCalendarMeetingsByUser(
 }
 
 export async function runGetWorkspaceActivity(
-  data?: { start?: string; end?: string },
+  data?: { start?: string; end?: string; accurateMeetings?: boolean },
 ): Promise<WorkspaceActivityResponse> {
   return withTimeout(runGetWorkspaceActivityImpl(data), WORKSPACE_ACTIVITY_TIMEOUT_MS, "Workspace activity");
 }
 
 async function runGetWorkspaceActivityImpl(
-  data?: { start?: string; end?: string },
+  data?: { start?: string; end?: string; accurateMeetings?: boolean },
 ): Promise<WorkspaceActivityResponse> {
     const now = new Date();
     const fallbackStart = new Date(now.getTime() - 23 * 60 * 60 * 1000);
@@ -314,11 +316,13 @@ async function runGetWorkspaceActivityImpl(
     const { directory, reports } = await buildDirectoryAndReportsClients();
 
     const users = await listAllUsers(directory);
-    const accurateMeetings = useAccurateCalendarMeetings();
+    const accurateMeetings = useAccurateCalendarMeetings() || data?.accurateMeetings === true;
     if (!accurateMeetings) {
       warnings.push(
-        "Meetings use Workspace audit (create_event) for faster load. Set WORKSPACE_ACTIVITY_ACCURATE_MEETINGS=1 for per-user Calendar API (scheduled in window).",
+        "Meetings use Workspace audit (create_event) — counts only events the user created, not attended. Enable accurateMeetings or WORKSPACE_ACTIVITY_ACCURATE_MEETINGS=1 for calendar events in window.",
       );
+    } else if (!useAccurateCalendarMeetings()) {
+      warnings.push("Meetings counted from each user's Google Calendar (scheduled in window, incl. attended).");
     }
 
     const meetingCountsPromise = accurateMeetings

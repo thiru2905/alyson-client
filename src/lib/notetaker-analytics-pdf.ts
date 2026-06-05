@@ -52,8 +52,20 @@ export function downloadAnalyticsPdf(args: {
     `Period: ${period}`,
     `Generated: ${new Date(report.generatedAt).toLocaleString()}`,
   ];
-  if (report.filters.speakers.length) meta.push(`Speakers: ${report.filters.speakers.join(", ")}`);
-  if (report.filters.meetingTitle) meta.push(`Title filter: ${report.filters.meetingTitle}`);
+  meta.push(
+    report.filters.speakers.length
+      ? `Speakers: ${report.filters.speakers.join(", ")}`
+      : "Speakers: All",
+  );
+  const meetingPrefixes = report.filters.meetingPrefixes ?? [];
+  if (meetingPrefixes.length > 0) {
+    const titles = report.meetings.map((m) => m.title);
+    meta.push(`Meetings (${titles.length}): ${titles.slice(0, 3).join("; ")}${titles.length > 3 ? "…" : ""}`);
+  } else if (report.filters.meetingTitle) {
+    meta.push(`Title filter: ${report.filters.meetingTitle}`);
+  } else {
+    meta.push("Meetings: All");
+  }
   for (const line of meta) {
     doc.text(line, margin, y);
     y += 14;

@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
-import type { HourlyActivityRow } from "@/lib/hourly-activity-functions";
+import type { HourlyActivityRow } from "@/lib/hourly-activity-types";
 
 export type HourlyPdfMeta = {
   rows: HourlyActivityRow[];

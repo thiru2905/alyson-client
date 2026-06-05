@@ -9,7 +9,9 @@ const ReportInput = z.object({
   speakerFilters: z.array(z.string()).optional(),
   /** @deprecated use speakerFilters — comma-separated still accepted via string union */
   speakerFilter: z.string().optional(),
+  /** @deprecated prefer meetingPrefixes */
   meetingTitleFilter: z.string().optional(),
+  meetingPrefixes: z.array(z.string()).optional(),
   maxMeetings: z.number().int().min(1).max(100).optional(),
 });
 
@@ -21,6 +23,7 @@ export const getNotetakerAnalyticsReport = createServerFn({ method: "GET" })
       end: data.end,
       speakerFilters: data.speakerFilters ?? (data.speakerFilter ? [data.speakerFilter] : undefined),
       meetingTitleFilter: data.meetingTitleFilter,
+      meetingPrefixes: data.meetingPrefixes,
       maxMeetings: data.maxMeetings,
     });
     return { report };
@@ -30,13 +33,18 @@ const InsightsInput = z.object({
   report: z.object({
     range: z.object({ start: z.string(), end: z.string() }),
     generatedAt: z.string(),
-    filters: z.object({ speakers: z.array(z.string()), meetingTitle: z.string() }),
+    filters: z.object({
+      speakers: z.array(z.string()),
+      meetingTitle: z.string(),
+      meetingPrefixes: z.array(z.string()).optional(),
+    }),
     meetingCount: z.number(),
     analyzedCount: z.number(),
     skippedNoTranscript: z.number(),
     totalUtterances: z.number(),
     totalWords: z.number(),
     uniqueSpeakersGlobal: z.number(),
+    mergedSpeakerAccounts: z.number().optional(),
     meetings: z.array(z.any()),
     topSpeakers: z.array(z.any()),
     meetingsByDay: z.array(z.object({ day: z.string(), meetings: z.number() })),

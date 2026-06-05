@@ -97,11 +97,22 @@ export function buildAnalyticsExportHtml(args: {
   const period = formatPeriodLabel(report, args.periodLabel);
   const generated = new Date(report.generatedAt).toLocaleString();
   const filterBits: string[] = [];
-  if (report.filters.speakers.length) {
-    filterBits.push(`Speakers: ${report.filters.speakers.join(", ")}`);
-  }
-  if (report.filters.meetingTitle) {
+  filterBits.push(
+    report.filters.speakers.length
+      ? `Speakers: ${report.filters.speakers.join(", ")}`
+      : "Speakers: All",
+  );
+  const meetingPrefixes = report.filters.meetingPrefixes ?? [];
+  if (meetingPrefixes.length > 0) {
+    const titles = report.meetings.map((m) => m.title);
+    const preview = titles.slice(0, 4).join("; ");
+    filterBits.push(
+      `Meetings (${titles.length}): ${preview}${titles.length > 4 ? "…" : ""}`,
+    );
+  } else if (report.filters.meetingTitle) {
     filterBits.push(`Title contains: ${report.filters.meetingTitle}`);
+  } else {
+    filterBits.push("Meetings: All");
   }
 
   const talkTimeSlices = buildTalkTimeShareSlices(report);

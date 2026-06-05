@@ -88,13 +88,14 @@ function WorkspaceActivityPage() {
   }, [applied, boot?.snapshotAt]);
 
   const q = useQuery({
-    queryKey: ["workspace-activity", applied?.start ?? "idle", applied?.end ?? "idle"],
+    queryKey: ["workspace-activity", applied?.start ?? "idle", applied?.end ?? "idle", "calendar"],
     queryFn: () =>
       getWorkspaceActivity({
         data: applied
           ? {
               start: applied.start,
               end: applied.end,
+              accurateMeetings: true,
             }
           : undefined,
       }),

@@ -12,14 +12,19 @@ export type AnalyticsSessionState = {
     start: string;
     end: string;
     speakers: string[];
-    title: string;
+    /** @deprecated legacy title substring filter */
+    title?: string;
+    meetingPrefixes?: string[];
   };
   periodMode?: AnalyticsPeriodMode;
   periodDays: number;
   customStart?: string;
   customEnd?: string;
   speakerChips: string[];
-  meetingTitleFilter: string;
+  selectedMeetingPrefixes?: string[];
+  meetingSearch?: string;
+  /** @deprecated use selectedMeetingPrefixes */
+  meetingTitleFilter?: string;
   insightsMd: string | null;
   savedAt: string;
 };
@@ -62,12 +67,14 @@ export function clearAnalyticsSession() {
 
 export function analyticsQueryKey(applied: AnalyticsSessionState["applied"] | null) {
   if (!applied) return ["notetaker-analytics", "idle"] as const;
+  const prefixes = [...(applied.meetingPrefixes ?? [])].sort();
   return [
     "notetaker-analytics",
     applied.start,
     applied.end,
     applied.periodDays,
-    applied.title,
+    applied.title ?? "",
+    prefixes.join("|"),
     [...applied.speakers].map((s) => s.toLowerCase()).sort().join("|"),
   ] as const;
 }

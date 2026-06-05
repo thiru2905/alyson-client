@@ -1,10 +1,14 @@
 import { getTranscriptTextFromS3, listMeetingsFromS3 } from "@/lib/notetaker-s3-calendar.server";
+import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
 import {
-  meetingHasMatchingSpeaker,
+  meetingHasMatchingSpeakerWithIdentity,
+  resolveCanonicalSpeaker,
+  speakerMatchesAnyFilterWithIdentity,
+} from "@/lib/speaker-identity";
+import {
   normalizeSpeakerFilterList,
   parseTranscriptUtterances,
   rollupSpeakers,
-  speakerMatchesAnyFilter,
   type SpeakerRollup,
 } from "@/lib/notetaker-transcript-parse.server";
 
@@ -23,13 +27,14 @@ export type MeetingSpeakerAnalytics = {
 export type NotetakerAnalyticsReport = {
   range: { start: string; end: string };
   generatedAt: string;
-  filters: { speakers: string[]; meetingTitle: string };
+  filters: { speakers: string[]; meetingTitle: string; meetingPrefixes: string[] };
   meetingCount: number;
   analyzedCount: number;
   skippedNoTranscript: number;
   totalUtterances: number;
   totalWords: number;
   uniqueSpeakersGlobal: number;
+  mergedSpeakerAccounts: number;
   meetings: MeetingSpeakerAnalytics[];
   topSpeakers: Array<SpeakerRollup & { meetingsSpoken: number }>;
   meetingsByDay: Array<{ day: string; meetings: number }>;
@@ -54,16 +59,24 @@ export async function buildNotetakerAnalyticsReport(args: {
   start: string;
   end: string;
   speakerFilters?: string[] | string;
+  /** @deprecated prefer meetingPrefixes — substring match on title */
   meetingTitleFilter?: string;
+  meetingPrefixes?: string[];
   maxMeetings?: number;
 }): Promise<NotetakerAnalyticsReport> {
   const speakerFilters = normalizeSpeakerFilterList(args.speakerFilters);
   const meetingTitleFilter = String(args.meetingTitleFilter || "").trim().toLowerCase();
+  const meetingPrefixes = (args.meetingPrefixes ?? []).map((p) => String(p || "").trim()).filter(Boolean);
   const maxMeetings = Math.min(Math.max(args.maxMeetings ?? 100, 1), 100);
+
+  const { index: speakerIdentity } = await getSpeakerIdentityIndex();
 
   const allMeetings = await listMeetingsFromS3({ start: args.start, end: args.end });
   let candidates = allMeetings.filter((m) => Boolean(m.transcriptKey));
-  if (meetingTitleFilter) {
+  if (meetingPrefixes.length > 0) {
+    const prefixSet = new Set(meetingPrefixes);
+    candidates = candidates.filter((m) => prefixSet.has(m.prefix));
+  } else if (meetingTitleFilter) {
     candidates = candidates.filter((m) => m.title.toLowerCase().includes(meetingTitleFilter));
   }
   candidates = candidates.slice(0, maxMeetings);
@@ -76,14 +89,22 @@ export async function buildNotetakerAnalyticsReport(args: {
     } catch {
       return null;
     }
-    const utterances = parseTranscriptUtterances(transcriptText);
+    const utterances = parseTranscriptUtterances(transcriptText).map((u) => ({
+      ...u,
+      speaker: resolveCanonicalSpeaker(u.speaker, speakerIdentity),
+    }));
     const allSpeakers = rollupSpeakers(utterances);
-    if (speakerFilters.length > 0 && !meetingHasMatchingSpeaker(allSpeakers, speakerFilters)) {
+    if (
+      speakerFilters.length > 0 &&
+      !meetingHasMatchingSpeakerWithIdentity(allSpeakers, speakerFilters, speakerIdentity)
+    ) {
       return null;
     }
     let speakers = allSpeakers;
     if (speakerFilters.length > 0) {
-      speakers = allSpeakers.filter((s) => speakerMatchesAnyFilter(s.speaker, speakerFilters));
+      speakers = allSpeakers.filter((s) =>
+        speakerMatchesAnyFilterWithIdentity(s.speaker, speakerFilters, speakerIdentity),
+      );
     }
     const totalUtterances = speakers.reduce((n, s) => n + s.utterances, 0);
     const totalWords = speakers.reduce((n, s) => n + s.words, 0);
@@ -140,13 +161,14 @@ export async function buildNotetakerAnalyticsReport(args: {
   return {
     range: { start: args.start, end: args.end },
     generatedAt: new Date().toISOString(),
-    filters: { speakers: speakerFilters, meetingTitle: meetingTitleFilter },
+    filters: { speakers: speakerFilters, meetingTitle: meetingTitleFilter, meetingPrefixes },
     meetingCount: allMeetings.length,
     analyzedCount: meetings.length,
     skippedNoTranscript: allMeetings.length - allMeetings.filter((m) => m.transcriptKey).length,
     totalUtterances: meetings.reduce((n, m) => n + m.totalUtterances, 0),
     totalWords: meetings.reduce((n, m) => n + m.totalWords, 0),
     uniqueSpeakersGlobal: speakerGlobal.size,
+    mergedSpeakerAccounts: speakerIdentity.mergedAccountCount,
     meetings,
     topSpeakers,
     meetingsByDay,

@@ -147,7 +147,11 @@ function EmployeeScoringDetailPage() {
       <PageHeader
         eyebrow="Employee Scoring"
         title={score?.displayName ?? userEmail.split("@")[0]}
-        description={`${userEmail} · Scoring detail for selected window`}
+        description={
+          score?.linkedEmails && score.linkedEmails.length > 1
+            ? `${userEmail} · Merged accounts: ${score.linkedEmails.join(", ")}`
+            : `${userEmail} · Scoring detail for selected window`
+        }
         actions={
           <Link
             to="/employee-scoring"

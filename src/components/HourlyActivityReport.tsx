@@ -6,10 +6,8 @@ import { EmployeeEmailPicker, resolveEmployeeFromQuery } from "@/components/Empl
 import { EmptyState, TableScroll } from "@/components/AppShell";
 import { downloadCSV } from "@/lib/csv";
 import { downloadHourlyActivityPdf } from "@/lib/hourly-activity-pdf";
-import {
-  getEmployeePickerDirectory,
-  type EmployeePickerEntry,
-} from "@/lib/employee-picker-functions";
+import { getEmployeePickerDirectory } from "@/lib/employee-picker-functions";
+import type { EmployeePickerEntry } from "@/lib/employee-picker-types";
 import { getHourlyActivityReport } from "@/lib/hourly-activity-functions";
 import {
   hourlySnapshotKey,

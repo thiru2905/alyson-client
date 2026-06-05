@@ -22,6 +22,7 @@ export type EmployeeScoreInput = {
   chatMessagesSent: number;
   workSeconds: number;
   windowDays: number;
+  linkedEmails?: string[];
 };
 
 export type EmployeeScoreBreakdown = {
@@ -39,6 +40,8 @@ export type EmployeeScoreRow = EmployeeScoreInput & {
   percentile: EmployeeScoreBreakdown;
   compositeScore: number;
   grade: "A" | "B" | "C" | "D" | "F";
+  /** Present when multiple emails were merged into one person for scoring. */
+  linkedEmails?: string[];
 };
 
 /** Mid-rank percentile: 0 when everyone is 0; 100 when highest in cohort. */
@@ -116,7 +119,9 @@ export function computeEmployeeScores(
 
 export const SCORING_RULES_SUMMARY = [
   "One scoring window applies to Google Workspace activity and Time Doctor hours.",
+  "Meetings = calendar events scheduled in the window (attended or created), not audit create_event only.",
   "Time Doctor uses calendar dates derived from the same window (start date → end date, inclusive).",
+  "Duplicate directory accounts for the same person (e.g. mohita@revcloud.com + mohita@cintara.ai) are merged before ranking.",
   "Each metric is scored 0–100 as a percentile vs all users in the cohort (fair across scales).",
   `Composite = ${SCORING_WEIGHTS.workHours * 100}% work hours + ${SCORING_WEIGHTS.meetings * 100}% meetings + ${SCORING_WEIGHTS.emails * 100}% emails + ${SCORING_WEIGHTS.chat * 100}% chat + ${SCORING_WEIGHTS.docs * 100}% docs.`,
   "Grades: A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35, F < 35.",

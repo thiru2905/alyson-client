@@ -15,6 +15,7 @@ const ListInput = z
   .object({
     start: z.string().datetime().optional(),
     end: z.string().datetime().optional(),
+    accurateMeetings: z.boolean().optional(),
   })
   .optional();
 

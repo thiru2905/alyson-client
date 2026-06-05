@@ -1,15 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { z } from "zod";
-import {
-  computeEmployeeScores,
-  SCORING_RULES_SUMMARY,
-  SCORING_WEIGHTS,
-  type EmployeeScoreRow,
-} from "@/lib/employee-scoring-rules";
-import { fetchTimeDoctorEmployeesTable } from "@/lib/time-doctor-functions";
-import { clampRange, enumerateDays } from "@/lib/time-dashboard-range";
-import { getWorkspaceActivity } from "@/lib/workspace-activity-functions";
+import type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
+
+export type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
 
 const Input = z
   .object({
@@ -17,17 +11,6 @@ const Input = z
     end: z.string().datetime().optional(),
   })
   .optional();
-
-export type EmployeeScoringResponse = {
-  range: { start: string; end: string };
-  timeDoctorRange: { start: string; end: string; clipped: boolean };
-  windowDays: number;
-  generatedAt: string;
-  weights: typeof SCORING_WEIGHTS;
-  rules: readonly string[];
-  rows: EmployeeScoreRow[];
-  warnings: string[];
-};
 
 const CACHE_TTL_MS = 90_000;
 const scoringCache = new Map<string, { at: number; data: EmployeeScoringResponse }>();
@@ -45,6 +28,22 @@ function normalizeEmail(email: string) {
 export const getEmployeeScoring = createServerFn({ method: "GET" })
   .inputValidator((data: unknown) => Input.parse(data))
   .handler(async ({ data }): Promise<EmployeeScoringResponse> => {
+    const [
+      { getWorkspaceActivity },
+      { fetchTimeDoctorEmployeesTable },
+      { computeEmployeeScores, SCORING_RULES_SUMMARY, SCORING_WEIGHTS },
+      { getSpeakerIdentityIndex },
+      { mergeEmployeeScoreInputsByIdentity },
+      { clampRange, enumerateDays },
+    ] = await Promise.all([
+      import("@/lib/workspace-activity-functions"),
+      import("@/lib/time-doctor-functions"),
+      import("@/lib/employee-scoring-rules"),
+      import("@/lib/speaker-identity.server"),
+      import("@/lib/employee-scoring-merge.server"),
+      import("@/lib/time-dashboard-range"),
+    ]);
+
     const now = new Date();
     const fallbackStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const fallbackEnd = now.toISOString();
@@ -74,7 +73,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
     }
 
     const [workspaceR, timeDoctorR] = await Promise.allSettled([
-      getWorkspaceActivity({ data: { start: startIso, end: endIso } }),
+      getWorkspaceActivity({ data: { start: startIso, end: endIso, accurateMeetings: true } }),
       fetchTimeDoctorEmployeesTable({
         data: { start: tdRange.start, end: tdRange.end },
       }),
@@ -109,7 +108,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
 
     const allEmails = new Set<string>([...wsByEmail.keys(), ...tdByEmail.keys()].filter(Boolean));
 
-    const inputs = Array.from(allEmails).map((email) => {
+    const rawInputs = Array.from(allEmails).map((email) => {
       const ws = wsByEmail.get(email);
       const td = tdByEmail.get(email);
       return {
@@ -124,6 +123,16 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
       };
     });
 
+    const { index: speakerIdentity, warnings: identityWarnings } = await getSpeakerIdentityIndex();
+    warnings.push(...identityWarnings.slice(0, 2));
+
+    const { inputs, mergedAccountCount } = mergeEmployeeScoreInputsByIdentity(rawInputs, speakerIdentity);
+    if (mergedAccountCount > 0) {
+      warnings.push(
+        `Merged ${mergedAccountCount} duplicate account${mergedAccountCount === 1 ? "" : "s"} (same person, multiple emails) before ranking.`,
+      );
+    }
+
     const rows = computeEmployeeScores(inputs);
 
     const result: EmployeeScoringResponse = {
@@ -134,6 +143,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
       weights: SCORING_WEIGHTS,
       rules: SCORING_RULES_SUMMARY,
       rows,
+      mergedAccountCount,
       warnings,
     };
     scoringCache.set(cacheKey, { at: Date.now(), data: result });

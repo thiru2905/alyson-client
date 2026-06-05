@@ -1,4 +1,4 @@
-import type { EmployeeScoringResponse } from "@/lib/employee-scoring-functions";
+import type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
 
 export const EMPLOYEE_SCORING_STORAGE_KEY = "alyson-employee-scoring-session";
 

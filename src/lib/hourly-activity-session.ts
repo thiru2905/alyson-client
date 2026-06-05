@@ -1,4 +1,4 @@
-import type { HourlyActivityResponse } from "@/lib/hourly-activity-functions";
+import type { HourlyActivityResponse } from "@/lib/hourly-activity-types";
 
 export const HOURLY_ACTIVITY_STORAGE_KEY = "alyson-hourly-report-session";
 

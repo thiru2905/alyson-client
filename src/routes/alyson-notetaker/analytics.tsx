@@ -30,6 +30,8 @@ import {
   YAxis,
 } from "recharts";
 import { getNotetakerAnalyticsInsights, getNotetakerAnalyticsReport } from "@/lib/notetaker-analytics-functions";
+import { listMeetingsFromS3Range } from "@/lib/notetaker-s3-calendar-functions";
+import { dateMatchesSearchQuery, textMatchesSearchQuery } from "@/lib/fuzzy-text-search";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/alyson-notetaker/analytics")({
@@ -91,7 +93,14 @@ type AppliedFilters = {
   start: string;
   end: string;
   speakers: string[];
+  meetingPrefixes: string[];
+};
+
+type MeetingOption = {
+  prefix: string;
+  day: string;
   title: string;
+  transcriptKey: string | null;
 };
 
 function speakersEqual(a: string[], b: string[]) {
@@ -102,13 +111,20 @@ function speakersEqual(a: string[], b: string[]) {
   return sa.every((v, i) => v === sb[i]);
 }
 
+function prefixesEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
 function draftMatchesApplied(
   periodMode: PeriodMode,
   periodDays: PeriodDays,
   customStart: string,
   customEnd: string,
   speakers: string[],
-  meetingTitleFilter: string,
+  meetingPrefixes: string[],
   applied: AppliedFilters | null,
 ) {
   if (!applied) return false;
@@ -120,7 +136,7 @@ function draftMatchesApplied(
   return (
     periodMatch &&
     speakersEqual(speakers, applied.speakers) &&
-    meetingTitleFilter.trim() === applied.title
+    prefixesEqual(meetingPrefixes, applied.meetingPrefixes)
   );
 }
 
@@ -153,7 +169,7 @@ function bootstrapFromSession() {
     start: s.applied.start,
     end: s.applied.end,
     speakers: s.applied.speakers,
-    title: s.applied.title,
+    meetingPrefixes: s.applied.meetingPrefixes ?? [],
   };
   return {
     applied,
@@ -162,7 +178,8 @@ function bootstrapFromSession() {
     customStart: s.customStart ?? s.applied.start,
     customEnd: s.customEnd ?? s.applied.end,
     speakerChips: s.speakerChips,
-    meetingTitleFilter: s.meetingTitleFilter,
+    selectedMeetingPrefixes: s.selectedMeetingPrefixes ?? s.applied.meetingPrefixes ?? [],
+    meetingSearch: s.meetingSearch ?? "",
     insightsMd: s.insightsMd,
   };
 }
@@ -176,7 +193,10 @@ function AnalyticsPage() {
   const [customStart, setCustomStart] = useState(() => boot?.customStart ?? rangeForLastDays(DEFAULT_PERIOD).start);
   const [customEnd, setCustomEnd] = useState(() => boot?.customEnd ?? rangeForLastDays(DEFAULT_PERIOD).end);
   const [speakerChips, setSpeakerChips] = useState<string[]>(() => boot?.speakerChips ?? []);
-  const [meetingTitleFilter, setMeetingTitleFilter] = useState(() => boot?.meetingTitleFilter ?? "");
+  const [selectedMeetingPrefixes, setSelectedMeetingPrefixes] = useState<string[]>(
+    () => boot?.selectedMeetingPrefixes ?? [],
+  );
+  const [meetingSearch, setMeetingSearch] = useState(() => boot?.meetingSearch ?? "");
   /** Set when user clicks Apply; restored from session when returning to this page. */
   const [applied, setApplied] = useState<AppliedFilters | null>(() => boot?.applied ?? null);
   const [insightsMd, setInsightsMd] = useState<string | null>(() => boot?.insightsMd ?? null);
@@ -193,9 +213,17 @@ function AnalyticsPage() {
     customStart,
     customEnd,
     speakerChips,
-    meetingTitleFilter,
+    selectedMeetingPrefixes,
     applied,
   );
+
+  const meetingsQ = useQuery({
+    queryKey: ["notetaker-analytics-meetings", draftRange.start, draftRange.end],
+    queryFn: () => listMeetingsFromS3Range({ data: draftRange }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const meetingOptions = (meetingsQ.data?.meetings ?? []) as MeetingOption[];
 
   const q = useQuery({
     queryKey: analyticsQueryKey(
@@ -205,7 +233,7 @@ function AnalyticsPage() {
             start: applied.start,
             end: applied.end,
             speakers: applied.speakers,
-            title: applied.title,
+            meetingPrefixes: applied.meetingPrefixes,
           }
         : null,
     ),
@@ -216,7 +244,7 @@ function AnalyticsPage() {
           start: applied.start,
           end: applied.end,
           speakerFilters: applied.speakers.length ? applied.speakers : undefined,
-          meetingTitleFilter: applied.title || undefined,
+          meetingPrefixes: applied.meetingPrefixes.length ? applied.meetingPrefixes : undefined,
           maxMeetings: 100,
         },
       });
@@ -269,17 +297,18 @@ function AnalyticsPage() {
         start: applied.start,
         end: applied.end,
         speakers: applied.speakers,
-        title: applied.title,
+        meetingPrefixes: applied.meetingPrefixes,
       },
       periodMode,
       periodDays,
       customStart,
       customEnd,
       speakerChips,
-      meetingTitleFilter,
+      selectedMeetingPrefixes,
+      meetingSearch,
       insightsMd,
     });
-  }, [applied, periodMode, periodDays, customStart, customEnd, speakerChips, meetingTitleFilter, insightsMd]);
+  }, [applied, periodMode, periodDays, customStart, customEnd, speakerChips, selectedMeetingPrefixes, meetingSearch, insightsMd]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !report) return;
@@ -313,16 +342,9 @@ function AnalyticsPage() {
       start,
       end,
       speakers: [...speakerChips],
-      title: meetingTitleFilter.trim(),
+      meetingPrefixes: [...selectedMeetingPrefixes],
     });
     setInsightsMd(null);
-  };
-
-  const onFilterKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      applyFilters();
-    }
   };
 
   const addSpeakerChips = (raw: string) => {
@@ -346,6 +368,48 @@ function AnalyticsPage() {
 
   const removeSpeakerChip = (name: string) => {
     setSpeakerChips((prev) => prev.filter((s) => s !== name));
+  };
+
+  const allSpeakersSelected = speakerChips.length === 0;
+  const allMeetingsSelected = selectedMeetingPrefixes.length === 0;
+
+  const periodDraftMatchesApplied = (nextApplied: AppliedFilters | null) => {
+    if (!nextApplied) return false;
+    return (
+      periodMode === nextApplied.periodMode &&
+      (periodMode === "preset"
+        ? periodDays === nextApplied.periodDays
+        : customStart === nextApplied.start && customEnd === nextApplied.end)
+    );
+  };
+
+  const selectAllSpeakers = () => {
+    if (allSpeakersSelected) return;
+    setSpeakerChips([]);
+    if (applied && periodDraftMatchesApplied(applied) && prefixesEqual(selectedMeetingPrefixes, applied.meetingPrefixes)) {
+      setApplied({ ...applied, speakers: [] });
+      setInsightsMd(null);
+    }
+  };
+
+  const selectAllMeetings = () => {
+    if (allMeetingsSelected) return;
+    setSelectedMeetingPrefixes([]);
+    setMeetingSearch("");
+    if (applied && periodDraftMatchesApplied(applied) && speakersEqual(speakerChips, applied.speakers)) {
+      setApplied({ ...applied, meetingPrefixes: [] });
+      setInsightsMd(null);
+    }
+  };
+
+  const toggleMeetingPrefix = (prefix: string) => {
+    setSelectedMeetingPrefixes((prev) =>
+      prev.includes(prefix) ? prev.filter((p) => p !== prefix) : [...prev, prefix],
+    );
+  };
+
+  const removeMeetingPrefix = (prefix: string) => {
+    setSelectedMeetingPrefixes((prev) => prev.filter((p) => p !== prefix));
   };
 
   const confirmGoToMeeting = () => {
@@ -411,7 +475,7 @@ function AnalyticsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Meeting analytics"
-        description="Speaker participation across finalized meetings (S3 transcripts). Adjust filters, then Apply to load."
+        description="Speaker participation across finalized meetings (S3 transcripts). Pick meetings by title, choose speakers, then Apply."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -512,25 +576,30 @@ function AnalyticsPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
-            <div className="space-y-1 lg:col-span-2">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Speakers</span>
+            <div className="space-y-1 lg:col-span-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Speakers</span>
+                <button
+                  type="button"
+                  onClick={selectAllSpeakers}
+                  title="Include everyone who spoke in matching meetings"
+                  className={
+                    "h-6 px-2.5 rounded-full text-[11px] font-medium border transition-colors " +
+                    (allSpeakersSelected
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-paper border-border text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  All
+                </button>
+              </div>
               <SpeakerChipsInput
                 chips={speakerChips}
                 onAdd={addSpeakerChips}
                 onRemove={removeSpeakerChip}
-                placeholder="Type name, press Enter"
+                placeholder={allSpeakersSelected ? "All speakers — type a name to filter" : "Type name, press Enter"}
               />
             </div>
-            <label className="space-y-1 lg:col-span-2">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Meeting title contains</span>
-              <input
-                value={meetingTitleFilter}
-                onChange={(e) => setMeetingTitleFilter(e.target.value)}
-                onKeyDown={onFilterKeyDown}
-                placeholder="e.g. standup"
-                className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm"
-              />
-            </label>
             <button
               type="submit"
               disabled={!filtersDirty && applied !== null}
@@ -544,14 +613,33 @@ function AnalyticsPage() {
               {q.isFetching ? "Loading…" : filtersDirty || applied === null ? "Apply filters" : "Up to date"}
             </button>
           </div>
+
+          <MeetingPicker
+            meetings={meetingOptions}
+            loading={meetingsQ.isFetching}
+            selectedPrefixes={selectedMeetingPrefixes}
+            search={meetingSearch}
+            onSearchChange={setMeetingSearch}
+            onToggle={toggleMeetingPrefix}
+            onRemove={removeMeetingPrefix}
+            onSelectAll={selectAllMeetings}
+            allSelected={allMeetingsSelected}
+          />
+
           <p className="text-[11px] text-muted-foreground">
             {applied === null
-              ? `Pick a period (default: last ${DEFAULT_PERIOD} days) or Custom dates. Add speakers with Enter, then Apply to crawl S3 transcripts.`
+              ? `Pick a period (default: last ${DEFAULT_PERIOD} days) or Custom dates. Use All for every meeting/speaker, or pick specific meetings by their actual titles. Then Apply.`
               : filtersDirty
                 ? "Filters changed — click Apply to refresh charts (previous results stay visible until then)."
                 : `${formatAppliedPeriod(applied)}${
-                    applied.speakers.length ? ` · speakers: ${applied.speakers.join(", ")} (any match)` : ""
-                  }${applied.title ? ` · title: ${applied.title}` : ""}`}
+                    applied.speakers.length
+                      ? ` · speakers: ${applied.speakers.join(", ")} (any match)`
+                      : " · all speakers"
+                  }${
+                    applied.meetingPrefixes.length
+                      ? ` · ${applied.meetingPrefixes.length} meeting${applied.meetingPrefixes.length === 1 ? "" : "s"} selected`
+                      : " · all meetings"
+                  }`}
           </p>
         </form>
 
@@ -623,6 +711,13 @@ function AnalyticsPage() {
               <Kpi label="Unique speakers" value={String(report.uniqueSpeakersGlobal)} />
               <Kpi label="Total utterances" value={String(report.totalUtterances)} />
             </div>
+            {(report.mergedSpeakerAccounts ?? 0) > 0 && (
+              <p className="text-[12px] text-muted-foreground -mt-2">
+                Merged {report.mergedSpeakerAccounts} duplicate account
+                {report.mergedSpeakerAccounts === 1 ? "" : "s"} (same person, different emails or name variants) using the employee
+                directory so rankings reflect one person.
+              </p>
+            )}
             {report.analyzedCount === 0 && report.meetingCount > 0 && (
               <p className="text-[12px] text-muted-foreground -mt-2">
                 {report.skippedNoTranscript > 0
@@ -790,8 +885,9 @@ function AnalyticsPage() {
 
             <p className="text-[11px] text-muted-foreground">
               Crawler reads <code className="text-[10px]">alyson-notetaker/transcripts/…/transcript.txt</code> lines as{" "}
-              <code className="text-[10px]">Name: utterance</code>. Speaker names with colons may parse incorrectly. Max 100 meetings per
-              request. Export includes talk-time % (pie + table) and clickable transcript links on Meeting Calendar.
+              <code className="text-[10px]">Name: utterance</code>. Speakers with multiple emails (e.g. mohita@revcloud.com and
+              mohita@cintara.ai) are merged via the employee directory. Max 100 meetings per request. Export includes talk-time % (pie +
+              table) and clickable transcript links on Meeting Calendar.
             </p>
           </>
         )}
@@ -908,6 +1004,143 @@ function ChartCard({
 
 function EmptyChart() {
   return <div className="h-[200px] grid place-items-center text-sm text-muted-foreground">No data for current filters</div>;
+}
+
+function MeetingPicker({
+  meetings,
+  loading,
+  selectedPrefixes,
+  search,
+  onSearchChange,
+  onToggle,
+  onRemove,
+  onSelectAll,
+  allSelected,
+}: {
+  meetings: MeetingOption[];
+  loading: boolean;
+  selectedPrefixes: string[];
+  search: string;
+  onSearchChange: (v: string) => void;
+  onToggle: (prefix: string) => void;
+  onRemove: (prefix: string) => void;
+  onSelectAll: () => void;
+  allSelected: boolean;
+}) {
+  const withTranscript = useMemo(
+    () => meetings.filter((m) => m.transcriptKey),
+    [meetings],
+  );
+  const byPrefix = useMemo(() => new Map(withTranscript.map((m) => [m.prefix, m])), [withTranscript]);
+  const selectedSet = useMemo(() => new Set(selectedPrefixes), [selectedPrefixes]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim();
+    if (!q) return withTranscript;
+    return withTranscript.filter(
+      (m) => textMatchesSearchQuery(m.title, q) || dateMatchesSearchQuery(m.day, q),
+    );
+  }, [withTranscript, search]);
+
+  const selectedMeetings = selectedPrefixes
+    .map((p) => byPrefix.get(p))
+    .filter(Boolean) as MeetingOption[];
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-border bg-paper/40 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Meetings</span>
+        <button
+          type="button"
+          onClick={onSelectAll}
+          title="Include every meeting with a transcript in this period"
+          className={
+            "h-6 px-2.5 rounded-full text-[11px] font-medium border transition-colors " +
+            (allSelected
+              ? "bg-foreground text-background border-foreground"
+              : "bg-paper border-border text-muted-foreground hover:text-foreground")
+          }
+        >
+          All
+        </button>
+        {!allSelected && selectedPrefixes.length > 0 && (
+          <span className="text-[11px] text-muted-foreground">
+            {selectedPrefixes.length} selected
+          </span>
+        )}
+        <span className="text-[10px] text-muted-foreground ml-auto">
+          {loading ? "Loading meetings…" : `${withTranscript.length} with transcript`}
+        </span>
+      </div>
+
+      {!allSelected && selectedMeetings.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedMeetings.map((m) => (
+            <span
+              key={m.prefix}
+              className="inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full bg-muted text-[11px] font-medium max-w-full"
+              title={`${m.title} (${m.day})`}
+            >
+              <span className="truncate max-w-[180px]">{m.title}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(m.prefix)}
+                className="h-4 w-4 rounded-full hover:bg-background/80 grid place-items-center text-muted-foreground hover:text-foreground"
+                aria-label={`Remove ${m.title}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <input
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        placeholder="Search by title or date (fuzzy, e.g. data engineering)"
+        className="w-full h-8 px-2 rounded-md border border-border bg-background text-sm"
+      />
+
+      <div className="rounded-md border border-border bg-background max-h-[min(200px,35vh)] overflow-y-auto overscroll-contain">
+        {loading && withTranscript.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] text-muted-foreground">Loading meetings for this period…</div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-4 text-[12px] text-muted-foreground">
+            {withTranscript.length === 0
+              ? "No meetings with transcripts in this period."
+              : "No meetings match your search."}
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((m) => {
+              const checked = selectedSet.has(m.prefix);
+              return (
+                <li key={m.prefix}>
+                  <label className="flex items-start gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/40 text-[12px]">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => onToggle(m.prefix)}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium block truncate">{m.title}</span>
+                      <span className="text-muted-foreground">{m.day}</span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <p className="text-[10px] text-muted-foreground leading-relaxed">
+        Pick meetings by their actual calendar titles — no need for a shared keyword like “standup”. Use All to analyze every
+        meeting in the period, or check specific ones (e.g. your daily sync even if it is named differently each week).
+      </p>
+    </div>
+  );
 }
 
 function SpeakerChipsInput({

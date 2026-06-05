@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
-import type { EmployeeScoringResponse } from "@/lib/employee-scoring-functions";
+import type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
 import type { EmployeeScoreRow } from "@/lib/employee-scoring-rules";
 import { SCORING_WEIGHTS } from "@/lib/employee-scoring-rules";
 import { medalTierForRank } from "@/lib/rank-medals-core";
