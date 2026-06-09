@@ -139,7 +139,7 @@ function EmployeeOnboardingPage() {
         return;
       }
 
-      persistRows(next, { op: "update", details: "Inline table edit" });
+      persistRows(next, { op: "update" });
     },
     [canEdit, deleteM, persistRows],
   );

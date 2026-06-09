@@ -48,12 +48,14 @@ export const getOnboardingRoster = createServerFn({ method: "GET" }).handler(asy
 export const saveOnboardingRoster = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => saveRowsInput.parse(data))
   .handler(async ({ data }) => {
+    const existing = await ensureOnboardingOnS3(data.actor ?? null);
     const rows = asOnboardingRows(data.rows);
     const saved = await putOnboardingToS3(rows, {
       op: data.op ?? "bulk_replace",
       actor: data.actor ?? null,
       employeeId: data.employeeId ?? null,
       details: data.details,
+      previousRows: existing.rows,
     });
     return {
       rows: saved.rows,
@@ -73,7 +75,9 @@ export const addOnboardingUser = createServerFn({ method: "POST" })
       op: "create",
       actor: data.actor ?? null,
       employeeId: row["Employee ID"],
+      employeeName: row.Name,
       details: `Added onboarding row for ${row.Name || row["Employee ID"]}`,
+      previousRows: existing.rows,
     });
     return {
       rows: saved.rows,

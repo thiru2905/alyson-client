@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { diffOnboardingRows, summarizeRowEdit, summarizeRowEdits } from "@/lib/onboarding-audit";
 import { BUNDLED_ONBOARDING_ROSTER_CSV } from "@/lib/bundled-data";
 import { parseOnboardingCsv } from "@/lib/onboarding-csv";
 import type {
@@ -166,13 +167,78 @@ export async function getOnboardingFromS3(): Promise<{
   }
 }
 
+function buildOnboardingLogEntry(args: {
+  ts: string;
+  op: OnboardingOperation;
+  actor?: string | null;
+  employeeId?: string | null;
+  employeeName?: string | null;
+  rowCount: number;
+  details?: string;
+  previousRows?: OnboardingRow[];
+  nextRows?: OnboardingRow[];
+  deletedRow?: OnboardingRow | null;
+}): OnboardingLogEntry {
+  const base: OnboardingLogEntry = {
+    ts: args.ts,
+    op: args.op,
+    employeeId: args.employeeId ?? null,
+    employeeName: args.employeeName ?? null,
+    actor: args.actor ?? null,
+    rowCount: args.rowCount,
+    details: args.details,
+  };
+
+  if (args.op === "update" && args.previousRows && args.nextRows) {
+    const edits = diffOnboardingRows(args.previousRows, args.nextRows);
+    if (edits.length === 1) {
+      const edit = edits[0]!;
+      return {
+        ...base,
+        employeeId: edit.employeeId,
+        employeeName: edit.employeeName,
+        changes: edit.changes,
+        details: summarizeRowEdit(edit),
+      };
+    }
+    if (edits.length > 1) {
+      return {
+        ...base,
+        edits,
+        details: summarizeRowEdits(edits),
+      };
+    }
+    return {
+      ...base,
+      details: args.details ?? "No field changes detected",
+    };
+  }
+
+  if (args.op === "delete" && args.deletedRow) {
+    return {
+      ...base,
+      employeeId: args.deletedRow["Employee ID"] || args.deletedRow._rowId || base.employeeId,
+      employeeName: args.deletedRow.Name || base.employeeName,
+      deletedRow: args.deletedRow,
+      details:
+        args.details ??
+        `Deleted ${args.deletedRow.Name || args.deletedRow["Employee ID"] || "employee"}`,
+    };
+  }
+
+  return base;
+}
+
 export async function putOnboardingToS3(
   rows: OnboardingRow[],
   args?: {
     op?: OnboardingOperation;
     actor?: string | null;
     employeeId?: string | null;
+    employeeName?: string | null;
     details?: string;
+    previousRows?: OnboardingRow[];
+    deletedRow?: OnboardingRow | null;
   },
 ) {
   const bucket = bucketName();
@@ -200,14 +266,20 @@ export async function putOnboardingToS3(
     }),
   );
 
-  await appendOnboardingLog({
-    ts: updatedAt,
-    op: args?.op ?? "bulk_replace",
-    employeeId: args?.employeeId ?? null,
-    actor: args?.actor ?? null,
-    rowCount: sanitized.length,
-    details: args?.details,
-  });
+  await appendOnboardingLog(
+    buildOnboardingLogEntry({
+      ts: updatedAt,
+      op: args?.op ?? "bulk_replace",
+      actor: args?.actor ?? null,
+      employeeId: args?.employeeId ?? null,
+      employeeName: args?.employeeName ?? null,
+      rowCount: sanitized.length,
+      details: args?.details,
+      previousRows: args?.previousRows,
+      nextRows: sanitized,
+      deletedRow: args?.deletedRow ?? null,
+    }),
+  );
 
   return { bucket, key, updatedAt, rows: sanitized };
 }
@@ -239,17 +311,22 @@ export async function deleteOnboardingRowFromS3(
   actor?: string | null,
 ) {
   const existing = await ensureOnboardingOnS3(actor);
+  const removed = existing.rows.find(
+    (r) => r._rowId === employeeId || r["Employee ID"] === employeeId,
+  );
   const next = existing.rows.filter(
     (r) => r._rowId !== employeeId && r["Employee ID"] !== employeeId,
   );
-  if (next.length === existing.rows.length) {
+  if (!removed || next.length === existing.rows.length) {
     throw new Error("Employee not found");
   }
   const saved = await putOnboardingToS3(next, {
     op: "delete",
     actor: actor ?? null,
     employeeId,
-    details: `Deleted employee ${employeeId}`,
+    employeeName: removed.Name,
+    deletedRow: removed,
+    previousRows: existing.rows,
   });
   return saved;
 }

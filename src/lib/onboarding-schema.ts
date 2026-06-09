@@ -43,13 +43,32 @@ export type OnboardingOperation =
   | "delete"
   | "bulk_replace";
 
+export type OnboardingFieldChange = {
+  field: string;
+  from: string;
+  to: string;
+};
+
+export type OnboardingRowEdit = {
+  employeeId: string;
+  employeeName: string;
+  changes: OnboardingFieldChange[];
+};
+
 export type OnboardingLogEntry = {
   ts: string;
   op: OnboardingOperation;
   employeeId: string | null;
+  employeeName?: string | null;
   actor: string | null;
   rowCount?: number;
   details?: string;
+  /** Field-level diff when a single employee was edited. */
+  changes?: OnboardingFieldChange[];
+  /** Multiple employees changed in one save. */
+  edits?: OnboardingRowEdit[];
+  /** Snapshot of removed row on delete. */
+  deletedRow?: Partial<OnboardingRow>;
 };
 
 export type OnboardingDataFile = {
