@@ -32,6 +32,7 @@ async function listAssetPrefixes(base, fileName) {
     for (const obj of page.Contents ?? []) {
       const key = String(obj.Key || "");
       if (!key.endsWith(suffix)) continue;
+      if ((obj.Size ?? 0) < 1) continue;
       const prefix = key.slice(base.length, key.length - suffix.length);
       if (prefix) out.add(prefix);
     }

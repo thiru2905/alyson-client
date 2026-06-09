@@ -98,6 +98,50 @@ async function findMeetingPrefixByBotId(botId: string) {
   return null;
 }
 
+export async function deletePersistedMeetingFromS3ByPrefix(prefix: string) {
+  const bucket = bucketName();
+  const client = s3();
+  const p = String(prefix || "").trim();
+  if (!p) return { deleted: false, reason: "Missing prefix", prefix: null };
+
+  const transcriptKey = `alyson-notetaker/transcripts/${p}/transcript.txt`;
+  const notesKey = `alyson-notetaker/meetingnotes/${p}/notes.md`;
+  const deletedKeys: string[] = [];
+
+  for (const key of [transcriptKey, notesKey]) {
+    try {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+      deletedKeys.push(key);
+    } catch {
+      // object may not exist
+    }
+  }
+
+  let token: string | undefined;
+  do {
+    const page = await client.send(
+      new ListObjectsV2Command({ Bucket: bucket, Prefix: "alyson-notetaker/bot-index/", ContinuationToken: token }),
+    );
+    for (const obj of page.Contents ?? []) {
+      const key = String(obj.Key || "");
+      if (!key.endsWith(".json")) continue;
+      try {
+        const r = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        if (!r.Body) continue;
+        const parsed = JSON.parse(await streamToString(r.Body)) as { prefix?: string };
+        if (String(parsed.prefix || "") !== p) continue;
+        await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        deletedKeys.push(key);
+      } catch {
+        // skip unreadable index docs
+      }
+    }
+    token = page.NextContinuationToken;
+  } while (token);
+
+  return { deleted: deletedKeys.length > 0, prefix: p, deletedKeys };
+}
+
 export async function deletePersistedMeetingFromS3ByBotId(botId: string) {
   const bucket = bucketName();
   const client = s3();

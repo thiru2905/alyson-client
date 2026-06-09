@@ -67,7 +67,9 @@ async function listMeetingAssetPrefixes(
   bucket: string,
   base: string,
   fileName: string,
+  opts?: { minSize?: number },
 ): Promise<Set<string>> {
+  const minSize = opts?.minSize ?? 0;
   const out = new Set<string>();
   const suffix = `/${fileName}`;
   let token: string | undefined;
@@ -82,6 +84,7 @@ async function listMeetingAssetPrefixes(
     for (const obj of page.Contents ?? []) {
       const key = String(obj.Key || "");
       if (!key.endsWith(suffix)) continue;
+      if ((obj.Size ?? 0) < minSize) continue;
       const prefix = key.slice(base.length, key.length - suffix.length);
       if (prefix) out.add(prefix);
     }
@@ -187,8 +190,8 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
   const transcriptBase = "alyson-notetaker/transcripts/";
 
   const [notesPrefixes, transcriptPrefixes] = await Promise.all([
-    listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md"),
-    listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt"),
+    listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md", { minSize: 1 }),
+    listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt", { minSize: 1 }),
   ]);
 
   const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes])).filter((p) => {
@@ -243,8 +246,8 @@ export async function auditNotesCoverageFromS3(): Promise<NotesCoverageReport> {
   const transcriptBase = "alyson-notetaker/transcripts/";
 
   const [notesPrefixes, transcriptPrefixes] = await Promise.all([
-    listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md"),
-    listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt"),
+    listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md", { minSize: 1 }),
+    listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt", { minSize: 1 }),
   ]);
 
   const allPrefixes = new Set([...notesPrefixes, ...transcriptPrefixes]);
