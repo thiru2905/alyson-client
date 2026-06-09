@@ -139,7 +139,6 @@ export function UnifiedMeetingsPage() {
     onSuccess: (json, vars) => {
       if (vars.action === "sync") toast.success(`Synced — ${json.sync?.scheduled ?? 0} bots scheduled`);
       else if (vars.action === "disconnect") toast.success("Calendar disconnected");
-      else if (vars.action === "bootstrap") toast.success(`Calendar registered — ${json.sync?.scheduled ?? 0} bots scheduled`);
       void calendarQ.refetch();
       void q.refetch();
     },
@@ -204,7 +203,6 @@ export function UnifiedMeetingsPage() {
           oauthRedirectUri={calendarQ.data?.oauthRedirectUri}
           allowlist={calendarQ.data?.allowlist}
           connected={calendarQ.data?.connected ?? []}
-          onBootstrap={() => calendarActionM.mutate({ action: "bootstrap" })}
           onSync={(calendarId) => calendarActionM.mutate({ action: "sync", calendarId })}
           onDisconnect={(calendarId) => calendarActionM.mutate({ action: "disconnect", calendarId })}
           busy={calendarActionM.isPending}
@@ -358,7 +356,6 @@ function RecallCalendarPanel({
   oauthRedirectUri,
   allowlist,
   connected,
-  onBootstrap,
   onSync,
   onDisconnect,
   busy,
@@ -369,7 +366,6 @@ function RecallCalendarPanel({
   oauthRedirectUri?: string;
   allowlist?: string[];
   connected: RecallCalendarConnection[];
-  onBootstrap: () => void;
   onSync: (calendarId: string) => void;
   onDisconnect: (calendarId: string) => void;
   busy: boolean;
@@ -400,14 +396,6 @@ function RecallCalendarPanel({
             <Link2 className="h-3.5 w-3.5" />
             Connect Google Calendar
           </Link>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onBootstrap}
-            className="h-8 px-3 rounded-md border border-border bg-background text-[12px] font-medium"
-          >
-            Register from env
-          </button>
         </div>
       </div>
 
