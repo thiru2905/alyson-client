@@ -62,7 +62,6 @@ type ScheduledState = {
 
 const CACHE_TTL_MS = 60_000;
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
-const DEFAULT_AUTOMATION_JOIN_OFFSET_MS = 10 * 60 * 1000;
 /** Recall needs join_at slightly in the future for "join now". */
 const IMMEDIATE_JOIN_DELAY_MS = 20 * 1000;
 const MEETING_END_GRACE_MS = 20 * 60 * 1000;
@@ -753,113 +752,6 @@ async function scheduleMeetingInternal(
     }
     return { scheduled: false, error: message };
   }
-}
-
-export function automationJoinOffsetMs(): number {
-  const minutes = Number(process.env.MEETING_BOT_JOIN_OFFSET_MINUTES ?? "10");
-  if (!Number.isFinite(minutes) || minutes < 1) return DEFAULT_AUTOMATION_JOIN_OFFSET_MS;
-  return Math.round(minutes * 60_000);
-}
-
-export function automationCalendarUserEmail(): string {
-  return (
-    process.env.MEETING_BOT_CRON_USER_EMAIL?.trim().toLowerCase() ||
-    "alysonclient@cintara.ai"
-  );
-}
-
-/** Scan one user's primary calendar for the next 24 hours. */
-export async function scanCalendarMeetingsForUser(
-  calendarUserEmail: string,
-  options?: { joinOffsetMs?: number },
-): Promise<UnifiedMeeting[]> {
-  const email = calendarUserEmail.trim().toLowerCase();
-  const joinOffsetMs = options?.joinOffsetMs ?? automationJoinOffsetMs();
-  const timeMin = new Date();
-  const timeMax = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const state = await readState();
-  const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
-  const events = await listCalendarEventsForUser(email, timeMin.toISOString(), timeMax.toISOString());
-  return events.map((event) =>
-    normalizeMeetingEvent(email, event, stateByKey, { allowInProgress: true, joinOffsetMs }),
-  );
-}
-
-export type UnifiedUserScheduleSummary = UnifiedScheduleSummary & {
-  calendarUserEmail: string;
-  meetingsFound: number;
-  joinOffsetMinutes: number;
-  scheduledMeetings: Array<{
-    title: string;
-    startTime: string;
-    botJoinAt: string;
-    meetingId: string;
-  }>;
-};
-
-/**
- * Cron automation: scan one calendar user's next 24h and schedule bots
- * `joinOffsetMinutes` before each meeting (default 10). Recall joins at that time.
- */
-export async function scheduleEligibleUnifiedBotsForUser(
-  calendarUserEmail?: string,
-  options?: { joinOffsetMinutes?: number },
-): Promise<UnifiedUserScheduleSummary> {
-  const email = (calendarUserEmail || automationCalendarUserEmail()).trim().toLowerCase();
-  const joinOffsetMs =
-    options?.joinOffsetMinutes != null
-      ? Math.round(options.joinOffsetMinutes * 60_000)
-      : automationJoinOffsetMs();
-  const joinOffsetMinutes = Math.round(joinOffsetMs / 60_000);
-
-  const meetings = await scanCalendarMeetingsForUser(email, { joinOffsetMs });
-  const out: UnifiedUserScheduleSummary = {
-    calendarUserEmail: email,
-    meetingsFound: meetings.length,
-    joinOffsetMinutes,
-    checked: 0,
-    scheduled: 0,
-    skipped: 0,
-    errors: [],
-    scheduledMeetings: [],
-  };
-
-  for (const meeting of meetings) {
-    if (!meeting.meetingUrl || !meeting.startTime) {
-      out.skipped += 1;
-      continue;
-    }
-    if (meeting.status === "cancelled" || meeting.skipReason) {
-      out.skipped += 1;
-      continue;
-    }
-
-    const joinAt = resolveBotJoinAt(meeting.startTime, meeting.endTime, joinOffsetMs);
-    if (!joinAt) {
-      out.skipped += 1;
-      continue;
-    }
-
-    out.checked += 1;
-    const result = await scheduleMeetingInternal(meeting, { joinOffsetMs });
-    if (result.scheduled) {
-      out.scheduled += 1;
-      out.scheduledMeetings.push({
-        title: meeting.title,
-        startTime: meeting.startTime,
-        botJoinAt: result.botJoinAt || joinAt,
-        meetingId: meeting.id,
-      });
-    } else {
-      out.skipped += 1;
-      if (result.error && !result.error.includes("Already scheduled")) {
-        out.errors.push(`${meeting.title || meeting.googleEventId}: ${result.error}`);
-      }
-    }
-  }
-
-  cache = null;
-  return out;
 }
 
 export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSummary> {
