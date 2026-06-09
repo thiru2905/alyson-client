@@ -50,6 +50,10 @@ import { Route as ApiCronNotetakerTranscriptsRouteImport } from './routes/api/cr
 import { Route as ApiCronDailyReportsRouteImport } from './routes/api/cron/daily-reports'
 import { Route as ApiAnalyticsUnifiedMeetingsRouteImport } from './routes/api/analytics/unified-meetings'
 import { Route as AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/analytics.unified-meetings'
+import { Route as ApiRecallWebhooksCalendarRouteImport } from './routes/api/recall/webhooks/calendar'
+import { Route as ApiRecallCalendarStatusRouteImport } from './routes/api/recall/calendar/status'
+import { Route as ApiRecallCalendarConnectRouteImport } from './routes/api/recall/calendar/connect'
+import { Route as ApiRecallCalendarCallbackRouteImport } from './routes/api/recall/calendar/callback'
 import { Route as ApiAnalyticsUnifiedMeetingsScheduleBotsRouteImport } from './routes/api/analytics/unified-meetings.schedule-bots'
 import { Route as ApiAnalyticsUnifiedMeetingsRefreshRouteImport } from './routes/api/analytics/unified-meetings.refresh'
 import { Route as ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRouteImport } from './routes/api/analytics/unified-meetings.$meetingId.schedule'
@@ -266,6 +270,29 @@ const AlysonNotetakerAnalyticsUnifiedMeetingsRoute =
     path: '/unified-meetings',
     getParentRoute: () => AlysonNotetakerAnalyticsRoute,
   } as any)
+const ApiRecallWebhooksCalendarRoute =
+  ApiRecallWebhooksCalendarRouteImport.update({
+    id: '/api/recall/webhooks/calendar',
+    path: '/api/recall/webhooks/calendar',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiRecallCalendarStatusRoute = ApiRecallCalendarStatusRouteImport.update({
+  id: '/api/recall/calendar/status',
+  path: '/api/recall/calendar/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRecallCalendarConnectRoute =
+  ApiRecallCalendarConnectRouteImport.update({
+    id: '/api/recall/calendar/connect',
+    path: '/api/recall/calendar/connect',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiRecallCalendarCallbackRoute =
+  ApiRecallCalendarCallbackRouteImport.update({
+    id: '/api/recall/calendar/callback',
+    path: '/api/recall/calendar/callback',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiAnalyticsUnifiedMeetingsScheduleBotsRoute =
   ApiAnalyticsUnifiedMeetingsScheduleBotsRouteImport.update({
     id: '/schedule-bots',
@@ -329,6 +356,10 @@ export interface FileRoutesByFullPath {
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
   '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/recall/calendar/callback': typeof ApiRecallCalendarCallbackRoute
+  '/api/recall/calendar/connect': typeof ApiRecallCalendarConnectRoute
+  '/api/recall/calendar/status': typeof ApiRecallCalendarStatusRoute
+  '/api/recall/webhooks/calendar': typeof ApiRecallWebhooksCalendarRoute
   '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRoutesByTo {
@@ -373,6 +404,10 @@ export interface FileRoutesByTo {
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
   '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/recall/calendar/callback': typeof ApiRecallCalendarCallbackRoute
+  '/api/recall/calendar/connect': typeof ApiRecallCalendarConnectRoute
+  '/api/recall/calendar/status': typeof ApiRecallCalendarStatusRoute
+  '/api/recall/webhooks/calendar': typeof ApiRecallWebhooksCalendarRoute
   '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRoutesById {
@@ -420,6 +455,10 @@ export interface FileRoutesById {
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/analytics/unified-meetings/refresh': typeof ApiAnalyticsUnifiedMeetingsRefreshRoute
   '/api/analytics/unified-meetings/schedule-bots': typeof ApiAnalyticsUnifiedMeetingsScheduleBotsRoute
+  '/api/recall/calendar/callback': typeof ApiRecallCalendarCallbackRoute
+  '/api/recall/calendar/connect': typeof ApiRecallCalendarConnectRoute
+  '/api/recall/calendar/status': typeof ApiRecallCalendarStatusRoute
+  '/api/recall/webhooks/calendar': typeof ApiRecallWebhooksCalendarRoute
   '/api/analytics/unified-meetings/$meetingId/schedule': typeof ApiAnalyticsUnifiedMeetingsMeetingIdScheduleRoute
 }
 export interface FileRouteTypes {
@@ -468,6 +507,10 @@ export interface FileRouteTypes {
     | '/api/cron/notetaker-transcripts'
     | '/api/analytics/unified-meetings/refresh'
     | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/recall/calendar/callback'
+    | '/api/recall/calendar/connect'
+    | '/api/recall/calendar/status'
+    | '/api/recall/webhooks/calendar'
     | '/api/analytics/unified-meetings/$meetingId/schedule'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -512,6 +555,10 @@ export interface FileRouteTypes {
     | '/api/cron/notetaker-transcripts'
     | '/api/analytics/unified-meetings/refresh'
     | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/recall/calendar/callback'
+    | '/api/recall/calendar/connect'
+    | '/api/recall/calendar/status'
+    | '/api/recall/webhooks/calendar'
     | '/api/analytics/unified-meetings/$meetingId/schedule'
   id:
     | '__root__'
@@ -558,6 +605,10 @@ export interface FileRouteTypes {
     | '/api/cron/notetaker-transcripts'
     | '/api/analytics/unified-meetings/refresh'
     | '/api/analytics/unified-meetings/schedule-bots'
+    | '/api/recall/calendar/callback'
+    | '/api/recall/calendar/connect'
+    | '/api/recall/calendar/status'
+    | '/api/recall/webhooks/calendar'
     | '/api/analytics/unified-meetings/$meetingId/schedule'
   fileRoutesById: FileRoutesById
 }
@@ -587,6 +638,10 @@ export interface RootRouteChildren {
   ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
   ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
+  ApiRecallCalendarCallbackRoute: typeof ApiRecallCalendarCallbackRoute
+  ApiRecallCalendarConnectRoute: typeof ApiRecallCalendarConnectRoute
+  ApiRecallCalendarStatusRoute: typeof ApiRecallCalendarStatusRoute
+  ApiRecallWebhooksCalendarRoute: typeof ApiRecallWebhooksCalendarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -878,6 +933,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport
       parentRoute: typeof AlysonNotetakerAnalyticsRoute
     }
+    '/api/recall/webhooks/calendar': {
+      id: '/api/recall/webhooks/calendar'
+      path: '/api/recall/webhooks/calendar'
+      fullPath: '/api/recall/webhooks/calendar'
+      preLoaderRoute: typeof ApiRecallWebhooksCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/recall/calendar/status': {
+      id: '/api/recall/calendar/status'
+      path: '/api/recall/calendar/status'
+      fullPath: '/api/recall/calendar/status'
+      preLoaderRoute: typeof ApiRecallCalendarStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/recall/calendar/connect': {
+      id: '/api/recall/calendar/connect'
+      path: '/api/recall/calendar/connect'
+      fullPath: '/api/recall/calendar/connect'
+      preLoaderRoute: typeof ApiRecallCalendarConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/recall/calendar/callback': {
+      id: '/api/recall/calendar/callback'
+      path: '/api/recall/calendar/callback'
+      fullPath: '/api/recall/calendar/callback'
+      preLoaderRoute: typeof ApiRecallCalendarCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/analytics/unified-meetings/schedule-bots': {
       id: '/api/analytics/unified-meetings/schedule-bots'
       path: '/schedule-bots'
@@ -1043,6 +1126,10 @@ const rootRouteChildren: RootRouteChildren = {
     ApiAnalyticsUnifiedMeetingsRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
   ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
+  ApiRecallCalendarCallbackRoute: ApiRecallCalendarCallbackRoute,
+  ApiRecallCalendarConnectRoute: ApiRecallCalendarConnectRoute,
+  ApiRecallCalendarStatusRoute: ApiRecallCalendarStatusRoute,
+  ApiRecallWebhooksCalendarRoute: ApiRecallWebhooksCalendarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

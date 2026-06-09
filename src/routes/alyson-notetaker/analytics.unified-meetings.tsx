@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarDays, RefreshCw } from "lucide-react";
+import { CalendarDays, Link2, RefreshCw, Unplug } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { toast } from "sonner";
 
@@ -35,6 +35,16 @@ export const Route = createFileRoute("/alyson-notetaker/analytics/unified-meetin
   head: () => ({ meta: [{ title: "Unified Meetings — Alyson Notetaker" }] }),
   component: UnifiedMeetingsPage,
 });
+
+type RecallCalendarConnection = {
+  recallCalendarId: string;
+  platform: string;
+  email: string;
+  status: string;
+  connectedAt: string;
+  lastSyncAt?: string;
+  lastSyncSummary?: { scheduled: number; skipped: number; processed: number; errors: number };
+};
 
 export function UnifiedMeetingsPage() {
   const [search, setSearch] = useState("");
@@ -79,8 +89,6 @@ export function UnifiedMeetingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Company-wide bulk schedule + Vercel cron (schedule-bots) disabled — use per-row Schedule Alyson only.
-
   const scheduleOneM = useMutation({
     mutationFn: async ({ meetingId, redispatch }: { meetingId: string; redispatch?: boolean }) => {
       const qs = redispatch ? "?redispatch=1" : "";
@@ -99,6 +107,56 @@ export function UnifiedMeetingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const calendarQ = useQuery({
+    queryKey: ["recall-calendar-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/recall/calendar/status");
+      const json = await res.json();
+      if (!res.ok) throw new Error(String(json?.error || "Failed to load calendar status"));
+      return json as {
+        ok: boolean;
+        webhookUrl: string;
+        connected: RecallCalendarConnection[];
+        total: number;
+      };
+    },
+    staleTime: 30_000,
+  });
+
+  const calendarActionM = useMutation({
+    mutationFn: async (body: { action: string; calendarId?: string }) => {
+      const res = await fetch("/api/recall/calendar/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(String(json?.error || "Calendar action failed"));
+      return json;
+    },
+    onSuccess: (json, vars) => {
+      if (vars.action === "sync") toast.success(`Synced — ${json.sync?.scheduled ?? 0} bots scheduled`);
+      else if (vars.action === "disconnect") toast.success("Calendar disconnected");
+      else if (vars.action === "bootstrap") toast.success(`Calendar registered — ${json.sync?.scheduled ?? 0} bots scheduled`);
+      void calendarQ.refetch();
+      void q.refetch();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("calendarConnected") === "1") {
+      toast.success(`Google Calendar connected — ${params.get("scheduled") || 0} bots scheduled`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    const err = params.get("calendarError");
+    if (err) {
+      toast.error(decodeURIComponent(err));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   const meetings = q.data?.meetings ?? [];
   const stats = useMemo(() => {
     const withLink = meetings.filter((m) => Boolean(m.meetingUrl)).length;
@@ -113,7 +171,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="Upcoming company meetings in the next 24 hours. Schedule Alyson per meeting only (no auto cron / bulk schedule)."
+        description="Recall Calendar V2 auto-schedules Alyson for every meeting with a link. Manual schedule still available per row."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -137,6 +195,17 @@ export function UnifiedMeetingsPage() {
       />
 
       <div className="px-5 md:px-8 py-6 space-y-4">
+        <RecallCalendarPanel
+          loading={calendarQ.isLoading}
+          error={calendarQ.isError ? (calendarQ.error as Error).message : null}
+          webhookUrl={calendarQ.data?.webhookUrl}
+          connected={calendarQ.data?.connected ?? []}
+          onBootstrap={() => calendarActionM.mutate({ action: "bootstrap" })}
+          onSync={(calendarId) => calendarActionM.mutate({ action: "sync", calendarId })}
+          onDisconnect={(calendarId) => calendarActionM.mutate({ action: "disconnect", calendarId })}
+          busy={calendarActionM.isPending}
+        />
+
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Kpi label="Total meetings next 24h" value={String(stats.total)} />
           <Kpi label="Meetings with Meet links" value={String(stats.withLink)} />
@@ -276,6 +345,108 @@ function fmt(v: string): string {
   const d = new Date(v);
   if (!Number.isFinite(d.getTime())) return v;
   return d.toLocaleString();
+}
+
+function RecallCalendarPanel({
+  loading,
+  error,
+  webhookUrl,
+  connected,
+  onBootstrap,
+  onSync,
+  onDisconnect,
+  busy,
+}: {
+  loading: boolean;
+  error: string | null;
+  webhookUrl?: string;
+  connected: RecallCalendarConnection[];
+  onBootstrap: () => void;
+  onSync: (calendarId: string) => void;
+  onDisconnect: (calendarId: string) => void;
+  busy: boolean;
+}) {
+  const active = connected.filter((c) => c.status === "connected");
+
+  return (
+    <div className="surface-card p-4 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Recall Calendar V2</div>
+          <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+            Connect Google Calendar once. Recall sends webhooks when events change; Alyson schedules a bot for every
+            meeting with a video link (deduped by start time + URL).
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/api/recall/calendar/connect?returnTo=/alyson-notetaker/unified-meetings"
+            className="h-8 px-3 rounded-md border border-border bg-foreground text-background text-[12px] font-medium inline-flex items-center gap-1.5"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+            Connect Google Calendar
+          </a>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onBootstrap}
+            className="h-8 px-3 rounded-md border border-border bg-background text-[12px] font-medium"
+          >
+            Register from env
+          </button>
+        </div>
+      </div>
+
+      {webhookUrl && (
+        <div className="text-[11px] text-muted-foreground break-all">
+          Webhook URL (set in Recall dashboard): <span className="text-foreground font-mono">{webhookUrl}</span>
+        </div>
+      )}
+
+      {loading && <div className="text-sm text-muted-foreground">Loading calendar connections…</div>}
+      {error && <div className="text-sm text-destructive">{error}</div>}
+
+      {!loading && active.length === 0 && (
+        <div className="text-sm text-muted-foreground">No calendar connected yet.</div>
+      )}
+
+      {active.map((c) => (
+        <div key={c.recallCalendarId} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+          <div>
+            <div className="text-sm font-medium">{c.email}</div>
+            <div className="text-[11px] text-muted-foreground font-mono">{c.recallCalendarId}</div>
+            {c.lastSyncSummary && (
+              <div className="text-[11px] text-muted-foreground mt-0.5">
+                Last sync: {c.lastSyncSummary.scheduled} scheduled · {c.lastSyncSummary.skipped} skipped
+                {c.lastSyncSummary.errors ? ` · ${c.lastSyncSummary.errors} errors` : ""}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onSync(c.recallCalendarId)}
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11px] font-medium inline-flex items-center gap-1"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Sync now
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onDisconnect(c.recallCalendarId)}
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11px] font-medium inline-flex items-center gap-1 text-destructive"
+            >
+              <Unplug className="h-3 w-3" />
+              Disconnect
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function Kpi({ label, value }: { label: string; value: string }) {
