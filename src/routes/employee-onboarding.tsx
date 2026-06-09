@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Cloud, Loader2, UserPlus } from "lucide-react";
+import { Cloud, Loader2, RefreshCw, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
 import { FetchingBar } from "@/components/Skeleton";
@@ -13,6 +13,7 @@ import {
   deleteOnboardingUser,
   getOnboardingRoster,
   saveOnboardingRoster,
+  syncOnboardingOrgChartFields,
 } from "@/lib/onboarding-functions";
 
 export const Route = createFileRoute("/employee-onboarding")({
@@ -81,6 +82,17 @@ function EmployeeOnboardingPage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save to S3"),
+  });
+
+  const syncM = useMutation({
+    mutationFn: async () => syncOnboardingOrgChartFields({ data: { actor } }),
+    onSuccess: (r) => {
+      rowsDirty.current = false;
+      setRows(r.rows as Record<string, unknown>[]);
+      toast.success("Location, team, and status synced from org chart");
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to sync org chart fields"),
   });
 
   const deleteM = useMutation({
@@ -206,7 +218,9 @@ function EmployeeOnboardingPage() {
       />
 
       <div className="px-5 md:px-8 py-6 space-y-5">
-        <FetchingBar active={(q.isFetching && !q.data) || saveM.isPending || deleteM.isPending} />
+        <FetchingBar
+          active={(q.isFetching && !q.data) || saveM.isPending || deleteM.isPending || syncM.isPending}
+        />
 
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className="inline-flex items-center gap-1.5 text-muted-foreground">
@@ -237,6 +251,18 @@ function EmployeeOnboardingPage() {
             <UserPlus className="h-3.5 w-3.5" />
             Add user
           </button>
+          {canEdit ? (
+            <button
+              type="button"
+              disabled={syncM.isPending}
+              onClick={() => syncM.mutate()}
+              className="h-8 px-3 rounded-md border border-border text-[11.5px] font-medium inline-flex items-center gap-1.5 hover:bg-muted/50 disabled:opacity-60"
+              title="Merge Location, Team, Manager, and Employment Status from org chart CSV into S3 roster"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncM.isPending ? "animate-spin" : ""}`} />
+              {syncM.isPending ? "Syncing…" : "Sync org chart fields"}
+            </button>
+          ) : null}
           <Link
             to="/boarding"
             className="h-8 px-3 rounded-md border border-border text-[11.5px] font-medium inline-flex items-center hover:bg-muted/50"
@@ -254,7 +280,7 @@ function EmployeeOnboardingPage() {
         {!q.isLoading && (
           <BoardingDataTable
             title="Onboarding roster"
-            description="Click Edit to update a row in the form drawer. Changes sync to S3 on save."
+            description="Filter by location, team, or status. Download CSV exports the filtered view. Edit opens the form drawer."
             columns={columns}
             rows={rows}
             editable
@@ -266,7 +292,14 @@ function EmployeeOnboardingPage() {
             hideAddButton
             deleteConfirmNameKey="Name"
             deleteConfirmIdKey="Employee ID"
-            facetFilters={[{ column: "Location", label: "Location" }]}
+            facetFilters={[
+              { column: "Location", label: "Location", emptyLabel: "No location" },
+              { column: "Team", label: "Team", emptyLabel: "No team" },
+              { column: "Employment Status", label: "Status", emptyLabel: "No status" },
+            ]}
+            enableCsvDownload
+            csvFileNamePrefix="onboarding-roster"
+            csvColumns={columns}
           />
         )}
       </div>

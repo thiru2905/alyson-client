@@ -104,6 +104,49 @@ function loadSeedRows(): OnboardingRow[] {
   return sanitizeRows(parseOnboardingCsv(BUNDLED_ONBOARDING_ROSTER_CSV));
 }
 
+const ORG_CHART_MERGE_FIELDS = ["Location", "Team", "Manager", "Employment Status"] as const;
+
+/** Merge org-chart reference fields from bundled CSV into existing S3 rows (by Employee ID, then official email). */
+export function mergeOnboardingWithOrgChartSeed(
+  existing: OnboardingRow[],
+  seed: OnboardingRow[] = loadSeedRows(),
+): OnboardingRow[] {
+  const byId = new Map<string, OnboardingRow>();
+  const byEmail = new Map<string, OnboardingRow>();
+  for (const row of seed) {
+    const id = String(row["Employee ID"] ?? row._rowId ?? "").trim();
+    if (id) byId.set(id, row);
+    const email = String(row["Official Email"] ?? "").trim().toLowerCase();
+    if (email) byEmail.set(email, row);
+  }
+
+  return existing.map((row) => {
+    const id = String(row["Employee ID"] ?? row._rowId ?? "").trim();
+    const email = String(row["Official Email"] ?? "").trim().toLowerCase();
+    const ref = (id && byId.get(id)) || (email && byEmail.get(email));
+    if (!ref) return row;
+
+    const merged = { ...row } as OnboardingRow;
+    for (const field of ORG_CHART_MERGE_FIELDS) {
+      const next = String(ref[field] ?? "").trim();
+      if (next) merged[field] = next;
+    }
+    return merged;
+  });
+}
+
+export async function syncOnboardingOrgChartFieldsFromSeed(actor?: string | null) {
+  const existing = await ensureOnboardingOnS3(actor);
+  const merged = sanitizeRows(mergeOnboardingWithOrgChartSeed(existing.rows));
+  const saved = await putOnboardingToS3(merged, {
+    op: "bulk_replace",
+    actor: actor ?? null,
+    details: "Synced Location, Team, Manager, and Employment Status from org chart CSV",
+    previousRows: existing.rows,
+  });
+  return saved;
+}
+
 async function readLogTail(): Promise<string> {
   const bucket = bucketName();
   const key = logKey();

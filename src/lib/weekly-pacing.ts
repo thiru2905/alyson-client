@@ -13,6 +13,8 @@ export type WeeklyPacingRow = {
   email: string;
   name: string;
   title: string;
+  location: string | null;
+  team: string | null;
   managerName: string | null;
   managerEmail: string | null;
   hoursWorked: number;
@@ -40,6 +42,8 @@ export type WeeklyPacingRow = {
 
 export type WeeklyPacingSortField =
   | "name"
+  | "location"
+  | "team"
   | "managerName"
   | "hoursWorked"
   | "avgDailyPace"
@@ -165,11 +169,53 @@ export function resolvePacingRollupDay(selectedDay: string, today = pacingTodayI
   return selectedDay;
 }
 
+export type WeeklyPacingFacetFilters = {
+  location?: string;
+  team?: string;
+  active?: string;
+};
+
+export function pacingFilterExportSlug(filters: WeeklyPacingFacetFilters): string {
+  const parts: string[] = [];
+  if (filters.location && filters.location !== "__all__") {
+    parts.push(filters.location === "__empty__" ? "no-location" : filters.location.toLowerCase());
+  }
+  if (filters.team && filters.team !== "__all__") {
+    parts.push(filters.team === "__empty__" ? "no-team" : filters.team.toLowerCase());
+  }
+  if (filters.active && filters.active !== "__all__") {
+    parts.push(filters.active === "yes" ? "active" : "inactive");
+  }
+  return parts.join("-");
+}
+
+export function pacingFilterSummaryLabel(filters: WeeklyPacingFacetFilters): string | null {
+  const parts: string[] = [];
+  if (filters.location && filters.location !== "__all__") {
+    parts.push(`Location: ${filters.location === "__empty__" ? "Not set" : filters.location}`);
+  }
+  if (filters.team && filters.team !== "__all__") {
+    parts.push(`Team: ${filters.team === "__empty__" ? "Not set" : filters.team}`);
+  }
+  if (filters.active && filters.active !== "__all__") {
+    parts.push(filters.active === "yes" ? "Active only" : "Inactive only");
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 export function filterPacingRows(rows: WeeklyPacingRow[], query: string): WeeklyPacingRow[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter((r) => {
-    const hay = [r.name, r.email, r.title, r.managerName ?? "", r.managerEmail ?? ""]
+    const hay = [
+      r.name,
+      r.email,
+      r.title,
+      r.location ?? "",
+      r.team ?? "",
+      r.managerName ?? "",
+      r.managerEmail ?? "",
+    ]
       .join(" ")
       .toLowerCase();
     return hay.includes(q);
@@ -325,6 +371,8 @@ export function buildPacingRow(args: {
     email: args.email,
     name: args.name,
     title: args.title,
+    location: null,
+    team: null,
     managerName: null,
     managerEmail: null,
     hoursWorked,
@@ -441,6 +489,13 @@ export function sortPacingRows(
         cmp =
           (a.managerName || "").localeCompare(b.managerName || "") ||
           a.name.localeCompare(b.name);
+        break;
+      case "location":
+        cmp =
+          (a.location || "").localeCompare(b.location || "") || a.name.localeCompare(b.name);
+        break;
+      case "team":
+        cmp = (a.team || "").localeCompare(b.team || "") || a.name.localeCompare(b.name);
         break;
       case "status":
         cmp = STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status];

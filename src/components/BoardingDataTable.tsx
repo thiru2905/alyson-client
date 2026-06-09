@@ -8,6 +8,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 
@@ -117,6 +118,10 @@ export function BoardingDataTable({
   readOnlyCells = false,
   onEditRow,
   facetFilters,
+  enableCsvDownload = false,
+  csvFileName = "export.csv",
+  csvFileNamePrefix,
+  csvColumns,
 }: {
   title: string;
   description?: string;
@@ -140,7 +145,13 @@ export function BoardingDataTable({
   readOnlyCells?: boolean;
   onEditRow?: (rowId: string) => void;
   /** Dropdown filters (e.g. Location) — options derived from row data. */
-  facetFilters?: Array<{ column: string; label: string }>;
+  facetFilters?: Array<{ column: string; label: string; emptyLabel?: string }>;
+  /** Download visible (filtered) rows as CSV. */
+  enableCsvDownload?: boolean;
+  csvFileName?: string;
+  /** When set, builds filename from active facet filters + date. */
+  csvFileNamePrefix?: string;
+  csvColumns?: string[];
 }) {
   const [globalFilter, setGlobalFilter] = useState(initialFilter);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -301,18 +312,37 @@ export function BoardingDataTable({
     : "";
   const deleteTargetId = deleteConfirmIdKey ? toText(deleteTarget?.[deleteConfirmIdKey]).trim() : "";
 
+  const facetEmptyToken = useCallback((facet: { column: string; emptyLabel?: string }) => {
+    return `__empty__:${facet.column}`;
+  }, []);
+
+  const facetDisplayEmpty = useCallback((facet: { emptyLabel?: string }) => {
+    return facet.emptyLabel ?? "Not set";
+  }, []);
+
+  const facetCellToken = useCallback(
+    (facet: { column: string; emptyLabel?: string }, row: Record<string, unknown>) => {
+      const raw = toText(row[facet.column]).trim();
+      return raw || facetEmptyToken(facet);
+    },
+    [facetEmptyToken],
+  );
+
   const facetOptions = useMemo(() => {
     const out: Record<string, string[]> = {};
     for (const facet of facetFilters ?? []) {
       const values = new Set<string>();
       for (const row of rows) {
-        const raw = toText(row[facet.column]).trim();
-        values.add(raw || "(No location)");
+        values.add(facetCellToken(facet, row));
       }
-      out[facet.column] = [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      out[facet.column] = [...values].sort((a, b) => {
+        if (a.startsWith("__empty__:")) return 1;
+        if (b.startsWith("__empty__:")) return -1;
+        return a.localeCompare(b, undefined, { sensitivity: "base" });
+      });
     }
     return out;
-  }, [facetFilters, rows]);
+  }, [facetCellToken, facetFilters, rows]);
 
   const filteredRows = useMemo(() => {
     const active = (facetFilters ?? []).filter((f) => {
@@ -323,11 +353,10 @@ export function BoardingDataTable({
     return rows.filter((row) =>
       active.every((facet) => {
         const selected = facetValues[facet.column]?.trim() ?? "";
-        const cell = toText(row[facet.column]).trim() || "(No location)";
-        return cell.toLowerCase() === selected.toLowerCase();
+        return facetCellToken(facet, row).toLowerCase() === selected.toLowerCase();
       }),
     );
-  }, [facetFilters, facetValues, rows]);
+  }, [facetCellToken, facetFilters, facetValues, rows]);
 
   const table = useReactTable({
     data: filteredRows,
@@ -345,6 +374,47 @@ export function BoardingDataTable({
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: (row) => String(row[rowIdKey] ?? ""),
   });
+
+  const resolveCsvFileName = useCallback(() => {
+    if (!csvFileNamePrefix) return csvFileName;
+    const parts = [csvFileNamePrefix];
+    for (const facet of facetFilters ?? []) {
+      const v = facetValues[facet.column]?.trim();
+      if (!v || v === "__all__") continue;
+      const label = v.startsWith("__empty__:")
+        ? "unset"
+        : v.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      parts.push(label || "unset");
+    }
+    parts.push(new Date().toISOString().slice(0, 10));
+    return `${parts.join("-")}.csv`;
+  }, [csvFileName, csvFileNamePrefix, facetFilters, facetValues]);
+
+  const downloadCsv = useCallback(() => {
+    const exportCols = csvColumns ?? columns;
+    const visible = table.getFilteredRowModel().rows.map((r) => r.original);
+    if (!visible.length) {
+      toast.error("No rows to export for the current filters");
+      return;
+    }
+    const escape = (value: string) => {
+      if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+      return value;
+    };
+    const header = exportCols.join(",");
+    const body = visible.map((row) =>
+      exportCols.map((col) => escape(toText(row[col]))).join(","),
+    );
+    const csv = [header, ...body].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resolveCsvFileName();
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${visible.length} row${visible.length === 1 ? "" : "s"}`);
+  }, [columns, csvColumns, resolveCsvFileName, table]);
 
   return (
     <section className="surface-card overflow-hidden">
@@ -379,12 +449,23 @@ export function BoardingDataTable({
                 <option value="__all__">All {facet.label}</option>
                 {(facetOptions[facet.column] ?? []).map((opt) => (
                   <option key={opt} value={opt}>
-                    {opt === "(No location)" ? "No location" : opt}
+                    {opt.startsWith("__empty__:") ? facetDisplayEmpty(facet) : opt}
                   </option>
                 ))}
               </select>
             </label>
           ))}
+          {enableCsvDownload ? (
+            <button
+              type="button"
+              onClick={downloadCsv}
+              className="h-8 px-3 rounded-md border border-border text-[11.5px] font-medium inline-flex items-center gap-1.5 hover:bg-muted/50 shrink-0"
+              title="Download CSV for current filters"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download CSV
+            </button>
+          ) : null}
           {isEditable && !hideAddButton && (
             <button
               type="button"

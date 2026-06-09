@@ -5,6 +5,7 @@ import {
   deleteOnboardingRowFromS3,
   ensureOnboardingOnS3,
   putOnboardingToS3,
+  syncOnboardingOrgChartFieldsFromSeed,
 } from "@/lib/onboarding-s3.server";
 
 const actorSchema = z.object({
@@ -83,6 +84,18 @@ export const addOnboardingUser = createServerFn({ method: "POST" })
       rows: saved.rows,
       updatedAt: saved.updatedAt,
       created: row,
+    };
+  });
+
+export const syncOnboardingOrgChartFields = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => actorSchema.parse(data))
+  .handler(async ({ data }) => {
+    const saved = await syncOnboardingOrgChartFieldsFromSeed(data.actor ?? null);
+    return {
+      rows: saved.rows,
+      updatedAt: saved.updatedAt,
+      bucket: saved.bucket,
+      key: saved.key,
     };
   });
 

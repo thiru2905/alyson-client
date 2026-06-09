@@ -24,9 +24,9 @@ const STATUS_ROW_STYLE: Record<
 
 function renderWeeklyPacingPdf(
   doc: jsPDF,
-  args: { report: WeeklyPacingReport; rows: WeeklyPacingRow[] },
+  args: { report: WeeklyPacingReport; rows: WeeklyPacingRow[]; filterSummary?: string | null },
 ) {
-  const { report, rows } = args;
+  const { report, rows, filterSummary } = args;
   const margin = 28;
   const pageW = doc.internal.pageSize.getWidth();
   const weekLabel = formatRangeLabel(report.week.start, report.today);
@@ -48,8 +48,13 @@ function renderWeeklyPacingPdf(
     68,
   );
   doc.text(`Generated: ${new Date(report.generatedAt).toLocaleString()}`, margin, 80);
+  if (filterSummary) {
+    doc.text(`Filters: ${filterSummary} · ${rows.length} employee${rows.length === 1 ? "" : "s"}`, margin, 92);
+  } else {
+    doc.text(`${rows.length} employee${rows.length === 1 ? "" : "s"} in export`, margin, 92);
+  }
 
-  const kpiY = 96;
+  const kpiY = filterSummary ? 108 : 96;
   const kpiW = 118;
   const gap = 8;
   const kpis: Array<{ label: string; value: string; fill: Rgb; text: Rgb }> = [
@@ -82,6 +87,8 @@ function renderWeeklyPacingPdf(
     margin: { left: margin, right: margin },
     head: [[
       "Employee",
+      "Location",
+      "Team",
       "Manager",
       "Worked",
       "Avg/day",
@@ -95,6 +102,8 @@ function renderWeeklyPacingPdf(
     ]],
     body: rows.map((r) => [
       `${r.name}\n${r.email}`,
+      r.location || "—",
+      r.team || "—",
       r.managerName
         ? `${r.managerName}${r.managerEmail ? `\n${r.managerEmail}` : ""}`
         : "—",
@@ -111,24 +120,26 @@ function renderWeeklyPacingPdf(
     styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak", valign: "middle" },
     headStyles: { fillColor: [245, 245, 245], textColor: 20, fontSize: 7.5, fontStyle: "bold" },
     columnStyles: {
-      0: { cellWidth: 118 },
-      1: { cellWidth: 108 },
-      2: { halign: "right", cellWidth: 40 },
-      3: { halign: "right", cellWidth: 40 },
-      4: { halign: "right", cellWidth: 44 },
-      5: { halign: "right", cellWidth: 36 },
+      0: { cellWidth: 108 },
+      1: { cellWidth: 52 },
+      2: { cellWidth: 72 },
+      3: { cellWidth: 96 },
+      4: { halign: "right", cellWidth: 38 },
+      5: { halign: "right", cellWidth: 38 },
       6: { halign: "right", cellWidth: 42 },
       7: { halign: "right", cellWidth: 34 },
       8: { halign: "right", cellWidth: 40 },
-      9: { halign: "center", cellWidth: 34 },
-      10: { halign: "center", cellWidth: 50 },
+      9: { halign: "right", cellWidth: 32 },
+      10: { halign: "right", cellWidth: 38 },
+      11: { halign: "center", cellWidth: 32 },
+      12: { halign: "center", cellWidth: 48 },
     },
     didParseCell: (data) => {
       if (data.section !== "body") return;
       const row = rows[data.row.index];
       if (!row) return;
 
-      if (data.column.index === 10) {
+      if (data.column.index === 12) {
         const style = STATUS_ROW_STYLE[row.status];
         data.cell.styles.fillColor = style.fill;
         data.cell.styles.textColor = style.text;
@@ -139,16 +150,16 @@ function renderWeeklyPacingPdf(
       data.cell.styles.fillColor = style.fill;
       data.cell.styles.textColor = style.text;
 
-      if (data.column.index === 6) {
+      if (data.column.index === 8) {
         data.cell.styles.textColor =
           row.projectedPace >= report.targetHours ? [4, 120, 87] : [194, 65, 12];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 5 && row.hoursOver > 0) {
+      if (data.column.index === 7 && row.hoursOver > 0) {
         data.cell.styles.textColor = [4, 120, 87];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 8) {
+      if (data.column.index === 10) {
         data.cell.styles.fontStyle = "bold";
       }
     },
@@ -219,10 +230,13 @@ function renderWeeklyPacingPdf(
 export function downloadWeeklyPacingPdf(args: {
   report: WeeklyPacingReport;
   rows: WeeklyPacingRow[];
+  filterSummary?: string | null;
+  filename?: string;
 }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   renderWeeklyPacingPdf(doc, args);
-  doc.save(`weekly-pacing-${args.report.today}.pdf`);
+  const slug = args.filename?.trim();
+  doc.save(slug || `weekly-pacing-${args.report.today}.pdf`);
 }
 
 export function buildWeeklyPacingPdfBuffer(args: {

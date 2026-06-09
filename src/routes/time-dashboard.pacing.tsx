@@ -10,6 +10,8 @@ import { formatRangeLabel, isIsoDate } from "@/lib/time-dashboard-range";
 import {
   filterPacingRows,
   isFridayOrLater,
+  pacingFilterExportSlug,
+  pacingFilterSummaryLabel,
   pacingTodayIso,
   formatActiveLabel,
   PACING_STATUS_LABEL,
@@ -71,6 +73,9 @@ function WeeklyPacingPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [pdfLoading, setPdfLoading] = useState(false);
   const [searchQ, setSearchQ] = useState("");
+  const [locationFilter, setLocationFilter] = useState("__all__");
+  const [teamFilter, setTeamFilter] = useState("__all__");
+  const [activeFilter, setActiveFilter] = useState("__all__");
   const [day, setDay] = useState(search.day ?? defaultDay);
 
   useEffect(() => {
@@ -96,15 +101,63 @@ function WeeklyPacingPage() {
   const report = q.data;
   const allRows = report?.rows ?? [];
 
+  const locationOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of allRows) set.add(r.location?.trim() || "__empty__");
+    return [...set].sort((a, b) => {
+      if (a === "__empty__") return 1;
+      if (b === "__empty__") return -1;
+      return a.localeCompare(b);
+    });
+  }, [allRows]);
+
+  const teamOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of allRows) set.add(r.team?.trim() || "__empty__");
+    return [...set].sort((a, b) => {
+      if (a === "__empty__") return 1;
+      if (b === "__empty__") return -1;
+      return a.localeCompare(b);
+    });
+  }, [allRows]);
+
+  const facetFilteredRows = useMemo(() => {
+    return allRows.filter((r) => {
+      const loc = r.location?.trim() || "__empty__";
+      const team = r.team?.trim() || "__empty__";
+      if (locationFilter !== "__all__" && loc !== locationFilter) return false;
+      if (teamFilter !== "__all__" && team !== teamFilter) return false;
+      if (activeFilter === "yes" && !r.active) return false;
+      if (activeFilter === "no" && r.active) return false;
+      return true;
+    });
+  }, [activeFilter, allRows, locationFilter, teamFilter]);
+
   const filteredRows = useMemo(
-    () => filterPacingRows(allRows, searchQ),
-    [allRows, searchQ],
+    () => filterPacingRows(facetFilteredRows, searchQ),
+    [facetFilteredRows, searchQ],
   );
 
   const rows = useMemo(
     () => sortPacingRows(filteredRows, sortBy, sortDir),
     [filteredRows, sortBy, sortDir],
   );
+
+  const facetFilters = useMemo(
+    () => ({ location: locationFilter, team: teamFilter, active: activeFilter }),
+    [activeFilter, locationFilter, teamFilter],
+  );
+
+  const hasFacetFilters =
+    locationFilter !== "__all__" || teamFilter !== "__all__" || activeFilter !== "__all__";
+  const hasAnyFilters = hasFacetFilters || Boolean(searchQ.trim());
+  const filterSummary = useMemo(() => pacingFilterSummaryLabel(facetFilters), [facetFilters]);
+
+  const exportFilenameBase = useMemo(() => {
+    if (!report) return "weekly-pacing";
+    const slug = pacingFilterExportSlug(facetFilters);
+    return `weekly-pacing-${report.week.start}-to-${report.today}${slug ? `-${slug}` : ""}`;
+  }, [facetFilters, report]);
 
   const weekLabel = report ? formatRangeLabel(report.week.start, report.week.end) : "…";
   const asOfLabel = report ? formatRangeLabel(report.today, report.today) : "…";
@@ -152,8 +205,13 @@ function WeeklyPacingPage() {
     if (!report || !rows.length) return;
     setPdfLoading(true);
     try {
-      downloadWeeklyPacingPdf({ report, rows });
-      toast.success("Weekly pacing PDF downloaded");
+      downloadWeeklyPacingPdf({
+        report,
+        rows,
+        filterSummary,
+        filename: `${exportFilenameBase}.pdf`,
+      });
+      toast.success(`PDF downloaded (${rows.length} employee${rows.length === 1 ? "" : "s"})`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to build PDF");
     } finally {
@@ -162,12 +220,14 @@ function WeeklyPacingPage() {
   }
 
   function exportCsv() {
-    if (!report) return;
+    if (!report || !rows.length) return;
     downloadCSV(
-      `weekly-pacing-${report.week.start}-to-${report.today}.csv`,
+      `${exportFilenameBase}.csv`,
       rows.map((r) => ({
         email: r.email,
         name: r.name,
+        location: r.location ?? "",
+        team: r.team ?? "",
         manager_name: r.managerName ?? "",
         manager_email: r.managerEmail ?? "",
         hours_worked: r.hoursWorked.toFixed(2),
@@ -183,6 +243,14 @@ function WeeklyPacingPage() {
         status: PACING_STATUS_LABEL[r.status],
       })),
     );
+    toast.success(`CSV downloaded (${rows.length} employee${rows.length === 1 ? "" : "s"})`);
+  }
+
+  function clearFilters() {
+    setLocationFilter("__all__");
+    setTeamFilter("__all__");
+    setActiveFilter("__all__");
+    setSearchQ("");
   }
 
   if (!canAccess) {
@@ -196,7 +264,7 @@ function WeeklyPacingPage() {
         title="Weekly Pacing Report"
         description={
           report
-            ? `${report.company.name} · Week ${weekLabel} (${report.timeZoneLabel})${isHistoricalWeek ? ` · as of ${asOfLabel}` : ""} · Target ${report.targetHours}h/week · ${filteredRows.length}${searchQ.trim() ? `/${allRows.length}` : ""} employees · ${summary?.metTarget ?? 0} met target`
+            ? `${report.company.name} · Week ${weekLabel} (${report.timeZoneLabel})${isHistoricalWeek ? ` · as of ${asOfLabel}` : ""} · Target ${report.targetHours}h/week · ${filteredRows.length}${hasAnyFilters ? `/${allRows.length}` : ""} employees${filterSummary ? ` · ${filterSummary}` : ""} · ${summary?.metTarget ?? 0} met target`
             : "Loading weekly pacing from Time Doctor…"
         }
         dense
@@ -222,7 +290,7 @@ function WeeklyPacingPage() {
               onClick={exportPdf}
               disabled={!rows.length || q.isFetching || pdfLoading}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
-              title="Download PDF with green/red row colors by status"
+              title="Download PDF for filtered employees only"
             >
               <FileText className="h-3.5 w-3.5" />
               {pdfLoading ? "Building PDF…" : "Export PDF"}
@@ -231,6 +299,7 @@ function WeeklyPacingPage() {
               onClick={exportCsv}
               disabled={!rows.length || q.isFetching}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+              title="Download CSV for filtered employees only"
             >
               <Download className="h-3.5 w-3.5" />
               Export CSV
@@ -250,22 +319,81 @@ function WeeklyPacingPage() {
 
         {report ? (
           <>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <WeeklyPacingWeekPicker
-                day={day}
-                onDayChange={setDay}
-                onApply={applyWeek}
-                isBusy={isBusy}
-                draftMatchesApplied={draftMatchesApplied}
-              />
-              <div className="relative w-full sm:max-w-xs">
-                <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                <input
-                  value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                  placeholder="Search name, email, or manager…"
-                  className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <WeeklyPacingWeekPicker
+                  day={day}
+                  onDayChange={setDay}
+                  onApply={applyWeek}
+                  isBusy={isBusy}
+                  draftMatchesApplied={draftMatchesApplied}
                 />
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    value={searchQ}
+                    onChange={(e) => setSearchQ(e.target.value)}
+                    placeholder="Search name, email, location, team…"
+                    className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-muted-foreground font-medium">Location</span>
+                  <select
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                    className="h-8 min-w-[9rem] px-2 rounded-md border border-border bg-background"
+                  >
+                    <option value="__all__">All locations</option>
+                    {locationOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt === "__empty__" ? "No location" : opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-muted-foreground font-medium">Team</span>
+                  <select
+                    value={teamFilter}
+                    onChange={(e) => setTeamFilter(e.target.value)}
+                    className="h-8 min-w-[9rem] px-2 rounded-md border border-border bg-background"
+                  >
+                    <option value="__all__">All teams</option>
+                    {teamOptions.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt === "__empty__" ? "No team" : opt}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-muted-foreground font-medium">Active</span>
+                  <select
+                    value={activeFilter}
+                    onChange={(e) => setActiveFilter(e.target.value)}
+                    className="h-8 min-w-[8rem] px-2 rounded-md border border-border bg-background"
+                  >
+                    <option value="__all__">All</option>
+                    <option value="yes">Active only</option>
+                    <option value="no">Inactive only</option>
+                  </select>
+                </label>
+                {hasAnyFilters ? (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-8 px-3 rounded-md border border-border text-[11.5px] text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
+                <span className="text-muted-foreground tabular-nums sm:ml-auto">
+                  Showing {filteredRows.length}
+                  {hasAnyFilters ? ` of ${allRows.length}` : ""} employees
+                </span>
               </div>
             </div>
 
@@ -323,7 +451,7 @@ function WeeklyPacingPage() {
             ) : null}
 
             <TableScroll>
-              <div className="surface-card overflow-hidden min-w-[1500px]">
+              <div className="surface-card overflow-hidden min-w-[1700px]">
                 <table className="ops-table w-full">
                   <thead>
                     <tr>
@@ -335,6 +463,26 @@ function WeeklyPacingPage() {
                         >
                           Employee
                           <SortIcon field="name" />
+                        </button>
+                      </th>
+                      <th align="left">
+                        <button
+                          type="button"
+                          onClick={() => applySort("location")}
+                          className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("location")}`}
+                        >
+                          Location
+                          <SortIcon field="location" />
+                        </button>
+                      </th>
+                      <th align="left">
+                        <button
+                          type="button"
+                          onClick={() => applySort("team")}
+                          className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("team")}`}
+                        >
+                          Team
+                          <SortIcon field="team" />
                         </button>
                       </th>
                       <th align="left">
@@ -448,7 +596,7 @@ function WeeklyPacingPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="text-center text-muted-foreground py-8">
+                        <td colSpan={13} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
                             : "No employees found for this week."}
@@ -461,6 +609,8 @@ function WeeklyPacingPage() {
                             <div className="font-medium text-[13px]">{r.name}</div>
                             <div className="text-[11px] text-muted-foreground">{r.email}</div>
                           </td>
+                          <td className="text-[13px]">{r.location || "—"}</td>
+                          <td className="text-[13px]">{r.team || "—"}</td>
                           <td>
                             <div className="text-[13px]">{r.managerName || "—"}</div>
                             {r.managerEmail ? (

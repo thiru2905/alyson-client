@@ -51,3 +51,35 @@ export function parseOnboardingCsv(csv: string): OnboardingRow[] {
 
   return out;
 }
+
+function escapeCsvCell(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** Serialize onboarding rows to CSV (Org Chart Sheet1 column order). */
+export function serializeOnboardingCsv(
+  rows: OnboardingRow[],
+  columns: readonly string[] = ONBOARDING_COLUMNS,
+): string {
+  const header = columns.join(",");
+  const lines = rows.map((row) =>
+    columns.map((col) => escapeCsvCell(String(row[col as OnboardingColumn] ?? ""))).join(","),
+  );
+  return [header, ...lines].join("\n");
+}
+
+export function downloadOnboardingCsv(
+  rows: OnboardingRow[],
+  filename: string,
+  columns: readonly string[] = ONBOARDING_COLUMNS,
+) {
+  const csv = serializeOnboardingCsv(rows, columns);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

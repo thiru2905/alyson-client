@@ -6,6 +6,7 @@ export type OrgChartRosterEntry = {
   name: string;
   email: string;
   personalEmail?: string;
+  location: string;
   team: string;
   managerLabel: string;
 };
@@ -107,6 +108,7 @@ export function parseOrgChartRosterCsv(csv: string): OrgChartRosterEntry[] {
       name: name || officialEmail.split("@")[0] || officialEmail,
       email: canonicalOfficialEmail(officialEmail),
       personalEmail: personalEmail.includes("@") ? personalEmail : undefined,
+      location: String(cols[idx["Location"] ?? 1] ?? "").trim(),
       team: String(cols[idx["Team"] ?? 4] ?? "").trim(),
       managerLabel: String(cols[idx["Manager"] ?? 5] ?? "").trim(),
     });
@@ -116,6 +118,7 @@ export function parseOrgChartRosterCsv(csv: string): OrgChartRosterEntry[] {
     entries.unshift({
       name: "Bill",
       email: "alysonclient@cintara.ai",
+      location: "",
       team: "Leadership",
       managerLabel: "",
     });
@@ -267,16 +270,48 @@ export function findRosterEntryForEmployee(
   return findRosterEntry(email, lookup) ?? findRosterEntryByName(name, lookup);
 }
 
+export type OrgChartPacingFields = OrgChartManagerInfo & {
+  location: string | null;
+  team: string | null;
+};
+
 export function attachManagerToPacingRow<T extends { email: string; name?: string }>(
   row: T,
   lookup: OrgChartRosterLookup,
-): T & OrgChartManagerInfo {
+): T & OrgChartPacingFields {
   let mgr = resolveManagerForEmployeeEmail(row.email, lookup);
+  const rosterEntry = findRosterEntryForEmployee(row.email, row.name ?? "", lookup);
   if (!mgr.managerEmail && row.name) {
-    const entry = findRosterEntryByName(row.name, lookup);
-    if (entry?.managerLabel) {
-      mgr = resolveManagersFromLabel(entry.managerLabel, lookup);
+    if (rosterEntry?.managerLabel) {
+      mgr = resolveManagersFromLabel(rosterEntry.managerLabel, lookup);
     }
   }
-  return { ...row, ...mgr };
+  return {
+    ...row,
+    ...mgr,
+    location: rosterEntry?.location?.trim() || null,
+    team: rosterEntry?.team?.trim() || null,
+  };
+}
+
+/** Merge onboarding / org-chart supplemental rows by official email. */
+export function mergeOrgChartRosterEntries(
+  primary: OrgChartRosterEntry[],
+  supplemental: OrgChartRosterEntry[],
+): OrgChartRosterEntry[] {
+  const byEmail = new Map(primary.map((e) => [e.email, { ...e }]));
+  for (const row of supplemental) {
+    if (!row.email) continue;
+    const existing = byEmail.get(row.email);
+    if (existing) {
+      if (row.location) existing.location = row.location;
+      if (row.team) existing.team = row.team;
+      if (row.managerLabel) existing.managerLabel = row.managerLabel;
+      if (row.name) existing.name = existing.name || row.name;
+      if (row.personalEmail) existing.personalEmail = existing.personalEmail || row.personalEmail;
+    } else {
+      byEmail.set(row.email, row);
+    }
+  }
+  return [...byEmail.values()];
 }
