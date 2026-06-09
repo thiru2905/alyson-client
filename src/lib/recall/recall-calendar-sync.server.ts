@@ -18,6 +18,16 @@ import { isRecallCalendarEmailAllowed } from "@/lib/recall/recall-calendar-allow
 import { recallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
 
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
+const SYNC_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const SYNC_LOOKAHEAD_MS = 14 * 24 * 60 * 60 * 1000;
+const MAX_NEW_BOTS_PER_SYNC = 30;
+
+function isUpcomingRecallEvent(event: RecallCalendarEvent): boolean {
+  const startMs = new Date(event.start_time).getTime();
+  if (!Number.isFinite(startMs)) return false;
+  const now = Date.now();
+  return startMs >= now - 24 * 60 * 60 * 1000 && startMs <= now + SYNC_LOOKAHEAD_MS;
+}
 
 export function recallCalendarDedupeKey(event: RecallCalendarEvent): string {
   const start = String(event.start_time || "").trim();
@@ -99,6 +109,10 @@ export async function processRecallCalendarEvent(event: RecallCalendarEvent): Pr
     };
   }
 
+  if (event.bots?.length) {
+    return { action: "skipped", reason: "Bot already scheduled on this event" };
+  }
+
   const deduplicationKey = recallCalendarDedupeKey(event);
   const botConfig = botConfigForEvent(event);
   const updated = await scheduleBotForRecallCalendarEvent({
@@ -148,25 +162,44 @@ export async function syncRecallCalendarEvents(args: {
     };
   }
 
+  const updatedAtGte =
+    args.updatedAtGte ?? new Date(Date.now() - SYNC_LOOKBACK_MS).toISOString();
+
   const events = await listAllRecallCalendarEvents({
     calendarId: args.calendarId,
-    updatedAtGte: args.updatedAtGte,
+    updatedAtGte,
   });
+
+  const relevantEvents = events.filter(
+    (event) => event.is_deleted || isUpcomingRecallEvent(event),
+  );
 
   const result: RecallCalendarSyncResult = {
     calendarId: args.calendarId,
-    processed: events.length,
+    processed: relevantEvents.length,
     scheduled: 0,
     skipped: 0,
     deleted: 0,
     errors: [],
   };
 
-  for (const event of events) {
+  let newBotsScheduled = 0;
+  for (const event of relevantEvents) {
     try {
+      if (
+        !event.is_deleted &&
+        shouldAutoScheduleRecallEvent(event) &&
+        !event.bots?.length &&
+        newBotsScheduled >= MAX_NEW_BOTS_PER_SYNC
+      ) {
+        result.skipped += 1;
+        continue;
+      }
       const r = await processRecallCalendarEvent(event);
-      if (r.action === "scheduled") result.scheduled += 1;
-      else if (r.action === "deleted") result.deleted += 1;
+      if (r.action === "scheduled") {
+        result.scheduled += 1;
+        newBotsScheduled += 1;
+      } else if (r.action === "deleted") result.deleted += 1;
       else result.skipped += 1;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -175,7 +208,7 @@ export async function syncRecallCalendarEvents(args: {
   }
 
   await updateRecallCalendarSyncMeta(args.calendarId, {
-    lastSyncTs: args.updatedAtGte || new Date().toISOString(),
+    lastSyncTs: updatedAtGte,
     lastSyncSummary: {
       scheduled: result.scheduled,
       skipped: result.skipped,

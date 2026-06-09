@@ -137,8 +137,13 @@ export function UnifiedMeetingsPage() {
       return json;
     },
     onSuccess: (json, vars) => {
-      if (vars.action === "sync") toast.success(`Synced — ${json.sync?.scheduled ?? 0} bots scheduled`);
-      else if (vars.action === "disconnect") toast.success("Calendar disconnected");
+      if (vars.action === "sync") {
+        const s = json.sync as { scheduled?: number; skipped?: number; errors?: string[] } | undefined;
+        const errCount = s?.errors?.length ?? 0;
+        toast.success(
+          `Synced — ${s?.scheduled ?? 0} bots scheduled, ${s?.skipped ?? 0} skipped${errCount ? ` (${errCount} errors)` : ""}`,
+        );
+      } else if (vars.action === "disconnect") toast.success("Calendar disconnected");
       void calendarQ.refetch();
       void q.refetch();
     },
