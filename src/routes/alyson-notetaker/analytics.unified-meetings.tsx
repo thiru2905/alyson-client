@@ -375,8 +375,10 @@ function RecallCalendarPanel({
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Recall Calendar V2</div>
           <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Connect Google Calendar once. Recall sends webhooks when events change; Alyson schedules a bot for every
-            meeting with a video link (deduped by start time + URL).
+            Connect Google Calendar once. Auto-scheduling runs only for{" "}
+            <span className="text-foreground font-medium">alysonclient@cintara.ai</span> and{" "}
+            <span className="text-foreground font-medium">mohita@cintara.ai</span>. Recall webhooks schedule
+            Alyson for every meeting with a video link (deduped by start time + URL).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

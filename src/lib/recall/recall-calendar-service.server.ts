@@ -15,14 +15,20 @@ import {
 import { signOAuthState, syncRecallCalendarEvents, verifyOAuthState } from "@/lib/recall/recall-calendar-sync.server";
 import type { RecallCalendarWebhookPayload } from "@/lib/recall/recall-calendar-types";
 import { googleOAuthClientId, googleOAuthClientSecret } from "@/lib/recall/google-calendar-oauth.server";
+import {
+  assertRecallCalendarEmailAllowed,
+  getRecallCalendarAllowlist,
+  isRecallCalendarEmailAllowed,
+} from "@/lib/recall/recall-calendar-allowlist.server";
 
 export async function getRecallCalendarStatus() {
   const state = await readRecallCalendarState();
-  const connected = getConnectedRecallCalendars(state);
+  const connected = getConnectedRecallCalendars(state).filter((c) => isRecallCalendarEmailAllowed(c.email));
   return {
     webhookUrl: recallCalendarWebhookUrl(),
     connected,
     total: state.connections.length,
+    allowlist: getRecallCalendarAllowlist(),
   };
 }
 
@@ -36,26 +42,31 @@ export async function completeRecallCalendarConnect(code: string, stateToken: st
   if (!state) throw new Error("Invalid OAuth state");
 
   const tokens = await exchangeGoogleOAuthCode(code, origin);
+  const email = tokens.email || "";
+  assertRecallCalendarEmailAllowed(email);
+
   const cal = await createRecallCalendar({
     platform: "google_calendar",
     oauthClientId: googleOAuthClientId(),
     oauthClientSecret: googleOAuthClientSecret(),
     oauthRefreshToken: tokens.refreshToken,
-    oauthEmail: tokens.email,
+    oauthEmail: email || tokens.email,
     metadata: { source: "alyson_oauth_connect" },
   });
 
-  const email = tokens.email || String(cal.platform_email || cal.oauth_email || "connected");
+  const connectedEmail = email || String(cal.platform_email || cal.oauth_email || "connected");
+  assertRecallCalendarEmailAllowed(connectedEmail);
+
   await upsertRecallCalendarConnection({
     recallCalendarId: cal.id,
     platform: "google_calendar",
-    email,
+    email: connectedEmail,
     connectedAt: new Date().toISOString(),
     status: "connected",
   });
 
-  const sync = await syncRecallCalendarEvents({ calendarId: cal.id });
-  return { calendarId: cal.id, email, sync, returnTo: state.returnTo };
+  const sync = await syncRecallCalendarEvents({ calendarId: cal.id, ownerEmail: connectedEmail });
+  return { calendarId: cal.id, email: connectedEmail, sync, returnTo: state.returnTo };
 }
 
 export async function disconnectRecallCalendar(calendarId: string) {
@@ -69,13 +80,28 @@ export async function syncRecallCalendarNow(calendarId: string, updatedAtGte?: s
   if (cal.status === "disconnected") {
     throw new Error("Calendar is disconnected on Recall — reconnect Google Calendar");
   }
-  return syncRecallCalendarEvents({ calendarId, updatedAtGte });
+  const ownerEmail = String(cal.platform_email || cal.oauth_email || "");
+  assertRecallCalendarEmailAllowed(ownerEmail);
+  return syncRecallCalendarEvents({ calendarId, updatedAtGte, ownerEmail });
 }
 
 export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhookPayload) {
   if (payload.event === "calendar.sync_events") {
     const { calendar_id, last_updated_ts } = payload.data;
-    return syncRecallCalendarEvents({ calendarId: calendar_id, updatedAtGte: last_updated_ts });
+    const ownerEmail = await resolveRecallCalendarOwnerEmail(calendar_id);
+    if (!isRecallCalendarEmailAllowed(ownerEmail)) {
+      return {
+        action: "skipped_not_allowlisted",
+        calendarId: calendar_id,
+        ownerEmail,
+        allowlist: getRecallCalendarAllowlist(),
+      };
+    }
+    return syncRecallCalendarEvents({
+      calendarId: calendar_id,
+      updatedAtGte: last_updated_ts,
+      ownerEmail,
+    });
   }
 
   if (payload.event === "calendar.update") {
@@ -94,6 +120,7 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
 export async function registerRecallCalendarFromEnvIfNeeded() {
   const boot = await bootstrapRecallCalendarFromEnv();
   if (!boot) return null;
+  assertRecallCalendarEmailAllowed(boot.email);
 
   await upsertRecallCalendarConnection({
     recallCalendarId: boot.recallCalendarId,
@@ -103,6 +130,14 @@ export async function registerRecallCalendarFromEnvIfNeeded() {
     status: "connected",
   });
 
-  const sync = await syncRecallCalendarEvents({ calendarId: boot.recallCalendarId });
+  const sync = await syncRecallCalendarEvents({ calendarId: boot.recallCalendarId, ownerEmail: boot.email });
   return { ...boot, sync };
+}
+
+async function resolveRecallCalendarOwnerEmail(calendarId: string): Promise<string> {
+  const state = await readRecallCalendarState();
+  const conn = state.connections.find((c) => c.recallCalendarId === calendarId);
+  if (conn?.email) return conn.email;
+  const cal = await getRecallCalendar(calendarId);
+  return String(cal.platform_email || cal.oauth_email || "");
 }

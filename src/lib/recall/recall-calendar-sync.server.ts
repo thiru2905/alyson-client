@@ -13,7 +13,8 @@ import {
   scheduleBotForRecallCalendarEvent,
 } from "@/lib/recall/recall-calendar-v2.server";
 import type { RecallCalendarEvent } from "@/lib/recall/recall-calendar-types";
-import { updateRecallCalendarSyncMeta } from "@/lib/recall/recall-calendar-state-s3.server";
+import { updateRecallCalendarSyncMeta, readRecallCalendarState } from "@/lib/recall/recall-calendar-state-s3.server";
+import { isRecallCalendarEmailAllowed } from "@/lib/recall/recall-calendar-allowlist.server";
 
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 
@@ -116,12 +117,34 @@ export type RecallCalendarSyncResult = {
   skipped: number;
   deleted: number;
   errors: string[];
+  blocked?: boolean;
+  ownerEmail?: string;
+  reason?: string;
 };
 
 export async function syncRecallCalendarEvents(args: {
   calendarId: string;
   updatedAtGte?: string;
+  ownerEmail?: string;
 }): Promise<RecallCalendarSyncResult> {
+  const state = await readRecallCalendarState();
+  const conn = state.connections.find((c) => c.recallCalendarId === args.calendarId);
+  const ownerEmail = args.ownerEmail || conn?.email || "";
+
+  if (!isRecallCalendarEmailAllowed(ownerEmail)) {
+    return {
+      calendarId: args.calendarId,
+      processed: 0,
+      scheduled: 0,
+      skipped: 0,
+      deleted: 0,
+      errors: [],
+      blocked: true,
+      ownerEmail,
+      reason: `Auto-schedule disabled for ${ownerEmail || "unknown calendar"}`,
+    };
+  }
+
   const events = await listAllRecallCalendarEvents({
     calendarId: args.calendarId,
     updatedAtGte: args.updatedAtGte,
