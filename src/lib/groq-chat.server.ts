@@ -7,7 +7,9 @@ export type MeetingAiChatResult = {
 };
 
 export function groqModel(): string {
-  return process.env.ALYSON_MINI_MODULE_AI_MODEL || process.env.GROQ_MODEL || "llama-3.1-8b-instant";
+  return (
+    process.env.ALYSON_MINI_MODULE_AI_MODEL || process.env.GROQ_MODEL || "llama-3.1-8b-instant"
+  );
 }
 
 export function groqApiKey(): string | null {
@@ -71,7 +73,10 @@ async function groqChatOnce(
   });
 
   const text = await r.text();
-  let json: { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null = null;
+  let json: {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  } | null = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
@@ -135,14 +140,18 @@ async function deepseekChatOnce(
   });
 
   const text = await r.text();
-  let json: { choices?: { message?: { content?: string } }[]; error?: { message?: string } } | null = null;
+  let json: {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  } | null = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
     // ignore
   }
   if (!r.ok) {
-    const msg = json?.error?.message || text.slice(0, 300) || `DeepSeek request failed (${r.status})`;
+    const msg =
+      json?.error?.message || text.slice(0, 300) || `DeepSeek request failed (${r.status})`;
     throw new Error(String(msg));
   }
   return String(json?.choices?.[0]?.message?.content || "").trim();
@@ -197,7 +206,8 @@ export async function meetingAiChat(
   }
 
   throw new Error(
-    errors.join(" | ") || "No AI provider configured (set GROQ_API_KEY or DEEPSEEK_API_KEY in .env).",
+    errors.join(" | ") ||
+      "No AI provider configured (set GROQ_API_KEY or DEEPSEEK_API_KEY in .env).",
   );
 }
 

@@ -2,7 +2,7 @@ import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-not
 import { generateNotetakerNotes } from "@/lib/alyson-notetaker-functions";
 import { composeTranscript, contentHash, persistMeetingToS3 } from "@/lib/notetaker-persistence.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
-import { runSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
+import { runSmartMeetingNotes } from "@/lib/notetaker-smart-notes.server";
 import { loadBotIndexDoc, mergeNotetakerSessions } from "@/lib/notetaker-sessions-history.server";
 import { getNotesMdFromS3, getTranscriptTextFromS3, invalidateNotetakerCalendarS3Cache } from "@/lib/notetaker-s3-calendar.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
