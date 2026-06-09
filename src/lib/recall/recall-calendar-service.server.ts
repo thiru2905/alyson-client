@@ -39,6 +39,54 @@ export function startRecallCalendarConnect(origin?: string, returnTo?: string): 
   return buildGoogleCalendarOAuthUrl(state, origin);
 }
 
+async function resolveRecallCalendarForConnect(args: {
+  email: string;
+  oauthClientId: string;
+  oauthClientSecret: string;
+  oauthRefreshToken: string;
+}): Promise<{ cal: Awaited<ReturnType<typeof createRecallCalendar>>; reused: boolean }> {
+  const normalizedEmail = args.email.trim().toLowerCase();
+  const state = await readRecallCalendarState();
+  const existingConn = state.connections.find(
+    (c) => c.status === "connected" && c.email.trim().toLowerCase() === normalizedEmail,
+  );
+  if (existingConn?.recallCalendarId) {
+    return { cal: await getRecallCalendar(existingConn.recallCalendarId), reused: true };
+  }
+
+  const envCalendarId = process.env.RECALL_CALENDAR_ID?.trim();
+  if (envCalendarId) {
+    try {
+      const cal = await getRecallCalendar(envCalendarId);
+      const calEmail = String(cal.platform_email || cal.oauth_email || "")
+        .trim()
+        .toLowerCase();
+      if (!calEmail || calEmail === normalizedEmail) {
+        return { cal, reused: true };
+      }
+    } catch {
+      // fall through — env id may be stale
+    }
+  }
+
+  try {
+    const cal = await createRecallCalendar({
+      platform: "google_calendar",
+      oauthClientId: args.oauthClientId,
+      oauthClientSecret: args.oauthClientSecret,
+      oauthRefreshToken: args.oauthRefreshToken,
+      oauthEmail: args.email,
+      metadata: { source: "alyson_oauth_connect" },
+    });
+    return { cal, reused: false };
+  } catch (e) {
+    if (envCalendarId) {
+      return { cal: await getRecallCalendar(envCalendarId), reused: true };
+    }
+    throw e;
+  }
+}
+
 export async function completeRecallCalendarConnect(code: string, stateToken: string, origin?: string) {
   const state = verifyOAuthState(stateToken);
   if (!state) throw new Error("Invalid OAuth state");
@@ -47,13 +95,11 @@ export async function completeRecallCalendarConnect(code: string, stateToken: st
   const email = tokens.email || "";
   assertRecallCalendarEmailAllowed(email);
 
-  const cal = await createRecallCalendar({
-    platform: "google_calendar",
+  const { cal, reused } = await resolveRecallCalendarForConnect({
+    email,
     oauthClientId: googleOAuthClientId(),
     oauthClientSecret: googleOAuthClientSecret(),
     oauthRefreshToken: tokens.refreshToken,
-    oauthEmail: email || tokens.email,
-    metadata: { source: "alyson_oauth_connect" },
   });
 
   const connectedEmail = email || String(cal.platform_email || cal.oauth_email || "connected");
@@ -67,22 +113,19 @@ export async function completeRecallCalendarConnect(code: string, stateToken: st
     status: "connected",
   });
 
-  let sync: Awaited<ReturnType<typeof syncRecallCalendarEvents>>;
-  try {
-    sync = await syncRecallCalendarEvents({ calendarId: cal.id, ownerEmail: connectedEmail });
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    sync = {
-      calendarId: cal.id,
-      processed: 0,
-      scheduled: 0,
-      skipped: 0,
-      deleted: 0,
-      errors: [msg],
-      ownerEmail: connectedEmail,
-      reason: "Initial sync failed — use Sync in Unified Meetings to retry",
-    };
-  }
+  // Return quickly — full sync can take minutes and times out on Vercel. Webhooks + Sync button handle scheduling.
+  const sync: Awaited<ReturnType<typeof syncRecallCalendarEvents>> = {
+    calendarId: cal.id,
+    processed: 0,
+    scheduled: 0,
+    skipped: 0,
+    deleted: 0,
+    errors: [],
+    ownerEmail: connectedEmail,
+    reason: reused
+      ? "Linked existing Recall calendar — click Sync to schedule bots"
+      : "Connected — click Sync to schedule bots for upcoming meetings",
+  };
   return { calendarId: cal.id, email: connectedEmail, sync, returnTo: state.returnTo };
 }
 
@@ -147,8 +190,19 @@ export async function registerRecallCalendarFromEnvIfNeeded() {
     status: "connected",
   });
 
-  const sync = await syncRecallCalendarEvents({ calendarId: boot.recallCalendarId, ownerEmail: boot.email });
-  return { ...boot, sync };
+  return {
+    ...boot,
+    sync: {
+      calendarId: boot.recallCalendarId,
+      processed: 0,
+      scheduled: 0,
+      skipped: 0,
+      deleted: 0,
+      errors: [],
+      ownerEmail: boot.email,
+      reason: "Registered — click Sync to schedule bots for upcoming meetings",
+    },
+  };
 }
 
 async function resolveRecallCalendarOwnerEmail(calendarId: string): Promise<string> {
