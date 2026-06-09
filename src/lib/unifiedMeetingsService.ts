@@ -62,6 +62,7 @@ type ScheduledState = {
 
 const CACHE_TTL_MS = 60_000;
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
+const DEFAULT_AUTOMATION_JOIN_OFFSET_MS = 10 * 60 * 1000;
 /** Recall needs join_at slightly in the future for "join now". */
 const IMMEDIATE_JOIN_DELAY_MS = 20 * 1000;
 const MEETING_END_GRACE_MS = 20 * 60 * 1000;
@@ -141,7 +142,11 @@ function containsSkipKeywords(title: string): boolean {
   return ["out of office", "ooo", "lunch", "break", "holiday"].some((k) => t.includes(k));
 }
 
-function computeSkipReason(event: any, meetingUrl: string | null): string | null {
+function computeSkipReason(
+  event: any,
+  meetingUrl: string | null,
+  options?: { allowInProgress?: boolean },
+): string | null {
   const status = String(event?.status || "");
   if (status === "cancelled") return "Event is cancelled";
   if (!meetingUrl) return "No meeting URL";
@@ -151,6 +156,15 @@ function computeSkipReason(event: any, meetingUrl: string | null): string | null
   const title = String(event?.summary || "Untitled meeting");
   if (containsSkipKeywords(title)) return "Skipped by title keyword";
   const startMs = new Date(event.start.dateTime).getTime();
+  const endMs = event?.end?.dateTime ? new Date(event.end.dateTime).getTime() : NaN;
+  const effectiveEnd = Number.isFinite(endMs)
+    ? endMs + MEETING_END_GRACE_MS
+    : startMs + 3 * 60 * 60 * 1000;
+  if (options?.allowInProgress) {
+    if (!Number.isFinite(startMs)) return "Missing start dateTime";
+    if (Date.now() > effectiveEnd) return "Meeting has ended";
+    return null;
+  }
   if (!Number.isFinite(startMs) || startMs < Date.now()) return "Meeting start time is in the past";
   return null;
 }
@@ -159,7 +173,11 @@ function computeSkipReason(event: any, meetingUrl: string | null): string | null
  * When the meeting is in progress, schedule join ASAP (not only at calendar start − 2 min).
  * Returns null only after the meeting window has ended.
  */
-export function resolveBotJoinAt(startTime: string, endTime?: string): string | null {
+export function resolveBotJoinAt(
+  startTime: string,
+  endTime?: string,
+  joinOffsetMs: number = BOT_JOIN_OFFSET_MS,
+): string | null {
   const startMs = new Date(startTime).getTime();
   if (!Number.isFinite(startMs)) return null;
   const now = Date.now();
@@ -168,7 +186,7 @@ export function resolveBotJoinAt(startTime: string, endTime?: string): string | 
 
   if (now > effectiveEnd) return null;
 
-  const plannedJoinMs = startMs - BOT_JOIN_OFFSET_MS;
+  const plannedJoinMs = startMs - joinOffsetMs;
   const inMeetingWindow = now >= plannedJoinMs && now <= effectiveEnd;
 
   if (inMeetingWindow) {
@@ -373,6 +391,7 @@ async function createRecallBot(args: {
   meetingUrl: string;
   botJoinAt: string;
   meeting: UnifiedMeeting;
+  joinOffsetMinutes?: number;
 }): Promise<{ botId: string }> {
   const apiKey = env("RECALL_API_KEY");
   const rawBase = (process.env.RECALL_BASE_URL?.trim() || "https://ap-northeast-1.recall.ai").replace(/\/$/, "");
@@ -399,7 +418,7 @@ async function createRecallBot(args: {
         calendar_user: args.meeting.calendarUserEmail,
         summary: args.meeting.title,
         meeting_url: args.meeting.meetingUrl,
-        bot_join_offset_minutes: 2,
+        bot_join_offset_minutes: args.joinOffsetMinutes ?? 2,
       },
     }),
     signal: controller.signal,
@@ -425,6 +444,7 @@ async function createNotetakerManagedBot(args: {
   meetingUrl: string;
   botJoinAt: string;
   meeting: UnifiedMeeting;
+  joinOffsetMinutes?: number;
 }): Promise<{ botId: string }> {
   const raw =
     process.env.ALYSON_NOTETAKER_BASE_URL ||
@@ -453,7 +473,7 @@ async function createNotetakerManagedBot(args: {
         calendar_user: args.meeting.calendarUserEmail,
         summary: args.meeting.title,
         meeting_url: args.meeting.meetingUrl,
-        bot_join_offset_minutes: 2,
+        bot_join_offset_minutes: args.joinOffsetMinutes ?? 2,
       },
     }),
     signal: controller.signal,
@@ -477,11 +497,17 @@ async function createNotetakerManagedBot(args: {
   return { botId };
 }
 
-function normalizeMeetingEvent(userEmail: string, event: any, stateByKey: Map<string, StateEntry>): UnifiedMeeting {
+function normalizeMeetingEvent(
+  userEmail: string,
+  event: any,
+  stateByKey: Map<string, StateEntry>,
+  options?: { allowInProgress?: boolean; joinOffsetMs?: number },
+): UnifiedMeeting {
   const startTime = String(event?.start?.dateTime || "");
   const endTime = String(event?.end?.dateTime || "");
   const meetingUrl = getMeetingUrl(event);
-  const skipReason = computeSkipReason(event, meetingUrl);
+  const skipReason = computeSkipReason(event, meetingUrl, options);
+  const joinOffsetMs = options?.joinOffsetMs ?? BOT_JOIN_OFFSET_MS;
   const title = String(event?.summary || "Untitled meeting");
   const iCalUID = String(event?.iCalUID || event?.id || "");
   const dedupe = meetingUrl ? dedupeKey(meetingUrl, startTime) : "";
@@ -516,7 +542,7 @@ function normalizeMeetingEvent(userEmail: string, event: any, stateByKey: Map<st
       : [],
     shouldBotJoin,
     botScheduled: Boolean(stateEntry),
-    botJoinAt: shouldBotJoin ? resolveBotJoinAt(startTime, endTime) : null,
+    botJoinAt: shouldBotJoin ? resolveBotJoinAt(startTime, endTime, joinOffsetMs) : null,
     recallBotId: stateEntry?.recallBotId ? String(stateEntry.recallBotId) : null,
     botStatus,
     skipReason: reason,
@@ -623,22 +649,35 @@ export async function refreshUnifiedMeetings(): Promise<UnifiedMeetingsScanSumma
 async function dispatchBotForMeeting(
   meeting: UnifiedMeeting,
   joinAt: string,
+  joinOffsetMinutes?: number,
 ): Promise<{ botId: string; creationSource: StateEntry["creationSource"] }> {
   try {
-    const recall = await createNotetakerManagedBot({ meetingUrl: meeting.meetingUrl!, botJoinAt: joinAt, meeting });
+    const recall = await createNotetakerManagedBot({
+      meetingUrl: meeting.meetingUrl!,
+      botJoinAt: joinAt,
+      meeting,
+      joinOffsetMinutes,
+    });
     return { botId: recall.botId, creationSource: "notetaker_managed" };
   } catch {
-    const recall = await createRecallBot({ meetingUrl: meeting.meetingUrl!, botJoinAt: joinAt, meeting });
+    const recall = await createRecallBot({
+      meetingUrl: meeting.meetingUrl!,
+      botJoinAt: joinAt,
+      meeting,
+      joinOffsetMinutes,
+    });
     return { botId: recall.botId, creationSource: "direct_recall_fallback" };
   }
 }
 
 async function scheduleMeetingInternal(
   meeting: UnifiedMeeting,
-  options?: { forceRedispatch?: boolean },
-): Promise<{ scheduled: boolean; error?: string; redispatched?: boolean }> {
+  options?: { forceRedispatch?: boolean; joinOffsetMs?: number },
+): Promise<{ scheduled: boolean; error?: string; redispatched?: boolean; botJoinAt?: string }> {
   if (!meeting.meetingUrl) return { scheduled: false, error: "No meeting URL" };
-  const joinAt = resolveBotJoinAt(meeting.startTime, meeting.endTime);
+  const joinOffsetMs = options?.joinOffsetMs ?? BOT_JOIN_OFFSET_MS;
+  const joinOffsetMinutes = Math.round(joinOffsetMs / 60_000);
+  const joinAt = resolveBotJoinAt(meeting.startTime, meeting.endTime, joinOffsetMs);
   if (!joinAt) {
     return {
       scheduled: false,
@@ -655,7 +694,7 @@ async function scheduleMeetingInternal(
 
   const joinAtMs = new Date(joinAt).getTime();
   const priorJoinPassed = existingIdx >= 0 && new Date(state.scheduled[existingIdx]!.botJoinAt).getTime() < Date.now() - 60_000;
-  const inWindow = resolveBotJoinAt(meeting.startTime, meeting.endTime) != null;
+  const inWindow = resolveBotJoinAt(meeting.startTime, meeting.endTime, joinOffsetMs) != null;
   const shouldRedispatch =
     Boolean(options?.forceRedispatch) || (existingIdx >= 0 && inWindow && priorJoinPassed);
 
@@ -664,7 +703,7 @@ async function scheduleMeetingInternal(
   }
 
   try {
-    const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt);
+    const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes);
     const entry: StateEntry = {
       dedupeKey: key,
       googleEventId: meeting.googleEventId,
@@ -697,7 +736,7 @@ async function scheduleMeetingInternal(
       status: "scheduled",
     });
 
-    return { scheduled: true, redispatched: shouldRedispatch && existingIdx >= 0 };
+    return { scheduled: true, redispatched: shouldRedispatch && existingIdx >= 0, botJoinAt: joinAt };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to schedule bot";
     if (existingIdx >= 0) {
@@ -714,6 +753,113 @@ async function scheduleMeetingInternal(
     }
     return { scheduled: false, error: message };
   }
+}
+
+export function automationJoinOffsetMs(): number {
+  const minutes = Number(process.env.MEETING_BOT_JOIN_OFFSET_MINUTES ?? "10");
+  if (!Number.isFinite(minutes) || minutes < 1) return DEFAULT_AUTOMATION_JOIN_OFFSET_MS;
+  return Math.round(minutes * 60_000);
+}
+
+export function automationCalendarUserEmail(): string {
+  return (
+    process.env.MEETING_BOT_CRON_USER_EMAIL?.trim().toLowerCase() ||
+    "alysonclient@cintara.ai"
+  );
+}
+
+/** Scan one user's primary calendar for the next 24 hours. */
+export async function scanCalendarMeetingsForUser(
+  calendarUserEmail: string,
+  options?: { joinOffsetMs?: number },
+): Promise<UnifiedMeeting[]> {
+  const email = calendarUserEmail.trim().toLowerCase();
+  const joinOffsetMs = options?.joinOffsetMs ?? automationJoinOffsetMs();
+  const timeMin = new Date();
+  const timeMax = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const state = await readState();
+  const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
+  const events = await listCalendarEventsForUser(email, timeMin.toISOString(), timeMax.toISOString());
+  return events.map((event) =>
+    normalizeMeetingEvent(email, event, stateByKey, { allowInProgress: true, joinOffsetMs }),
+  );
+}
+
+export type UnifiedUserScheduleSummary = UnifiedScheduleSummary & {
+  calendarUserEmail: string;
+  meetingsFound: number;
+  joinOffsetMinutes: number;
+  scheduledMeetings: Array<{
+    title: string;
+    startTime: string;
+    botJoinAt: string;
+    meetingId: string;
+  }>;
+};
+
+/**
+ * Hourly automation: scan one calendar user's next 24h and schedule bots
+ * `joinOffsetMinutes` before each meeting (default 10).
+ */
+export async function scheduleEligibleUnifiedBotsForUser(
+  calendarUserEmail?: string,
+  options?: { joinOffsetMinutes?: number },
+): Promise<UnifiedUserScheduleSummary> {
+  const email = (calendarUserEmail || automationCalendarUserEmail()).trim().toLowerCase();
+  const joinOffsetMs =
+    options?.joinOffsetMinutes != null
+      ? Math.round(options.joinOffsetMinutes * 60_000)
+      : automationJoinOffsetMs();
+  const joinOffsetMinutes = Math.round(joinOffsetMs / 60_000);
+
+  const meetings = await scanCalendarMeetingsForUser(email, { joinOffsetMs });
+  const out: UnifiedUserScheduleSummary = {
+    calendarUserEmail: email,
+    meetingsFound: meetings.length,
+    joinOffsetMinutes,
+    checked: 0,
+    scheduled: 0,
+    skipped: 0,
+    errors: [],
+    scheduledMeetings: [],
+  };
+
+  for (const meeting of meetings) {
+    if (!meeting.meetingUrl || !meeting.startTime) {
+      out.skipped += 1;
+      continue;
+    }
+    if (meeting.status === "cancelled" || meeting.skipReason) {
+      out.skipped += 1;
+      continue;
+    }
+
+    const joinAt = resolveBotJoinAt(meeting.startTime, meeting.endTime, joinOffsetMs);
+    if (!joinAt) {
+      out.skipped += 1;
+      continue;
+    }
+
+    out.checked += 1;
+    const result = await scheduleMeetingInternal(meeting, { joinOffsetMs });
+    if (result.scheduled) {
+      out.scheduled += 1;
+      out.scheduledMeetings.push({
+        title: meeting.title,
+        startTime: meeting.startTime,
+        botJoinAt: result.botJoinAt || joinAt,
+        meetingId: meeting.id,
+      });
+    } else {
+      out.skipped += 1;
+      if (result.error && !result.error.includes("Already scheduled")) {
+        out.errors.push(`${meeting.title || meeting.googleEventId}: ${result.error}`);
+      }
+    }
+  }
+
+  cache = null;
+  return out;
 }
 
 export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSummary> {
