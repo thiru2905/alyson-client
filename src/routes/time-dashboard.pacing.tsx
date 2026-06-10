@@ -97,7 +97,7 @@ function WeeklyPacingPage() {
   });
 
   const trendQ = useQuery({
-    queryKey: ["weekly-hours-trend", locationFilter, teamFilter, activeFilter],
+    queryKey: ["weekly-hours-trend", locationFilter, teamFilter],
     queryFn: () =>
       fetchWeeklyHoursTrend({
         data: {
@@ -105,7 +105,7 @@ function WeeklyPacingPage() {
           targetHours: 35,
           location: locationFilter,
           team: teamFilter,
-          active: activeFilter,
+          active: "yes",
         },
       }),
     enabled: canAccess,

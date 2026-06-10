@@ -137,11 +137,11 @@ export function WeeklyPacingTrendPanel({
   totalEmployeeCount,
 }: Props) {
   const [selected, setSelected] = useState<WeeklyHoursTrendPoint | null>(null);
-  const filterKey = `${locationFilter}|${teamFilter}|${activeFilter}`;
+  const chartFilterKey = `${locationFilter}|${teamFilter}`;
 
   useEffect(() => {
     setSelected(null);
-  }, [filterKey]);
+  }, [chartFilterKey]);
 
   const facetFilters = useMemo(
     () => ({ location: locationFilter, team: teamFilter, active: activeFilter }),
@@ -184,14 +184,19 @@ export function WeeklyPacingTrendPanel({
               ) : null}
             </div>
             <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
-              8-week average logged hours per employee. Filters below update the chart and the table
-              together.
+              8-week average logged hours per active employee (Active = Yes). Location and team
+              filters update the chart; the Active filter below applies to the table only.
             </p>
           </div>
-          <div className="text-[11px] text-muted-foreground tabular-nums shrink-0">
-            <Users className="h-3.5 w-3.5 inline -mt-0.5 mr-1" />
-            {filteredEmployeeCount}
-            {hasFacetFilters ? ` of ${totalEmployeeCount}` : ""} in view
+          <div className="text-[11px] text-muted-foreground tabular-nums shrink-0 text-right">
+            <div>
+              <Users className="h-3.5 w-3.5 inline -mt-0.5 mr-1" />
+              {trend?.latestWeek?.employeeCount ?? "—"} active in chart
+            </div>
+            <div className="mt-0.5">
+              {filteredEmployeeCount}
+              {hasFacetFilters ? ` of ${totalEmployeeCount}` : ""} in table
+            </div>
           </div>
         </div>
 
@@ -358,7 +363,7 @@ export function WeeklyPacingTrendPanel({
 
         {trend ? (
           <div
-            key={filterKey}
+            key={chartFilterKey}
             className="grid gap-2 sm:grid-cols-3 animate-in fade-in duration-300"
           >
             <KpiCard

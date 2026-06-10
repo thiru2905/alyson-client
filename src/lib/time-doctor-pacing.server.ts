@@ -209,7 +209,8 @@ export async function buildWeeklyHoursTrendReport(args?: {
   const targetHours = args?.targetHours ?? 35;
   const locationFilter = args?.location ?? "__all__";
   const teamFilter = args?.team ?? "__all__";
-  const activeFilter = args?.active ?? "__all__";
+  // Trend averages always use Active = Yes employees only (Cintara domain roster).
+  const activeFilter = "yes";
   const today = timeDoctorTodayIso();
   const warnings: string[] = [];
 
