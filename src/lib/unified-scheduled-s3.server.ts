@@ -18,7 +18,7 @@ export type UnifiedScheduledStateEntry = {
   endTime?: string;
   botJoinAt: string;
   recallBotId: string;
-  creationSource?: "notetaker_managed" | "direct_recall_fallback";
+  creationSource?: "notetaker_managed" | "direct_recall_fallback" | "recall_calendar_v2";
   scheduledAt: string;
   status: "scheduled" | "dispatched" | "failed";
   lastError?: string;

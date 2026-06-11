@@ -23,6 +23,9 @@ export const Route = createFileRoute("/api/recall/calendar/status")({
           const body = (await request.json().catch(() => ({}))) as {
             action?: string;
             calendarId?: string;
+            eventIds?: string[];
+            scheduleAll?: boolean;
+            maxNewBots?: number;
           };
           if (body.action === "bootstrap") {
             const r = await registerRecallCalendarFromEnvIfNeeded();
@@ -30,7 +33,12 @@ export const Route = createFileRoute("/api/recall/calendar/status")({
             return Response.json({ ok: true, ...r });
           }
           if (body.action === "sync" && body.calendarId) {
-            const sync = await syncRecallCalendarNow(body.calendarId);
+            const sync = await syncRecallCalendarNow(body.calendarId, {
+              eventIds: body.eventIds,
+              scheduleAll: body.scheduleAll,
+              maxNewBots: body.maxNewBots,
+              refreshBotConfig: Boolean(body.eventIds?.length),
+            });
             return Response.json({ ok: true, sync });
           }
           if (body.action === "disconnect" && body.calendarId) {

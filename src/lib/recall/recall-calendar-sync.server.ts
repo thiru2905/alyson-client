@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { resolveBotJoinAt } from "@/lib/unifiedMeetingsService";
+import { resolvePlannedCalendarJoinAt } from "@/lib/unifiedMeetingsService";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import {
   readUnifiedScheduledStateFromS3,
@@ -7,15 +7,16 @@ import {
   unifiedScheduledStateUsesS3,
   type UnifiedScheduledStateEntry,
 } from "@/lib/unified-scheduled-s3.server";
+import { cancelScheduledRecallBot, dispatchBotWithLiveTranscripts } from "@/lib/notetaker-bot-dispatch.server";
 import {
   eventTitleFromRaw,
   listAllRecallCalendarEvents,
-  scheduleBotForRecallCalendarEvent,
+  removeBotFromRecallCalendarEvent,
 } from "@/lib/recall/recall-calendar-v2.server";
 import type { RecallCalendarEvent } from "@/lib/recall/recall-calendar-types";
 import { updateRecallCalendarSyncMeta, readRecallCalendarState } from "@/lib/recall/recall-calendar-state-s3.server";
 import { isRecallCalendarEmailAllowed } from "@/lib/recall/recall-calendar-allowlist.server";
-import { recallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
+import { recallBotRecordingConfig, resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
 
 const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 const SYNC_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -38,29 +39,16 @@ export function recallCalendarDedupeKey(event: RecallCalendarEvent): string {
 export function shouldAutoScheduleRecallEvent(event: RecallCalendarEvent): boolean {
   if (event.is_deleted) return false;
   if (!String(event.meeting_url || "").trim()) return false;
-  const joinAt = resolveBotJoinAt(event.start_time, event.end_time, BOT_JOIN_OFFSET_MS);
+  const joinAt = resolvePlannedCalendarJoinAt(event.start_time, event.end_time, BOT_JOIN_OFFSET_MS);
   return Boolean(joinAt);
 }
 
-function botConfigForEvent(event: RecallCalendarEvent) {
-  const botName = process.env.BOT_NAME?.trim() || "Alyson Notetaker";
-  const joinAt = resolveBotJoinAt(event.start_time, event.end_time, BOT_JOIN_OFFSET_MS);
-  return {
-    bot_name: botName,
-    // join_at allowed per-event on Calendar V2 schedule API, not in dashboard default template
-    join_at: joinAt,
-    ...recallBotRecordingConfig(),
-    metadata: {
-      source: "recall_calendar_v2",
-      recall_calendar_event_id: event.id,
-      recall_calendar_id: event.calendar_id,
-      ical_uid: event.ical_uid,
-      meeting_url: event.meeting_url,
-    },
-  };
-}
-
-async function persistScheduledBot(event: RecallCalendarEvent, botId: string, joinAt: string) {
+async function persistScheduledBot(
+  event: RecallCalendarEvent,
+  botId: string,
+  joinAt: string,
+  creationSource: "notetaker_managed" | "direct_recall_fallback" | "recall_calendar_v2",
+) {
   const title = eventTitleFromRaw(event);
   await registerScheduledBotInSessionsCatalog({
     botId,
@@ -84,7 +72,7 @@ async function persistScheduledBot(event: RecallCalendarEvent, botId: string, jo
     endTime: event.end_time,
     botJoinAt: joinAt,
     recallBotId: botId,
-    creationSource: "notetaker_managed",
+    creationSource,
     scheduledAt: new Date().toISOString(),
     status: "scheduled",
   };
@@ -112,26 +100,69 @@ export async function processRecallCalendarEvent(
     };
   }
 
-  const hadBot = Boolean(event.bots?.length);
-  if (hadBot && !options?.refreshBotConfig) {
-    return { action: "skipped", reason: "Bot already scheduled on this event" };
+  const joinAt = resolvePlannedCalendarJoinAt(event.start_time, event.end_time, BOT_JOIN_OFFSET_MS);
+  if (!joinAt) {
+    return { action: "skipped", reason: "Meeting ended or not joinable" };
   }
 
-  const deduplicationKey = recallCalendarDedupeKey(event);
-  const botConfig = botConfigForEvent(event);
-  const updated = await scheduleBotForRecallCalendarEvent({
-    eventId: event.id,
-    deduplicationKey,
-    botConfig,
+  const hadRecallCalendarBot = Boolean(event.bots?.length);
+  const shouldRefreshConfig = options?.refreshBotConfig !== false;
+
+  let existingBotId: string | undefined;
+  if (unifiedScheduledStateUsesS3()) {
+    const key = recallCalendarDedupeKey(event);
+    const state = await readUnifiedScheduledStateFromS3();
+    existingBotId = state.scheduled.find((s) => s.dedupeKey === key && s.status === "scheduled")?.recallBotId;
+  }
+
+  const hadBot = hadRecallCalendarBot || Boolean(existingBotId);
+  if (hadBot && !shouldRefreshConfig) {
+    return { action: "skipped", reason: "Bot already scheduled for this event" };
+  }
+
+  // Drop Recall Calendar bots (often missing transcript webhooks) before re-creating via Notetaker.
+  if (hadRecallCalendarBot) {
+    try {
+      await removeBotFromRecallCalendarEvent(event.id);
+    } catch {
+      // Non-fatal — cancel individual bot ids below.
+    }
+  }
+  const priorBotIds = [
+    ...new Set(
+      [existingBotId, event.bots?.[0]?.bot_id].filter((id): id is string => Boolean(id?.trim())),
+    ),
+  ];
+  for (const priorId of priorBotIds) {
+    await cancelScheduledRecallBot(priorId);
+  }
+
+  const title = eventTitleFromRaw(event);
+  const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
+    meetingUrl: String(event.meeting_url),
+    botJoinAt: joinAt,
+    title,
+    joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
+    preferScheduledJoin: true,
+    metadata: {
+      source: "recall_calendar_v2",
+      recall_calendar_event_id: event.id,
+      recall_calendar_id: event.calendar_id,
+      ical_uid: event.ical_uid,
+      meeting_url: event.meeting_url,
+      meeting_start_time: event.start_time,
+      meeting_end_time: event.end_time,
+      summary: title,
+    },
   });
 
-  const botId = updated.bots?.[0]?.bot_id || event.bots?.[0]?.bot_id;
-  const joinAt = String(botConfig.join_at || event.start_time);
-  if (botId) await persistScheduledBot(event, botId, joinAt);
+  await persistScheduledBot(event, botId, joinAt, creationSource);
   return {
     action: hadBot ? "refreshed" : "scheduled",
-    botId: botId || undefined,
-    reason: hadBot ? "Updated bot config (transcript webhooks)" : undefined,
+    botId,
+    reason: hadBot
+      ? `Re-scheduled via ${creationSource} — joins at ${joinAt}`
+      : `Reserved via ${creationSource} — joins at ${joinAt}`,
   };
 }
 
@@ -142,17 +173,99 @@ export type RecallCalendarSyncResult = {
   skipped: number;
   deleted: number;
   errors: string[];
+  scheduledEventIds?: string[];
   blocked?: boolean;
   ownerEmail?: string;
   reason?: string;
+  transcriptWebhookUrl?: string;
 };
+
+export type RecallCalendarPendingEvent = {
+  eventId: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  meetingUrl: string;
+  hasBot: boolean;
+  botId?: string;
+};
+
+export type RecallCalendarPendingPreview = {
+  calendarId: string;
+  pendingCount: number;
+  needsConfigRefreshCount: number;
+  upcomingWithLink: number;
+  events: RecallCalendarPendingEvent[];
+  transcriptWebhookUrl: string;
+};
+
+export async function previewRecallCalendarPending(calendarId: string): Promise<RecallCalendarPendingPreview> {
+  const updatedAtGte = new Date(Date.now() - SYNC_LOOKBACK_MS).toISOString();
+  const events = await listAllRecallCalendarEvents({ calendarId, updatedAtGte });
+  const relevant = events.filter((event) => !event.is_deleted && isUpcomingRecallEvent(event));
+  const pending: RecallCalendarPendingEvent[] = [];
+
+  const stateByKey = new Map<string, UnifiedScheduledStateEntry>();
+  if (unifiedScheduledStateUsesS3()) {
+    try {
+      const state = await readUnifiedScheduledStateFromS3();
+      for (const row of state.scheduled) {
+        if (row.status === "scheduled" && row.recallBotId) stateByKey.set(row.dedupeKey, row);
+      }
+    } catch {
+      // preview still works from Recall calendar event bots
+    }
+  }
+
+  for (const event of relevant) {
+    if (!shouldAutoScheduleRecallEvent(event)) continue;
+    const key = recallCalendarDedupeKey(event);
+    const stateRow = stateByKey.get(key);
+    const hasBot = Boolean(event.bots?.length) || Boolean(stateRow?.recallBotId);
+    pending.push({
+      eventId: event.id,
+      title: eventTitleFromRaw(event),
+      startTime: event.start_time,
+      endTime: event.end_time,
+      meetingUrl: String(event.meeting_url || ""),
+      hasBot,
+      botId: event.bots?.[0]?.bot_id || stateRow?.recallBotId,
+    });
+  }
+
+  pending.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  return {
+    calendarId,
+    pendingCount: pending.filter((e) => !e.hasBot).length,
+    needsConfigRefreshCount: pending.filter((e) => e.hasBot).length,
+    upcomingWithLink: pending.length,
+    events: pending,
+    transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
+  };
+}
+
+function recallEventAlreadyHasBot(
+  event: RecallCalendarEvent,
+  stateByKey: Map<string, UnifiedScheduledStateEntry>,
+): boolean {
+  if (event.bots?.length) return true;
+  const key = recallCalendarDedupeKey(event);
+  return Boolean(stateByKey.get(key)?.recallBotId);
+}
 
 export async function syncRecallCalendarEvents(args: {
   calendarId: string;
   updatedAtGte?: string;
   ownerEmail?: string;
-  /** Re-apply bot_config (recording + transcript webhooks) on events that already have a bot. */
+  /** Re-apply bot_config (recording + transcript webhooks) on events that already have a bot. Default: true. */
   refreshBotConfig?: boolean;
+  /** Schedule only these Recall calendar event ids (still respects allowlist + join rules). */
+  eventIds?: string[];
+  /** Sync now: reserve bots for every upcoming schedulable meeting (same path as Smart schedule). */
+  scheduleAll?: boolean;
+  /** Cap how many *new* bots are created in this run (existing bots can still be refreshed). */
+  maxNewBots?: number;
 }): Promise<RecallCalendarSyncResult> {
   const state = await readRecallCalendarState();
   const conn = state.connections.find((c) => c.recallCalendarId === args.calendarId);
@@ -180,9 +293,41 @@ export async function syncRecallCalendarEvents(args: {
     updatedAtGte,
   });
 
-  const relevantEvents = events.filter(
-    (event) => event.is_deleted || isUpcomingRecallEvent(event),
-  );
+  const eventIdFilter =
+    args.eventIds?.length ? new Set(args.eventIds.map((id) => String(id).trim()).filter(Boolean)) : null;
+
+  const stateByKey = new Map<string, UnifiedScheduledStateEntry>();
+  if (unifiedScheduledStateUsesS3()) {
+    try {
+      const state = await readUnifiedScheduledStateFromS3();
+      for (const row of state.scheduled) {
+        if (row.status === "scheduled" && row.recallBotId) stateByKey.set(row.dedupeKey, row);
+      }
+    } catch {
+      // continue without S3 dedupe hints
+    }
+  }
+
+  let relevantEvents = events
+    .filter((event) => {
+      if (eventIdFilter && !eventIdFilter.has(event.id)) return false;
+      if (args.scheduleAll) {
+        return !event.is_deleted && isUpcomingRecallEvent(event) && shouldAutoScheduleRecallEvent(event);
+      }
+      return event.is_deleted || isUpcomingRecallEvent(event);
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  const scheduleBots = Boolean(args.eventIds?.length) || Boolean(args.scheduleAll);
+
+  if (args.scheduleAll) {
+    relevantEvents = relevantEvents.filter((event) => !recallEventAlreadyHasBot(event, stateByKey));
+  }
+
+  const maxNewBots =
+    args.maxNewBots ?? (args.scheduleAll ? relevantEvents.length : MAX_NEW_BOTS_PER_SYNC);
+  const refreshBotConfig =
+    args.scheduleAll ? false : args.refreshBotConfig !== false;
 
   const result: RecallCalendarSyncResult = {
     calendarId: args.calendarId,
@@ -191,7 +336,26 @@ export async function syncRecallCalendarEvents(args: {
     skipped: 0,
     deleted: 0,
     errors: [],
+    scheduledEventIds: [],
+    transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
+    reason: scheduleBots
+      ? undefined
+      : "Calendar list refreshed — use Smart schedule to reserve bots for selected meetings",
   };
+
+  if (!scheduleBots) {
+    result.skipped = relevantEvents.length;
+    await updateRecallCalendarSyncMeta(args.calendarId, {
+      lastSyncTs: updatedAtGte,
+      lastSyncSummary: {
+        scheduled: 0,
+        skipped: result.skipped,
+        processed: result.processed,
+        errors: 0,
+      },
+    });
+    return result;
+  }
 
   let newBotsScheduled = 0;
   for (const event of relevantEvents) {
@@ -200,16 +364,17 @@ export async function syncRecallCalendarEvents(args: {
         !event.is_deleted &&
         shouldAutoScheduleRecallEvent(event) &&
         !event.bots?.length &&
-        newBotsScheduled >= MAX_NEW_BOTS_PER_SYNC
+        newBotsScheduled >= maxNewBots
       ) {
         result.skipped += 1;
         continue;
       }
       const r = await processRecallCalendarEvent(event, {
-        refreshBotConfig: args.refreshBotConfig,
+        refreshBotConfig,
       });
       if (r.action === "scheduled" || r.action === "refreshed") {
         result.scheduled += 1;
+        result.scheduledEventIds!.push(event.id);
         if (r.action === "scheduled") newBotsScheduled += 1;
       } else if (r.action === "deleted") result.deleted += 1;
       else result.skipped += 1;

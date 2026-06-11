@@ -13,7 +13,12 @@ import {
   removeRecallCalendarConnection,
   upsertRecallCalendarConnection,
 } from "@/lib/recall/recall-calendar-state-s3.server";
-import { signOAuthState, syncRecallCalendarEvents, verifyOAuthState } from "@/lib/recall/recall-calendar-sync.server";
+import {
+  previewRecallCalendarPending,
+  signOAuthState,
+  syncRecallCalendarEvents,
+  verifyOAuthState,
+} from "@/lib/recall/recall-calendar-sync.server";
 import type { RecallCalendarWebhookPayload } from "@/lib/recall/recall-calendar-types";
 import { googleOAuthClientId, googleOAuthClientSecret } from "@/lib/recall/google-calendar-oauth.server";
 import {
@@ -25,11 +30,21 @@ import {
 export async function getRecallCalendarStatus() {
   const state = await readRecallCalendarState();
   const allowlisted = getConnectedRecallCalendars(state).filter((c) => isRecallCalendarEmailAllowed(c.email));
-  const connected: typeof allowlisted = [];
+  const connected: Array<
+    (typeof allowlisted)[number] & {
+      pending?: Awaited<ReturnType<typeof previewRecallCalendarPending>>;
+    }
+  > = [];
   for (const c of allowlisted) {
     try {
       await getRecallCalendar(c.recallCalendarId);
-      connected.push(c);
+      let pending: Awaited<ReturnType<typeof previewRecallCalendarPending>> | undefined;
+      try {
+        pending = await previewRecallCalendarPending(c.recallCalendarId);
+      } catch {
+        // Non-fatal — UI can still sync manually.
+      }
+      connected.push({ ...c, pending });
     } catch {
       // Drop stale ids (e.g. old RECALL_CALENDAR_ID from env) so Sync targets a live calendar.
     }
@@ -126,7 +141,16 @@ export async function disconnectRecallCalendar(calendarId: string) {
   return { disconnected: true, calendarId };
 }
 
-export async function syncRecallCalendarNow(calendarId: string, updatedAtGte?: string) {
+export async function syncRecallCalendarNow(
+  calendarId: string,
+  options?: {
+    updatedAtGte?: string;
+    eventIds?: string[];
+    scheduleAll?: boolean;
+    maxNewBots?: number;
+    refreshBotConfig?: boolean;
+  },
+) {
   let cal;
   try {
     cal = await getRecallCalendar(calendarId);
@@ -144,12 +168,17 @@ export async function syncRecallCalendarNow(calendarId: string, updatedAtGte?: s
   }
   const ownerEmail = String(cal.platform_email || cal.oauth_email || "");
   assertRecallCalendarEmailAllowed(ownerEmail);
-  const since = updatedAtGte ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const since =
+    options?.updatedAtGte ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const scheduleAll = Boolean(options?.scheduleAll);
   return syncRecallCalendarEvents({
     calendarId,
     updatedAtGte: since,
     ownerEmail,
-    refreshBotConfig: true,
+    refreshBotConfig: scheduleAll ? false : options?.refreshBotConfig !== false,
+    eventIds: options?.eventIds,
+    scheduleAll,
+    maxNewBots: options?.maxNewBots,
   });
 }
 
@@ -165,6 +194,7 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
         allowlist: getRecallCalendarAllowlist(),
       };
     }
+    // Webhook: refresh calendar event index only — never auto-schedule bots (use Smart schedule UI).
     return syncRecallCalendarEvents({
       calendarId: calendar_id,
       updatedAtGte: last_updated_ts,

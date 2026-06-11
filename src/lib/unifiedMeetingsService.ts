@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { recallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
+import { dispatchBotWithLiveTranscripts } from "@/lib/notetaker-bot-dispatch.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import {
   readUnifiedScheduledStateFromS3,
@@ -166,6 +166,41 @@ function computeSkipReason(
     return null;
   }
   if (!Number.isFinite(startMs) || startMs < Date.now()) return "Meeting start time is in the past";
+  return null;
+}
+
+/**
+ * Smart schedule / calendar: reserve the bot for start − offset — never join immediately while the
+ * meeting has not started (avoids waiting-room timeout before the call begins).
+ */
+export function resolvePlannedCalendarJoinAt(
+  startTime: string,
+  endTime?: string,
+  joinOffsetMs: number = BOT_JOIN_OFFSET_MS,
+): string | null {
+  const startMs = new Date(startTime).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  const now = Date.now();
+  const endMs = endTime ? new Date(endTime).getTime() : NaN;
+  const effectiveEnd = Number.isFinite(endMs) ? endMs + MEETING_END_GRACE_MS : startMs + 3 * 60 * 60 * 1000;
+
+  if (now > effectiveEnd) return null;
+
+  const plannedJoinMs = startMs - joinOffsetMs;
+  /** Recall rejects join_at in the past; keep at least ~90s ahead when still before meeting start. */
+  const MIN_SCHEDULE_AHEAD_MS = 90 * 1000;
+
+  if (now < startMs) {
+    const joinMs = Math.max(plannedJoinMs, now + MIN_SCHEDULE_AHEAD_MS);
+    const cappedJoinMs = Math.min(joinMs, startMs - 30_000);
+    if (!Number.isFinite(cappedJoinMs) || cappedJoinMs <= now) return null;
+    return new Date(cappedJoinMs).toISOString();
+  }
+
+  if (now <= effectiveEnd) {
+    return new Date(now + IMMEDIATE_JOIN_DELAY_MS).toISOString();
+  }
+
   return null;
 }
 
@@ -387,117 +422,6 @@ function dedupeKeyLegacy(meetingUrl: string, startTime: string, calendarUserEmai
   return `${meetingUrl}|${startTime}|${calendarUserEmail.toLowerCase()}`;
 }
 
-async function createRecallBot(args: {
-  meetingUrl: string;
-  botJoinAt: string;
-  meeting: UnifiedMeeting;
-  joinOffsetMinutes?: number;
-}): Promise<{ botId: string }> {
-  const apiKey = env("RECALL_API_KEY");
-  const rawBase = (process.env.RECALL_BASE_URL?.trim() || "https://ap-northeast-1.recall.ai").replace(/\/$/, "");
-  const hostBase = rawBase.replace(/\/api\/v[0-9]+$/i, "");
-  const botName = process.env.BOT_NAME?.trim() || "Alyson Notetaker";
-  const url = `${hostBase}/api/v1/bot/`;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Token ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      meeting_url: args.meetingUrl,
-      bot_name: botName,
-      join_at: args.botJoinAt,
-      ...recallBotRecordingConfig(),
-      metadata: {
-        source: "unified_meetings",
-        google_event_id: args.meeting.googleEventId,
-        ical_uid: args.meeting.iCalUID,
-        calendar_user: args.meeting.calendarUserEmail,
-        summary: args.meeting.title,
-        meeting_url: args.meeting.meetingUrl,
-        bot_join_offset_minutes: args.joinOffsetMinutes ?? 2,
-      },
-    }),
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
-
-  const txt = await res.text();
-  let body: any = null;
-  try {
-    body = txt ? JSON.parse(txt) : null;
-  } catch {
-    body = txt;
-  }
-  if (!res.ok) {
-    const msg = body?.detail || body?.message || `Recall create bot failed (${res.status})`;
-    throw new Error(String(msg));
-  }
-  const botId = String(body?.id || body?.bot_id || "");
-  if (!botId) throw new Error("Recall bot creation succeeded but bot id was missing");
-  return { botId };
-}
-
-async function createNotetakerManagedBot(args: {
-  meetingUrl: string;
-  botJoinAt: string;
-  meeting: UnifiedMeeting;
-  joinOffsetMinutes?: number;
-}): Promise<{ botId: string }> {
-  const raw =
-    process.env.ALYSON_NOTETAKER_BASE_URL ||
-    process.env.VITE_ALYSON_NOTETAKER_BASE_URL ||
-    process.env.TEST_BOTV2_BASE_URL ||
-    process.env.VITE_TEST_BOTV2_BASE_URL ||
-    "http://localhost:3003";
-  const base = String(raw).replace(/\/$/, "");
-  const url = `${base}/api/create-bot`;
-  const botName = process.env.BOT_NAME?.trim() || "Alyson Notetaker";
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      meeting_url: args.meetingUrl,
-      bot_name: botName,
-      title: args.meeting.title,
-      join_at: args.botJoinAt,
-      metadata: {
-        source: "unified_meetings",
-        google_event_id: args.meeting.googleEventId,
-        ical_uid: args.meeting.iCalUID,
-        calendar_user: args.meeting.calendarUserEmail,
-        summary: args.meeting.title,
-        meeting_url: args.meeting.meetingUrl,
-        bot_join_offset_minutes: args.joinOffsetMinutes ?? 2,
-      },
-    }),
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
-
-  const txt = await res.text();
-  let body: any = null;
-  try {
-    body = txt ? JSON.parse(txt) : null;
-  } catch {
-    body = txt;
-  }
-  if (!res.ok) {
-    const msg =
-      (body && typeof body === "object" && (body.error || body.message)) ||
-      `Notetaker create bot failed (${res.status})`;
-    throw new Error(String(msg));
-  }
-  const botId = String(body?.botId || body?.id || body?.bot_id || "");
-  if (!botId) throw new Error("Notetaker create bot succeeded but bot id was missing");
-  return { botId };
-}
-
 function normalizeMeetingEvent(
   userEmail: string,
   event: any,
@@ -652,23 +576,21 @@ async function dispatchBotForMeeting(
   joinAt: string,
   joinOffsetMinutes?: number,
 ): Promise<{ botId: string; creationSource: StateEntry["creationSource"] }> {
-  try {
-    const recall = await createNotetakerManagedBot({
-      meetingUrl: meeting.meetingUrl!,
-      botJoinAt: joinAt,
-      meeting,
-      joinOffsetMinutes,
-    });
-    return { botId: recall.botId, creationSource: "notetaker_managed" };
-  } catch {
-    const recall = await createRecallBot({
-      meetingUrl: meeting.meetingUrl!,
-      botJoinAt: joinAt,
-      meeting,
-      joinOffsetMinutes,
-    });
-    return { botId: recall.botId, creationSource: "direct_recall_fallback" };
-  }
+  const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
+    meetingUrl: meeting.meetingUrl!,
+    botJoinAt: joinAt,
+    title: meeting.title,
+    joinOffsetMinutes,
+    metadata: {
+      source: "unified_meetings",
+      google_event_id: meeting.googleEventId,
+      ical_uid: meeting.iCalUID,
+      calendar_user: meeting.calendarUserEmail,
+      summary: meeting.title,
+      meeting_url: meeting.meetingUrl,
+    },
+  });
+  return { botId, creationSource };
 }
 
 async function scheduleMeetingInternal(
