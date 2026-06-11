@@ -1,4 +1,4 @@
-import { recallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
+import { patchRecallBotRecordingConfig, recallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
 import { recallFetch } from "@/lib/recall/recall-client.server";
 
 export type BotDispatchSource = "notetaker_managed" | "direct_recall_fallback";
@@ -33,10 +33,17 @@ function isFutureScheduledJoin(botJoinAt: string): boolean {
   return Number.isFinite(joinMs) && joinMs > Date.now() + FUTURE_SCHEDULE_THRESHOLD_MS;
 }
 
-/** Pre-create Notetaker in-memory session so webhooks/SSE work after Recall-direct dispatch. */
+/** Register Notetaker session + ensure Recall transcript webhooks after Recall-direct dispatch. */
 async function warmNotetakerSession(botId: string): Promise<void> {
   const id = String(botId || "").trim();
   if (!id) return;
+
+  try {
+    await patchRecallBotRecordingConfig(id);
+  } catch {
+    // Bot may already be in-call; PATCH is best-effort.
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8_000);
   try {

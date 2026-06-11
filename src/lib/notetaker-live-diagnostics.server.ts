@@ -1,4 +1,7 @@
-import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
+import {
+  isAlysonClientWebhookHost,
+  resolveRecallTranscriptWebhookUrl,
+} from "@/lib/recall/recall-bot-config.server";
 import { notetakerBaseUrl, notetakerUpstream } from "@/lib/notetaker-upstream.server";
 
 export type NotetakerLiveDiagnostics = {
@@ -22,9 +25,9 @@ export async function buildNotetakerLiveDiagnostics(botId: string): Promise<Note
   const transcriptWebhookUrl = resolveRecallTranscriptWebhookUrl();
   const hints: string[] = [];
 
-  if (transcriptWebhookUrl.includes("vercel.app") || transcriptWebhookUrl.includes("alyson-client")) {
+  if (isAlysonClientWebhookHost(transcriptWebhookUrl)) {
     hints.push(
-      "Transcript webhook URL points at the Alyson HR app — Recall must POST to the Notetaker service. Set PUBLIC_WEBHOOK_BASE_URL or RECALL_TRANSCRIPT_WEBHOOK_URL to your Notetaker host.",
+      "Transcript webhooks go to the Alyson HR app (/webhooks/recall) and are proxied to Notetaker. Deploy the latest app build so that route exists.",
     );
   }
 

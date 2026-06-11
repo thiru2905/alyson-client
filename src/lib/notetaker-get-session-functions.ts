@@ -10,9 +10,30 @@ import { autoPersistEndedMeetingToS3, maybeCheckpointTranscriptToS3 } from "@/li
 import { composeTranscript } from "@/lib/notetaker-persistence.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { loadPersistedSessionPayloadFromS3 } from "@/lib/notetaker-sessions-history.server";
+import { patchRecallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 
 const BotIdInput = z.object({ botId: z.string().min(1) });
+
+const transcriptRepairAt = new Map<string, number>();
+const TRANSCRIPT_REPAIR_COOLDOWN_MS = 45_000;
+
+async function maybeRepairLiveTranscriptPipeline(
+  botId: string,
+  payload: NotetakerSessionPayload,
+): Promise<void> {
+  const status = String(payload.session?.status || "").toLowerCase();
+  const inCall = ["recording", "in_call", "in_call_recording", "joined"].includes(status);
+  if (!inCall || payload.lines.length > 0) return;
+  const last = transcriptRepairAt.get(botId) ?? 0;
+  if (Date.now() - last < TRANSCRIPT_REPAIR_COOLDOWN_MS) return;
+  transcriptRepairAt.set(botId, Date.now());
+  try {
+    await patchRecallBotRecordingConfig(botId);
+  } catch {
+    // Best-effort — webhooks may start flowing after PATCH.
+  }
+}
 
 export type { NotetakerSessionPayload } from "@/lib/alyson-notetaker-functions";
 
@@ -99,6 +120,7 @@ export const getNotetakerSession = createServerFn({ method: "POST" })
     try {
       const res = await notetakerUpstream(`/api/session/${encodeURIComponent(data.botId)}`);
       const typed = normalizeSessionPayload(res, data.botId);
+      await maybeRepairLiveTranscriptPipeline(data.botId, typed);
 
       const fromS3 = await loadPersistedSessionPayloadFromS3(data.botId);
       if (fromS3) {

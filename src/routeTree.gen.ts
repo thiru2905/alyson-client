@@ -34,6 +34,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BonusIndexRouteImport } from './routes/bonus/index'
 import { Route as AlysonNotetakerIndexRouteImport } from './routes/alyson-notetaker/index'
 import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspace-activity.$userEmail'
+import { Route as WebhooksRecallRouteImport } from './routes/webhooks/recall'
 import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
 import { Route as EmployeeScoringUserEmailRouteImport } from './routes/employee-scoring.$userEmail'
@@ -184,6 +185,11 @@ const WorkspaceActivityUserEmailRoute =
     path: '/$userEmail',
     getParentRoute: () => WorkspaceActivityRoute,
   } as any)
+const WebhooksRecallRoute = WebhooksRecallRouteImport.update({
+  id: '/webhooks/recall',
+  path: '/webhooks/recall',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TimeDashboardPacingRoute = TimeDashboardPacingRouteImport.update({
   id: '/pacing',
   path: '/pacing',
@@ -347,6 +353,7 @@ export interface FileRoutesByFullPath {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
+  '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
@@ -395,6 +402,7 @@ export interface FileRoutesByTo {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
+  '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker': typeof AlysonNotetakerIndexRoute
   '/bonus': typeof BonusIndexRoute
@@ -446,6 +454,7 @@ export interface FileRoutesById {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
+  '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
@@ -498,6 +507,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
+    | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
+    | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker'
     | '/bonus'
@@ -596,6 +607,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
+    | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
@@ -635,6 +647,7 @@ export interface RootRouteChildren {
   TimeDashboardRoute: typeof TimeDashboardRouteWithChildren
   WorkflowsRoute: typeof WorkflowsRoute
   WorkspaceActivityRoute: typeof WorkspaceActivityRouteWithChildren
+  WebhooksRecallRoute: typeof WebhooksRecallRoute
   ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
   ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
@@ -820,6 +833,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workspace-activity/$userEmail'
       preLoaderRoute: typeof WorkspaceActivityUserEmailRouteImport
       parentRoute: typeof WorkspaceActivityRoute
+    }
+    '/webhooks/recall': {
+      id: '/webhooks/recall'
+      path: '/webhooks/recall'
+      fullPath: '/webhooks/recall'
+      preLoaderRoute: typeof WebhooksRecallRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/time-dashboard/pacing': {
       id: '/time-dashboard/pacing'
@@ -1122,6 +1142,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimeDashboardRoute: TimeDashboardRouteWithChildren,
   WorkflowsRoute: WorkflowsRoute,
   WorkspaceActivityRoute: WorkspaceActivityRouteWithChildren,
+  WebhooksRecallRoute: WebhooksRecallRoute,
   ApiAnalyticsUnifiedMeetingsRoute:
     ApiAnalyticsUnifiedMeetingsRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
