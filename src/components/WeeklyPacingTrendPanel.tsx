@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Loader2, MapPin, Users, X } from "lucide-react";
+import { FileText, Loader2, MapPin, Users, X } from "lucide-react";
+import { toast } from "sonner";
+import {
+  chartFilterSummaryFromTrend,
+  downloadWeeklyHoursTrendPdf,
+} from "@/lib/weekly-pacing-trend-pdf";
 import {
   CartesianGrid,
   Line,
@@ -137,6 +142,7 @@ export function WeeklyPacingTrendPanel({
   totalEmployeeCount,
 }: Props) {
   const [selected, setSelected] = useState<WeeklyHoursTrendPoint | null>(null);
+  const [chartPdfLoading, setChartPdfLoading] = useState(false);
   const chartFilterKey = `${locationFilter}|${teamFilter}`;
 
   useEffect(() => {
@@ -169,6 +175,25 @@ export function WeeklyPacingTrendPanel({
   const liftPositive = (trend?.liftHours ?? 0) >= 0;
   const chartBusy = isTrendLoading || isTrendRefetching;
 
+  function exportChartPdf() {
+    if (!trend?.points.length) return;
+    setChartPdfLoading(true);
+    try {
+      const chartSummary =
+        pacingFilterSummaryLabel({ location: locationFilter, team: teamFilter, active: "__all__" }) ||
+        chartFilterSummaryFromTrend(trend);
+      downloadWeeklyHoursTrendPdf({
+        trend,
+        chartFilterSummary: chartSummary,
+      });
+      toast.success("Weekly hours trend PDF downloaded");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to build chart PDF");
+    } finally {
+      setChartPdfLoading(false);
+    }
+  }
+
   return (
     <div className="surface-card overflow-hidden">
       <div className="border-b border-border bg-muted/20 px-4 py-3 md:px-5">
@@ -188,14 +213,26 @@ export function WeeklyPacingTrendPanel({
               filters update the chart; the Active filter below applies to the table only.
             </p>
           </div>
-          <div className="text-[11px] text-muted-foreground tabular-nums shrink-0 text-right">
-            <div>
-              <Users className="h-3.5 w-3.5 inline -mt-0.5 mr-1" />
-              {trend?.latestWeek?.employeeCount ?? "—"} active in chart
-            </div>
-            <div className="mt-0.5">
-              {filteredEmployeeCount}
-              {hasFacetFilters ? ` of ${totalEmployeeCount}` : ""} in table
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={exportChartPdf}
+              disabled={!trend?.points.length || chartBusy || chartPdfLoading}
+              className="h-8 px-3 rounded-md border border-border text-[11px] flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+              title="Download this chart as a PDF for weekly reports"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {chartPdfLoading ? "Building PDF…" : "Download chart PDF"}
+            </button>
+            <div className="text-[11px] text-muted-foreground tabular-nums text-right">
+              <div>
+                <Users className="h-3.5 w-3.5 inline -mt-0.5 mr-1" />
+                {trend?.latestWeek?.employeeCount ?? "—"} active in chart
+              </div>
+              <div className="mt-0.5">
+                {filteredEmployeeCount}
+                {hasFacetFilters ? ` of ${totalEmployeeCount}` : ""} in table
+              </div>
             </div>
           </div>
         </div>
