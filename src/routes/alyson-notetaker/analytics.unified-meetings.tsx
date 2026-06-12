@@ -299,9 +299,17 @@ export function UnifiedMeetingsPage() {
                         <td>{m.calendarUserEmail}</td>
                         <td>{m.organizerEmail || "-"}</td>
                         <td>{m.meetingPlatform}</td>
-                        <td>
+                        <td className="max-w-[280px]">
                           {m.meetingUrl ? (
-                            <a className="text-primary underline" href={m.meetingUrl} target="_blank" rel="noreferrer">Open Meet</a>
+                            <a
+                              className="text-primary underline truncate block font-mono text-[11px]"
+                              href={m.meetingUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={m.meetingUrl}
+                            >
+                              {m.meetingUrl}
+                            </a>
                           ) : (
                             <span className="text-muted-foreground">No meeting link</span>
                           )}
