@@ -1,4 +1,9 @@
-const DEFAULT_ALLOWED = ["alysonclient@cintara.ai", "mohita@cintara.ai", "thirumalai@cintara.ai"];
+const DEFAULT_ALLOWED = [
+  "alysonclient@cintara.ai",
+  "mohita@cintara.ai",
+  "thirumalai@cintara.ai",
+  "vinit@cintara.ai",
+];
 
 function normalizeEmail(email: string): string {
   return String(email || "")
