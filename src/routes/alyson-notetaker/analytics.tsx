@@ -8,7 +8,7 @@ import {
 } from "@/lib/notetaker-analytics-session";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { PageHeader } from "@/components/AppShell";
-import { BarChart3, CalendarDays, Captions, Download, DollarSign, FileText, Sparkles, X } from "lucide-react";
+import { BarChart3, Bot, CalendarDays, Captions, Download, DollarSign, FileText, Sparkles, X } from "lucide-react";
 import {
   analyticsExportFilename,
   buildAnalyticsExportHtml,
@@ -479,6 +479,13 @@ function AnalyticsPage() {
         dense
         actions={
           <div className="flex items-center gap-2">
+            <Link
+              to="/alyson-notetaker/bot-join-report"
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              Bot join report
+            </Link>
             <Link
               to="/alyson-notetaker/cost-tracking"
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"

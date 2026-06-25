@@ -98,7 +98,9 @@ export async function recallFetchWithRetry<T = unknown>(
     } catch (e) {
       lastError = e;
       if (!isRecallRetryableError(e) || attempt >= maxRetries) throw e;
-      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      const status = (e as { status?: number }).status;
+      const backoffMs = status === 429 ? Math.min(60_000, 5_000 * (attempt + 1)) : 1000 * (attempt + 1);
+      await new Promise((r) => setTimeout(r, backoffMs));
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));

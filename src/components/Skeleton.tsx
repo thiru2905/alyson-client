@@ -82,6 +82,27 @@ export function TimeDashboardTableSkeleton({ rows = 8 }: { rows?: number }) {
   );
 }
 
+/** Bot join report first paint / cold load. */
+export function BotJoinReportSkeleton() {
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300" aria-busy="true" aria-label="Loading bot join report">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="surface-card p-3 space-y-2">
+            <Shimmer className="h-3 w-20" />
+            <Shimmer className="h-8 w-16" />
+            <Shimmer className="h-2.5 w-24" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Shimmer className="h-64 surface-card" />
+        <Shimmer className="h-64 surface-card" />
+      </div>
+      <TableSkeleton rows={8} />
+    </div>
+  );
+}
 /** Recall cost tracking first paint / cold load. */
 export function CostTrackingSkeleton() {
   return (

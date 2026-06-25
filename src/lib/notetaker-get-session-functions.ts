@@ -16,7 +16,7 @@ import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 const BotIdInput = z.object({ botId: z.string().min(1) });
 
 const transcriptRepairAt = new Map<string, number>();
-const TRANSCRIPT_REPAIR_COOLDOWN_MS = 45_000;
+const TRANSCRIPT_REPAIR_COOLDOWN_MS = 120_000;
 
 async function maybeRepairLiveTranscriptPipeline(
   botId: string,
