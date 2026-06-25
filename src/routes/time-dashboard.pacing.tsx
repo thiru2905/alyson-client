@@ -318,6 +318,9 @@ function WeeklyPacingPage() {
         team: r.team ?? "",
         manager_name: r.managerName ?? "",
         manager_email: r.managerEmail ?? "",
+        hours_logged: r.hoursWorkedLogged.toFixed(2),
+        leave_days: r.leaveDays,
+        leave_hours_credit: r.leaveHoursCredit.toFixed(2),
         hours_worked: r.hoursWorked.toFixed(2),
         avg_daily_pace_mon_thu: r.avgDailyPace.toFixed(2),
         projected_pace: r.projectedPace.toFixed(2),
@@ -494,7 +497,8 @@ function WeeklyPacingPage() {
             </div>
 
             <p className="text-[12px] text-muted-foreground leading-relaxed max-w-4xl">
-              <strong>Hours</strong> = logged so far (includes Friday on Fri). <strong>Pace</strong> = Mon–Thu total + Mon–Thu average.
+              <strong>Worked</strong> = Time Doctor hours + leave credit (+7h per leave workday). <strong>Leave</strong> = approved leave days this week (weekdays only).
+              <strong> Pace</strong> = Mon–Thu total + Mon–Thu average.
               Mon–Thu example: <strong>7h</strong> → <strong>14h</strong>. Friday: compare actual hours vs Mon–Thu projection (e.g. worked <strong>40.79h</strong>, pace <strong>46.70h</strong>).
               {" "}<strong className="text-emerald-700 dark:text-emerald-300">Green rows</strong> have already reached {report.targetHours}h.
             </p>
@@ -622,9 +626,21 @@ function WeeklyPacingPage() {
                           type="button"
                           onClick={() => applySort("hoursWorked")}
                           className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("hoursWorked")}`}
+                          title="Logged hours + leave credit (7h per leave day)"
                         >
                           Worked
                           <SortIcon field="hoursWorked" />
+                        </button>
+                      </th>
+                      <th align="right">
+                        <button
+                          type="button"
+                          onClick={() => applySort("leaveDays")}
+                          className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("leaveDays")}`}
+                          title="Leave workdays this week (each counts as +7h toward target)"
+                        >
+                          Leave
+                          <SortIcon field="leaveDays" />
                         </button>
                       </th>
                       <th align="right">
@@ -718,7 +734,7 @@ function WeeklyPacingPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="text-center text-muted-foreground py-8">
+                        <td colSpan={14} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
                             : "No employees found for this week."}
@@ -742,8 +758,35 @@ function WeeklyPacingPage() {
                           <td
                             align="right"
                             className={`font-mono tabular-nums ${r.metTarget ? "font-semibold text-emerald-700 dark:text-emerald-300" : ""}`}
+                            title={
+                              r.leaveDays > 0
+                                ? `${r.hoursWorkedLogged.toFixed(2)}h logged + ${r.leaveHoursCredit.toFixed(0)}h leave credit`
+                                : undefined
+                            }
                           >
                             {r.hoursWorked.toFixed(2)}h
+                            {r.leaveDays > 0 ? (
+                              <div className="text-[10px] text-muted-foreground font-normal">
+                                {r.hoursWorkedLogged.toFixed(1)}h logged
+                              </div>
+                            ) : null}
+                          </td>
+                          <td
+                            align="right"
+                            className="font-mono tabular-nums"
+                            title={
+                              r.leaveDays > 0
+                                ? `${r.leaveDays} day(s) × 7h = +${r.leaveHoursCredit.toFixed(0)}h credited`
+                                : undefined
+                            }
+                          >
+                            {r.leaveDays > 0 ? (
+                              <span className="font-medium text-sky-700 dark:text-sky-300">
+                                {r.leaveDays}d
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
                           <td align="right" className="font-mono tabular-nums text-muted-foreground">
                             {r.avgDailyPace.toFixed(2)}h

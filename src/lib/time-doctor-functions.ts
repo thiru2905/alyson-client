@@ -1831,6 +1831,20 @@ export const fetchTimeDoctorMonthlyUnderHoursReport = createServerFn({ method: "
       warnings.push(`users: ${String(e)}`);
     }
 
+    const {
+      buildLeaveDaysLookup,
+      pacingLeaveHoursCredit,
+      resolveLeaveDaysForEmployee,
+    } = await import("@/lib/weekly-pacing-leave.server");
+    const { getLeaveFromS3 } = await import("@/lib/leave-s3.server");
+    let leaveEmployees: Record<string, import("@/lib/leave-schema").EmployeeLeaveLedger> = {};
+    try {
+      const { file } = await getLeaveFromS3();
+      leaveEmployees = file?.employees ?? {};
+    } catch (e) {
+      warnings.push(`leave-ledger: ${String(e)}`);
+    }
+
     const weekResults: UnderHoursWeek[] = [];
     for (const w of weeks) {
       let secondsMap = new Map<string, number>();
@@ -1840,13 +1854,22 @@ export const fetchTimeDoctorMonthlyUnderHoursReport = createServerFn({ method: "
         warnings.push(`${w.start} → ${w.end}: ${String(e)}`);
       }
 
+      const leaveLookup = buildLeaveDaysLookup(leaveEmployees, w.start, w.end);
+
       const underThreshold = users
         .map((u) => {
           const seconds = secondsMap.get(u.id) ?? 0;
+          const email = (u.email || "").trim();
+          const leaveDays = resolveLeaveDaysForEmployee(leaveLookup, {
+            employeeId: u.id,
+            email,
+          });
+          const hours =
+            Math.round((seconds / 3600 + pacingLeaveHoursCredit(leaveDays)) * 100) / 100;
           return {
-            email: (u.email || "").trim(),
+            email,
             name: (u.name || u.email || "").trim(),
-            hours: seconds / 3600,
+            hours,
           };
         })
         .filter((e) => e.email && e.hours < thresholdHours)

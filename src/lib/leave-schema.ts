@@ -83,6 +83,22 @@ export function leaveDaysInclusive(startDate: string, endDate: string): number {
   return count;
 }
 
+/** Weekday leave days from events overlapping an inclusive date range. */
+export function countLeaveWorkdaysInRange(
+  events: LeaveRecordEvent[],
+  rangeStart: string,
+  rangeEnd: string,
+): number {
+  let total = 0;
+  for (const e of events) {
+    const start = e.startDate > rangeStart ? e.startDate : rangeStart;
+    const end = e.endDate < rangeEnd ? e.endDate : rangeEnd;
+    if (start > end) continue;
+    total += leaveDaysInclusive(start, end);
+  }
+  return total;
+}
+
 export function sumLeaveDays(events: LeaveRecordEvent[]): number {
   return events.reduce((sum, e) => sum + (Number.isFinite(e.days) ? e.days : 0), 0);
 }

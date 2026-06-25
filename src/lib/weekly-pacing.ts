@@ -2,6 +2,9 @@ import { emailLookupKeys } from "@/lib/cintara-email";
 
 export const WEEKLY_HOURS_TARGET = 35;
 
+/** Hours credited per leave workday toward weekly pacing (counts as worked time). */
+export const PACING_LEAVE_HOURS_PER_DAY = 7;
+
 export function formatActiveLabel(active: boolean): "Yes" | "No" {
   return active ? "Yes" : "No";
 }
@@ -17,6 +20,13 @@ export type WeeklyPacingRow = {
   team: string | null;
   managerName: string | null;
   managerEmail: string | null;
+  /** Time Doctor logged hours (before leave credit). */
+  hoursWorkedLogged: number;
+  /** Leave workdays in this report week (Mon–Fri). */
+  leaveDays: number;
+  /** Leave credit applied to pacing (leaveDays × 7h). */
+  leaveHoursCredit: number;
+  /** Logged hours + leave credit — used for target / status / remaining. */
   hoursWorked: number;
   /** Average daily hours across Mon–Thu sample days (elapsed only). */
   avgDailyPace: number;
@@ -50,6 +60,9 @@ export type WeeklyPacingSortField =
   | "team"
   | "managerName"
   | "hoursWorked"
+  | "hoursWorkedLogged"
+  | "leaveDays"
+  | "leaveHoursCredit"
   | "avgDailyPace"
   | "hoursRemaining"
   | "hoursOver"
@@ -372,10 +385,15 @@ export function buildPacingRow(args: {
   metrics: WeekPacingMetrics;
   today: string;
   weekStart: string;
+  leaveDays?: number;
 }): WeeklyPacingRow | null {
   if (!args.email.trim()) return null;
 
-  const hoursWorked = Math.round((args.weeklySeconds / 3600) * 100) / 100;
+  const hoursWorkedLogged = Math.round((args.weeklySeconds / 3600) * 100) / 100;
+  const leaveDays = args.leaveDays ?? 0;
+  const leaveHoursCredit =
+    Math.round(leaveDays * PACING_LEAVE_HOURS_PER_DAY * 100) / 100;
+  const hoursWorked = Math.round((hoursWorkedLogged + leaveHoursCredit) * 100) / 100;
   const { targetHours, remainingWorkDays } = args.metrics;
   const metTarget = hoursWorked >= targetHours;
 
@@ -405,6 +423,9 @@ export function buildPacingRow(args: {
     team: null,
     managerName: null,
     managerEmail: null,
+    hoursWorkedLogged,
+    leaveDays,
+    leaveHoursCredit,
     hoursWorked,
     avgDailyPace,
     hoursRemaining,

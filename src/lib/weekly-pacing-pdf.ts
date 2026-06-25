@@ -91,6 +91,7 @@ function renderWeeklyPacingPdf(
       "Team",
       "Manager",
       "Worked",
+      "Leave",
       "Avg/day",
       "Remaining",
       "Over",
@@ -107,7 +108,10 @@ function renderWeeklyPacingPdf(
       r.managerName
         ? `${r.managerName}${r.managerEmail ? `\n${r.managerEmail}` : ""}`
         : "—",
-      `${r.hoursWorked.toFixed(2)}h`,
+      r.leaveDays > 0
+        ? `${r.hoursWorked.toFixed(2)}h\n(${r.hoursWorkedLogged.toFixed(1)}h + ${r.leaveHoursCredit.toFixed(0)}h)`
+        : `${r.hoursWorked.toFixed(2)}h`,
+      r.leaveDays > 0 ? `${r.leaveDays}d` : "—",
       `${r.avgDailyPace.toFixed(2)}h`,
       r.metTarget ? "—" : `${r.hoursRemaining.toFixed(2)}h`,
       r.hoursOver > 0 ? `+${r.hoursOver.toFixed(2)}h` : "—",
@@ -124,22 +128,23 @@ function renderWeeklyPacingPdf(
       1: { cellWidth: 52 },
       2: { cellWidth: 72 },
       3: { cellWidth: 96 },
-      4: { halign: "right", cellWidth: 38 },
-      5: { halign: "right", cellWidth: 38 },
-      6: { halign: "right", cellWidth: 42 },
-      7: { halign: "right", cellWidth: 34 },
-      8: { halign: "right", cellWidth: 40 },
-      9: { halign: "right", cellWidth: 32 },
-      10: { halign: "right", cellWidth: 38 },
-      11: { halign: "center", cellWidth: 32 },
-      12: { halign: "center", cellWidth: 48 },
+      4: { halign: "right", cellWidth: 42 },
+      5: { halign: "right", cellWidth: 28 },
+      6: { halign: "right", cellWidth: 36 },
+      7: { halign: "right", cellWidth: 40 },
+      8: { halign: "right", cellWidth: 32 },
+      9: { halign: "right", cellWidth: 38 },
+      10: { halign: "right", cellWidth: 30 },
+      11: { halign: "right", cellWidth: 36 },
+      12: { halign: "center", cellWidth: 30 },
+      13: { halign: "center", cellWidth: 46 },
     },
     didParseCell: (data) => {
       if (data.section !== "body") return;
       const row = rows[data.row.index];
       if (!row) return;
 
-      if (data.column.index === 12) {
+      if (data.column.index === 13) {
         const style = STATUS_ROW_STYLE[row.status];
         data.cell.styles.fillColor = style.fill;
         data.cell.styles.textColor = style.text;
@@ -150,16 +155,16 @@ function renderWeeklyPacingPdf(
       data.cell.styles.fillColor = style.fill;
       data.cell.styles.textColor = style.text;
 
-      if (data.column.index === 8) {
+      if (data.column.index === 9) {
         data.cell.styles.textColor =
           row.projectedPace >= report.targetHours ? [4, 120, 87] : [194, 65, 12];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 7 && row.hoursOver > 0) {
+      if (data.column.index === 8 && row.hoursOver > 0) {
         data.cell.styles.textColor = [4, 120, 87];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 10) {
+      if (data.column.index === 11) {
         data.cell.styles.fontStyle = "bold";
       }
     },

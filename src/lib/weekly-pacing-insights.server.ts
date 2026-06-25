@@ -94,6 +94,7 @@ function compactRow(r: WeeklyPacingRow) {
     team: r.team || "?",
     mgr: r.managerName || "?",
     hrs: r.hoursWorked,
+    leave: r.leaveDays,
     pace: r.projectedPace,
     rem: r.hoursRemaining,
     over: r.hoursOver,

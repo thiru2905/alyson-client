@@ -1,4 +1,7 @@
-import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
+import {
+  loadLeaveDaysForPacingWeek,
+  resolveLeaveDaysForEmployee,
+} from "@/lib/weekly-pacing-leave.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
 import {
@@ -24,6 +27,7 @@ import {
   type WeeklyHoursTrendReport,
   type WeeklyPacingReport,
 } from "@/lib/weekly-pacing";
+import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
 
 function weekStartSundayIso(day: string): string {
   return timeDoctorPacingWeekStartSunday(day);
@@ -166,8 +170,23 @@ export async function buildWeeklyPacingReport(args?: {
   const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
   const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
 
+  let leaveLookup: Awaited<ReturnType<typeof loadLeaveDaysForPacingWeek>> = {
+    byEmployeeId: new Map(),
+    byEmail: new Map(),
+  };
+  try {
+    leaveLookup = await loadLeaveDaysForPacingWeek(pacingWeekStart, metrics.weekEnd);
+  } catch (e) {
+    warnings.push(`leave-ledger: ${String(e)}`);
+  }
+
   const rows = users
     .map((u) => {
+      const email = (u.email || "").trim();
+      const leaveDays = resolveLeaveDaysForEmployee(leaveLookup, {
+        employeeId: u.id,
+        email,
+      });
       const daySeconds = sampleDays.map((day) => {
         const cacheKey = `${company.id}:${day}:${day}`;
         const dayMap = rangeCache.get(cacheKey);
@@ -175,7 +194,7 @@ export async function buildWeeklyPacingReport(args?: {
       });
       const row = buildPacingRow({
         id: u.id,
-        email: (u.email || "").trim(),
+        email,
         name: (u.name || u.email || "").trim(),
         title: u.title ?? "",
         weeklySeconds: weekly.get(u.id) ?? 0,
@@ -183,6 +202,7 @@ export async function buildWeeklyPacingReport(args?: {
         metrics,
         today: rollupDay,
         weekStart: pacingWeekStart,
+        leaveDays,
       });
       if (!row) return null;
       const withManager = attachManagerToPacingRow(row, rosterLookup);
