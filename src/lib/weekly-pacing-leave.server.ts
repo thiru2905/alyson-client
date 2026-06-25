@@ -2,12 +2,18 @@ import { emailLookupKeys } from "@/lib/cintara-email";
 import { getLeaveFromS3 } from "@/lib/leave-s3.server";
 import {
   countLeaveWorkdaysUnion,
+  formatTeamLeaveLabel,
+  leaveTypeLabel,
   matchesTeamLocation,
   type EmployeeLeaveLedger,
   type LeaveDataFile,
+  type LeaveDateRange,
   type TeamLeaveEvent,
 } from "@/lib/leave-schema";
-import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
+import {
+  PACING_LEAVE_HOURS_PER_DAY,
+  type WeeklyPacingTeamLeaveSummary,
+} from "@/lib/weekly-pacing";
 
 export { PACING_LEAVE_HOURS_PER_DAY };
 
@@ -16,9 +22,16 @@ export type LeaveDaysLookup = {
   byEmail: Map<string, number>;
 };
 
+export type EmployeeLeaveBreakdown = {
+  leaveDays: number;
+  leaveDaysPersonal: number;
+  leaveDaysTeam: number;
+};
+
 export type PacingLeaveContext = {
   lookup: LeaveDaysLookup;
   teamLeaves: TeamLeaveEvent[];
+  employees: Record<string, EmployeeLeaveLedger>;
   rangeStart: string;
   rangeEnd: string;
 };
@@ -33,6 +46,54 @@ function teamLeavesForEmployee(
   team: string,
 ): TeamLeaveEvent[] {
   return teamLeaves.filter((tl) => matchesTeamLocation(location, team, tl.location, tl.team));
+}
+
+function personalRangesForEmployee(
+  employees: Record<string, EmployeeLeaveLedger>,
+  employeeId: string,
+  email: string,
+): LeaveDateRange[] {
+  const ledger = employees[employeeId];
+  if (ledger) return ledger.leaveEvents.map((e) => ({ startDate: e.startDate, endDate: e.endDate }));
+  const emailKey = normEmail(email);
+  for (const l of Object.values(employees)) {
+    if (normEmail(l.officialEmail) === emailKey) {
+      return l.leaveEvents.map((e) => ({ startDate: e.startDate, endDate: e.endDate }));
+    }
+  }
+  return [];
+}
+
+function leaveBreakdownForEmployee(
+  ctx: PacingLeaveContext,
+  args: {
+    employeeId: string;
+    email: string;
+    team?: string | null;
+    location?: string | null;
+  },
+): EmployeeLeaveBreakdown {
+  const team = args.team?.trim() ?? "";
+  const location = args.location?.trim() ?? "";
+  const personalRanges = personalRangesForEmployee(ctx.employees, args.employeeId, args.email);
+  const teamRanges = teamLeavesForEmployee(ctx.teamLeaves, location, team).map((e) => ({
+    startDate: e.startDate,
+    endDate: e.endDate,
+  }));
+
+  const leaveDaysPersonal = countLeaveWorkdaysUnion(
+    personalRanges,
+    ctx.rangeStart,
+    ctx.rangeEnd,
+  );
+  const leaveDaysTeam = countLeaveWorkdaysUnion(teamRanges, ctx.rangeStart, ctx.rangeEnd);
+  const leaveDays = countLeaveWorkdaysUnion(
+    [...personalRanges, ...teamRanges],
+    ctx.rangeStart,
+    ctx.rangeEnd,
+  );
+
+  return { leaveDays, leaveDaysPersonal, leaveDaysTeam };
 }
 
 function leaveDaysForLedger(
@@ -72,6 +133,19 @@ export function buildLeaveDaysLookup(
   return { byEmployeeId, byEmail };
 }
 
+export function resolveLeaveBreakdownForEmployee(
+  ctx: PacingLeaveContext,
+  args: {
+    employeeId: string;
+    email: string;
+    team?: string | null;
+    location?: string | null;
+  },
+): EmployeeLeaveBreakdown {
+  return leaveBreakdownForEmployee(ctx, args);
+}
+
+/** @deprecated Use resolveLeaveBreakdownForEmployee */
 export function resolveLeaveDaysForEmployee(
   ctx: PacingLeaveContext,
   args: {
@@ -81,21 +155,34 @@ export function resolveLeaveDaysForEmployee(
     location?: string | null;
   },
 ): number {
-  const fromId = ctx.lookup.byEmployeeId.get(args.employeeId);
-  if (fromId != null) return fromId;
-  for (const key of emailLookupKeys(args.email)) {
-    const d = ctx.lookup.byEmail.get(key);
-    if (d != null) return d;
-  }
-  const fromEmail = ctx.lookup.byEmail.get(normEmail(args.email));
-  if (fromEmail != null) return fromEmail;
+  return leaveBreakdownForEmployee(ctx, args).leaveDays;
+}
 
-  const team = args.team?.trim() ?? "";
-  const location = args.location?.trim() ?? "";
-  if (!team && !location) return 0;
-
-  const applicable = teamLeavesForEmployee(ctx.teamLeaves, location, team);
-  return countLeaveWorkdaysUnion(applicable, ctx.rangeStart, ctx.rangeEnd);
+export function summarizeTeamLeavesForWeek(
+  teamLeaves: TeamLeaveEvent[],
+  rangeStart: string,
+  rangeEnd: string,
+): WeeklyPacingTeamLeaveSummary[] {
+  return teamLeaves
+    .map((ev) => {
+      const daysInWeek = countLeaveWorkdaysUnion(
+        [{ startDate: ev.startDate, endDate: ev.endDate }],
+        rangeStart,
+        rangeEnd,
+      );
+      if (daysInWeek <= 0) return null;
+      return {
+        id: ev.id,
+        location: ev.location,
+        teamLabel: formatTeamLeaveLabel(ev.team),
+        startDate: ev.startDate,
+        endDate: ev.endDate,
+        daysInWeek,
+        leaveType: leaveTypeLabel(ev.leaveType),
+      };
+    })
+    .filter((e): e is WeeklyPacingTeamLeaveSummary => e != null)
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
 }
 
 export function pacingLeaveHoursCredit(leaveDays: number): number {
@@ -108,8 +195,9 @@ export function buildPacingLeaveContext(
   rangeEnd: string,
 ): PacingLeaveContext {
   const teamLeaves = file?.teamLeaves ?? [];
-  const lookup = buildLeaveDaysLookup(file?.employees ?? {}, rangeStart, rangeEnd, teamLeaves);
-  return { lookup, teamLeaves, rangeStart, rangeEnd };
+  const employees = file?.employees ?? {};
+  const lookup = buildLeaveDaysLookup(employees, rangeStart, rangeEnd, teamLeaves);
+  return { lookup, teamLeaves, employees, rangeStart, rangeEnd };
 }
 
 export async function loadPacingLeaveContext(

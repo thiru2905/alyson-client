@@ -21,6 +21,9 @@ import {
   pacingFilterSummaryLabel,
   pacingTodayIso,
   formatActiveLabel,
+  formatLeaveBreakdown,
+  buildLeaveSummaryFromRows,
+  PACING_LEAVE_HOURS_PER_DAY,
   PACING_STATUS_LABEL,
   resolvePacingRollupDay,
   sortPacingRows,
@@ -29,11 +32,12 @@ import {
   type WeeklyPacingSortField,
   type WeeklyPacingStatus,
 } from "@/lib/weekly-pacing";
+import { fmtDate } from "@/lib/format";
 import { downloadCSV } from "@/lib/csv";
 import { downloadWeeklyPacingPdf } from "@/lib/weekly-pacing-pdf";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
+import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Calendar, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/time-dashboard/pacing")({
@@ -66,6 +70,7 @@ function statusClass(status: WeeklyPacingStatus): string {
 
 function rowClass(row: WeeklyPacingRow): string {
   if (row.metTarget) return "bg-emerald-500/[0.06] hover:bg-emerald-500/10";
+  if (row.leaveDays > 0) return "bg-sky-500/[0.05] hover:bg-sky-500/10";
   return "hover:bg-muted/30";
 }
 
@@ -205,6 +210,13 @@ function WeeklyPacingPage() {
     return { metTarget, underTarget, critical, atRisk, behind };
   }, [filteredRows]);
 
+  const leaveSummary = useMemo(() => {
+    if (!report) return null;
+    const base = buildLeaveSummaryFromRows(filteredRows);
+    base.teamLeaveEvents = report.leaveSummary.teamLeaveEvents;
+    return base;
+  }, [report, filteredRows]);
+
   const insightsM = useMutation({
     mutationFn: async () => {
       if (!report || !summary) throw new Error("Load pacing report first");
@@ -234,6 +246,7 @@ function WeeklyPacingPage() {
             remainingWorkDays: report.remainingWorkDays,
             generatedAt: report.generatedAt,
             warnings: report.warnings,
+            leaveSummary: report.leaveSummary,
           },
           summary: activeSummary,
           filterSummary,
@@ -320,8 +333,11 @@ function WeeklyPacingPage() {
         manager_email: r.managerEmail ?? "",
         hours_logged: r.hoursWorkedLogged.toFixed(2),
         leave_days: r.leaveDays,
+        leave_days_personal: r.leaveDaysPersonal,
+        leave_days_team: r.leaveDaysTeam,
+        leave_breakdown: formatLeaveBreakdown(r),
         leave_hours_credit: r.leaveHoursCredit.toFixed(2),
-        hours_worked: r.hoursWorked.toFixed(2),
+        hours_worked_effective: r.hoursWorked.toFixed(2),
         avg_daily_pace_mon_thu: r.avgDailyPace.toFixed(2),
         projected_pace: r.projectedPace.toFixed(2),
         pace_vs_target: r.paceDelta.toFixed(2),
@@ -463,7 +479,7 @@ function WeeklyPacingPage() {
               </p>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <div className="surface-card p-4">
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Target met</div>
                 <div className="text-2xl font-semibold mt-1 text-emerald-700 dark:text-emerald-300">
@@ -474,6 +490,19 @@ function WeeklyPacingPage() {
               <div className="surface-card p-4">
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Under target</div>
                 <div className="text-2xl font-semibold mt-1">{summary?.underTarget ?? 0}</div>
+              </div>
+              <div className="surface-card p-4">
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  On leave
+                </div>
+                <div className="text-2xl font-semibold mt-1 text-sky-700 dark:text-sky-300">
+                  {leaveSummary?.employeesOnLeave ?? 0}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  +{leaveSummary?.totalLeaveHoursCredit.toFixed(0) ?? 0}h credit · {leaveSummary?.totalLeaveDays ?? 0} leave day
+                  {(leaveSummary?.totalLeaveDays ?? 0) === 1 ? "" : "s"}
+                </div>
               </div>
               <div className="surface-card p-4">
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Week progress</div>
@@ -496,11 +525,54 @@ function WeeklyPacingPage() {
               </div>
             </div>
 
+            {leaveSummary && (leaveSummary.employeesOnLeave > 0 || leaveSummary.teamLeaveEvents.length > 0) ? (
+              <div className="surface-card p-4 space-y-3 border-sky-500/20 bg-sky-500/[0.03]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[13px] flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-sky-700 dark:text-sky-300" />
+                      Leave this week
+                    </div>
+                    <p className="text-[12px] text-muted-foreground mt-1 max-w-3xl">
+                      From the{" "}
+                      <Link to="/leave" className="text-foreground underline underline-offset-2">
+                        Leave module
+                      </Link>{" "}
+                      — personal records and team/location leave. Each workday credits{" "}
+                      <strong>+{PACING_LEAVE_HOURS_PER_DAY}h</strong> in Logged → Worked (see table columns).
+                    </p>
+                  </div>
+                  <div className="text-[12px] text-muted-foreground shrink-0">
+                    {leaveSummary.employeesWithPersonalLeave} personal · {leaveSummary.employeesWithTeamLeave} team
+                  </div>
+                </div>
+                {leaveSummary.teamLeaveEvents.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {leaveSummary.teamLeaveEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="rounded-md border border-sky-500/25 bg-background px-2.5 py-1.5 text-[11px]"
+                      >
+                        <span className="font-medium text-sky-800 dark:text-sky-200">
+                          {ev.teamLabel} · {ev.location}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {fmtDate(ev.startDate)} – {fmtDate(ev.endDate)} · {ev.daysInWeek}d ({ev.leaveType})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <p className="text-[12px] text-muted-foreground leading-relaxed max-w-4xl">
-              <strong>Worked</strong> = Time Doctor hours + leave credit (+7h per leave workday, including team leave). <strong>Leave</strong> = personal + team leave workdays this week.
+              <strong>Logged</strong> = Time Doctor hours only. <strong>Leave</strong> = workdays (personal + team).{" "}
+              <strong>+Credit</strong> = leave × {PACING_LEAVE_HOURS_PER_DAY}h. <strong>Worked</strong> = logged + credit (used for target).
               <strong> Pace</strong> = Mon–Thu total + Mon–Thu average.
-              Mon–Thu example: <strong>7h</strong> → <strong>14h</strong>. Friday: compare actual hours vs Mon–Thu projection (e.g. worked <strong>40.79h</strong>, pace <strong>46.70h</strong>).
-              {" "}<strong className="text-emerald-700 dark:text-emerald-300">Green rows</strong> have already reached {report.targetHours}h.
+              {" "}<strong className="text-emerald-700 dark:text-emerald-300">Green rows</strong> met {report.targetHours}h.
+              {" "}<strong className="text-sky-700 dark:text-sky-300">Blue-tint rows</strong> include leave credit.
             </p>
 
             {report.warnings.length ? (
@@ -624,12 +696,12 @@ function WeeklyPacingPage() {
                       <th align="right">
                         <button
                           type="button"
-                          onClick={() => applySort("hoursWorked")}
-                          className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("hoursWorked")}`}
-                          title="Logged hours + leave credit (7h per leave day)"
+                          onClick={() => applySort("hoursWorkedLogged")}
+                          className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("hoursWorkedLogged")}`}
+                          title="Time Doctor logged hours only"
                         >
-                          Worked
-                          <SortIcon field="hoursWorked" />
+                          Logged
+                          <SortIcon field="hoursWorkedLogged" />
                         </button>
                       </th>
                       <th align="right">
@@ -637,10 +709,32 @@ function WeeklyPacingPage() {
                           type="button"
                           onClick={() => applySort("leaveDays")}
                           className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("leaveDays")}`}
-                          title="Leave workdays this week (each counts as +7h toward target)"
+                          title="Leave workdays (personal + team)"
                         >
                           Leave
                           <SortIcon field="leaveDays" />
+                        </button>
+                      </th>
+                      <th align="right">
+                        <button
+                          type="button"
+                          onClick={() => applySort("leaveHoursCredit")}
+                          className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("leaveHoursCredit")}`}
+                          title={`Leave credit (+${PACING_LEAVE_HOURS_PER_DAY}h per workday)`}
+                        >
+                          +Credit
+                          <SortIcon field="leaveHoursCredit" />
+                        </button>
+                      </th>
+                      <th align="right">
+                        <button
+                          type="button"
+                          onClick={() => applySort("hoursWorked")}
+                          className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("hoursWorked")}`}
+                          title="Logged + leave credit — counts toward weekly target"
+                        >
+                          Worked
+                          <SortIcon field="hoursWorked" />
                         </button>
                       </th>
                       <th align="right">
@@ -734,7 +828,7 @@ function WeeklyPacingPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={14} className="text-center text-muted-foreground py-8">
+                        <td colSpan={16} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
                             : "No employees found for this week."}
@@ -755,38 +849,41 @@ function WeeklyPacingPage() {
                               <div className="text-[11px] text-muted-foreground">{r.managerEmail}</div>
                             ) : null}
                           </td>
-                          <td
-                            align="right"
-                            className={`font-mono tabular-nums ${r.metTarget ? "font-semibold text-emerald-700 dark:text-emerald-300" : ""}`}
-                            title={
-                              r.leaveDays > 0
-                                ? `${r.hoursWorkedLogged.toFixed(2)}h logged + ${r.leaveHoursCredit.toFixed(0)}h leave credit`
-                                : undefined
-                            }
-                          >
-                            {r.hoursWorked.toFixed(2)}h
-                            {r.leaveDays > 0 ? (
-                              <div className="text-[10px] text-muted-foreground font-normal">
-                                {r.hoursWorkedLogged.toFixed(1)}h logged
-                              </div>
-                            ) : null}
+                          <td align="right" className="font-mono tabular-nums text-muted-foreground">
+                            {r.hoursWorkedLogged.toFixed(2)}h
                           </td>
                           <td
                             align="right"
                             className="font-mono tabular-nums"
-                            title={
-                              r.leaveDays > 0
-                                ? `${r.leaveDays} day(s) × 7h = +${r.leaveHoursCredit.toFixed(0)}h credited`
-                                : undefined
-                            }
+                            title={formatLeaveBreakdown(r)}
                           >
                             {r.leaveDays > 0 ? (
+                              <>
+                                <span className="font-medium text-sky-700 dark:text-sky-300">
+                                  {r.leaveDays}d
+                                </span>
+                                <div className="text-[10px] text-muted-foreground font-normal max-w-[88px] ml-auto leading-tight">
+                                  {formatLeaveBreakdown(r)}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td align="right" className="font-mono tabular-nums">
+                            {r.leaveHoursCredit > 0 ? (
                               <span className="font-medium text-sky-700 dark:text-sky-300">
-                                {r.leaveDays}d
+                                +{r.leaveHoursCredit.toFixed(0)}h
                               </span>
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
+                          </td>
+                          <td
+                            align="right"
+                            className={`font-mono tabular-nums ${r.metTarget ? "font-semibold text-emerald-700 dark:text-emerald-300" : "font-medium"}`}
+                          >
+                            {r.hoursWorked.toFixed(2)}h
                           </td>
                           <td align="right" className="font-mono tabular-nums text-muted-foreground">
                             {r.avgDailyPace.toFixed(2)}h

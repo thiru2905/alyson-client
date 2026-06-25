@@ -4,11 +4,13 @@ import { Loader2, Trash2, Users } from "lucide-react";
 import { Field, FormFooter, GhostBtn, PrimaryBtn, TextArea, TextInput } from "@/components/forms/FormField";
 import type { EmployeeLeaveLedger, LeaveType, TeamLeaveEvent } from "@/lib/leave-schema";
 import {
+  formatTeamLeaveLabel,
   LEAVE_TYPE_OPTIONS,
   leaveDaysInclusive,
   leaveTypeLabel,
   matchesTeamLocation,
   normLeaveFacet,
+  TEAM_LEAVE_ALL_TEAMS,
 } from "@/lib/leave-schema";
 import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 import { fmtDate } from "@/lib/format";
@@ -48,7 +50,7 @@ export function LeaveTeamLeavePanel({
   }, [activeLedgers]);
 
   const [location, setLocation] = useState("");
-  const [team, setTeam] = useState("");
+  const [team, setTeam] = useState(TEAM_LEAVE_ALL_TEAMS);
   const [leaveType, setLeaveType] = useState<LeaveType>("annual");
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -69,12 +71,6 @@ export function LeaveTeamLeavePanel({
     }
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [activeLedgers, location]);
-
-  useEffect(() => {
-    if (!team || !teamsForLocation.includes(team)) {
-      setTeam(teamsForLocation[0] ?? "");
-    }
-  }, [team, teamsForLocation]);
 
   const affectedCount = useMemo(() => {
     if (!location || !team) return 0;
@@ -113,9 +109,9 @@ export function LeaveTeamLeavePanel({
         <div className="min-w-0">
           <div className="font-medium text-[13px]">Team leave by location</div>
           <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl leading-relaxed">
-            Record leave once for a <strong>team at a location</strong>. Weekly Pacing automatically credits{" "}
-            <strong>+{PACING_LEAVE_HOURS_PER_DAY}h per workday</strong> for every active employee on that team
-            (no need to enter leave per person).
+            Record leave once for a <strong>location</strong> — pick a specific team or <strong>All teams</strong> to
+            cover everyone there. Weekly Pacing credits <strong>+{PACING_LEAVE_HOURS_PER_DAY}h per workday</strong> per
+            affected employee (no per-person entry needed).
           </p>
         </div>
       </div>
@@ -125,7 +121,10 @@ export function LeaveTeamLeavePanel({
           <Field label="Location">
             <select
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                setTeam(TEAM_LEAVE_ALL_TEAMS);
+              }}
               className="w-full h-9 px-2.5 rounded-md border border-border bg-background text-[13px]"
             >
               {locations.map((loc) => (
@@ -139,9 +138,10 @@ export function LeaveTeamLeavePanel({
             <select
               value={team}
               onChange={(e) => setTeam(e.target.value)}
-              disabled={!teamsForLocation.length}
+              disabled={!location}
               className="w-full h-9 px-2.5 rounded-md border border-border bg-background text-[13px] disabled:opacity-50"
             >
+              <option value={TEAM_LEAVE_ALL_TEAMS}>All teams</option>
               {teamsForLocation.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -227,7 +227,7 @@ export function LeaveTeamLeavePanel({
               >
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">
-                    {ev.team} · {ev.location}
+                    {formatTeamLeaveLabel(ev.team)} · {ev.location}
                   </div>
                   <div className="text-muted-foreground">
                     {leaveTypeLabel(ev.leaveType)} · {fmtDate(ev.startDate)} – {fmtDate(ev.endDate)} · {ev.days} workday
@@ -257,7 +257,8 @@ export function LeaveTeamLeavePanel({
           <AlertDialog.Content className="fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-background p-5 shadow-lg">
             <AlertDialog.Title className="font-medium text-[15px]">Remove team leave?</AlertDialog.Title>
             <AlertDialog.Description className="text-[13px] text-muted-foreground mt-2">
-              This removes pacing credit for {voidTarget?.team} @ {voidTarget?.location} (
+              This removes pacing credit for {voidTarget ? formatTeamLeaveLabel(voidTarget.team) : ""} @{" "}
+              {voidTarget?.location} (
               {voidTarget ? fmtDate(voidTarget.startDate) : ""} – {voidTarget ? fmtDate(voidTarget.endDate) : ""}).
               Individual employee leave records are not affected.
             </AlertDialog.Description>

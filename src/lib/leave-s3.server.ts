@@ -15,6 +15,7 @@ import type {
   TeamLeaveEvent,
 } from "@/lib/leave-schema";
 import {
+  formatTeamLeaveLabel,
   leaveDaysInclusive,
   matchesTeamLocation,
   newLeaveEventId,
@@ -400,7 +401,9 @@ export async function appendTeamLeaveRecord(args: {
     (l) => l.active && matchesTeamLocation(l.location, l.team, location, team),
   );
   if (!affected.length) {
-    throw new Error(`No active employees found for ${team} at ${location}`);
+    throw new Error(
+      `No active employees found for ${formatTeamLeaveLabel(team)} at ${location}`,
+    );
   }
 
   const event: TeamLeaveEvent = {
@@ -421,7 +424,7 @@ export async function appendTeamLeaveRecord(args: {
     teamLeaves,
     op: "append_team_leave",
     actor: args.actor ?? null,
-    details: `Team leave ${days} day(s) for ${team} @ ${location} (${args.startDate} – ${args.endDate}) · ${affected.length} employee(s)`,
+    details: `Team leave ${days} day(s) for ${formatTeamLeaveLabel(team)} @ ${location} (${args.startDate} – ${args.endDate}) · ${affected.length} employee(s)`,
     teamEvent: event,
     syncedFromOnboardingAt: data.syncedFromOnboardingAt,
   });
@@ -440,7 +443,7 @@ export async function voidTeamLeaveRecord(args: { eventId: string; actor?: strin
     teamLeaves: nextTeamLeaves,
     op: "void_team_leave",
     actor: args.actor ?? null,
-    details: `Removed team leave for ${removed.team} @ ${removed.location} (${removed.startDate} – ${removed.endDate})`,
+    details: `Removed team leave for ${formatTeamLeaveLabel(removed.team)} @ ${removed.location} (${removed.startDate} – ${removed.endDate})`,
     teamEvent: removed,
     syncedFromOnboardingAt: data.syncedFromOnboardingAt,
   });

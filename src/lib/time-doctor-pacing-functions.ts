@@ -27,6 +27,8 @@ const PacingRowSchema = z.object({
   managerEmail: z.string().nullable(),
   hoursWorkedLogged: z.number(),
   leaveDays: z.number(),
+  leaveDaysPersonal: z.number(),
+  leaveDaysTeam: z.number(),
   leaveHoursCredit: z.number(),
   hoursWorked: z.number(),
   avgDailyPace: z.number(),

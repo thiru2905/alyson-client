@@ -96,10 +96,21 @@ export function newTeamLeaveEventId(): string {
   return `team_leave_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** Stored on team leave events when every team at the location is included. */
+export const TEAM_LEAVE_ALL_TEAMS = "__all_teams__";
+
 /** Normalize team/location labels for matching (same rules as leave analytics). */
 export function normLeaveFacet(value: string, fallback: string): string {
   const v = String(value || "").trim();
   return v || fallback;
+}
+
+export function isAllTeamsLeave(team: string): boolean {
+  return team === TEAM_LEAVE_ALL_TEAMS;
+}
+
+export function formatTeamLeaveLabel(team: string): string {
+  return isAllTeamsLeave(team) ? "All teams" : team;
 }
 
 export function matchesTeamLocation(
@@ -108,8 +119,11 @@ export function matchesTeamLocation(
   leaveLocation: string,
   leaveTeam: string,
 ): boolean {
+  const locMatch =
+    normLeaveFacet(employeeLocation, "Unknown") === normLeaveFacet(leaveLocation, "Unknown");
+  if (!locMatch) return false;
+  if (isAllTeamsLeave(leaveTeam)) return true;
   return (
-    normLeaveFacet(employeeLocation, "Unknown") === normLeaveFacet(leaveLocation, "Unknown") &&
     normLeaveFacet(employeeTeam, "Unassigned") === normLeaveFacet(leaveTeam, "Unassigned")
   );
 }

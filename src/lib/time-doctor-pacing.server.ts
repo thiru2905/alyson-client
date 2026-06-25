@@ -1,6 +1,7 @@
 import {
   loadPacingLeaveContext,
-  resolveLeaveDaysForEmployee,
+  resolveLeaveBreakdownForEmployee,
+  summarizeTeamLeavesForWeek,
 } from "@/lib/weekly-pacing-leave.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/time-doctor-functions";
 import {
   addDaysIso,
+  buildLeaveSummaryFromRows,
   buildPacingRow,
   computeWeekPacingMetrics,
   fridayOfWeek,
@@ -173,6 +175,7 @@ export async function buildWeeklyPacingReport(args?: {
   let leaveCtx: Awaited<ReturnType<typeof loadPacingLeaveContext>> = {
     lookup: { byEmployeeId: new Map(), byEmail: new Map() },
     teamLeaves: [],
+    employees: {},
     rangeStart: pacingWeekStart,
     rangeEnd: metrics.weekEnd,
   };
@@ -187,7 +190,7 @@ export async function buildWeeklyPacingReport(args?: {
       const email = (u.email || "").trim();
       const name = (u.name || u.email || "").trim();
       const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
-      const leaveDays = resolveLeaveDaysForEmployee(leaveCtx, {
+      const leave = resolveLeaveBreakdownForEmployee(leaveCtx, {
         employeeId: u.id,
         email,
         team: meta.team,
@@ -208,7 +211,9 @@ export async function buildWeeklyPacingReport(args?: {
         metrics,
         today: rollupDay,
         weekStart: pacingWeekStart,
-        leaveDays,
+        leaveDays: leave.leaveDays,
+        leaveDaysPersonal: leave.leaveDaysPersonal,
+        leaveDaysTeam: leave.leaveDaysTeam,
       });
       if (!row) return null;
       const withManager = { ...row, ...meta };
@@ -226,6 +231,13 @@ export async function buildWeeklyPacingReport(args?: {
     })
     .filter((r): r is NonNullable<typeof r> => r != null);
 
+  const leaveSummary = buildLeaveSummaryFromRows(rows);
+  leaveSummary.teamLeaveEvents = summarizeTeamLeavesForWeek(
+    leaveCtx.teamLeaves,
+    pacingWeekStart,
+    metrics.weekEnd,
+  );
+
   return {
     company: { id: company.id, name: company.name },
     targetHours,
@@ -239,6 +251,7 @@ export async function buildWeeklyPacingReport(args?: {
     remainingWorkDays: metrics.remainingWorkDays,
     generatedAt: new Date().toISOString(),
     rows,
+    leaveSummary,
     warnings: warnings.slice(0, 8),
   };
 }

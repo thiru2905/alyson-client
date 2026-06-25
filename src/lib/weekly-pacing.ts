@@ -22,8 +22,12 @@ export type WeeklyPacingRow = {
   managerEmail: string | null;
   /** Time Doctor logged hours (before leave credit). */
   hoursWorkedLogged: number;
-  /** Leave workdays in this report week (Mon–Fri). */
+  /** Leave workdays in this report week (union of personal + team). */
   leaveDays: number;
+  /** Personal leave workdays this week. */
+  leaveDaysPersonal: number;
+  /** Team/location leave workdays this week. */
+  leaveDaysTeam: number;
   /** Leave credit applied to pacing (leaveDays × 7h). */
   leaveHoursCredit: number;
   /** Logged hours + leave credit — used for target / status / remaining. */
@@ -62,6 +66,8 @@ export type WeeklyPacingSortField =
   | "hoursWorked"
   | "hoursWorkedLogged"
   | "leaveDays"
+  | "leaveDaysPersonal"
+  | "leaveDaysTeam"
   | "leaveHoursCredit"
   | "avgDailyPace"
   | "hoursRemaining"
@@ -73,6 +79,25 @@ export type WeeklyPacingSortField =
   | "requiredHoursPerDay"
   | "active"
   | "status";
+
+export type WeeklyPacingTeamLeaveSummary = {
+  id: string;
+  location: string;
+  teamLabel: string;
+  startDate: string;
+  endDate: string;
+  daysInWeek: number;
+  leaveType: string;
+};
+
+export type WeeklyPacingLeaveSummary = {
+  employeesOnLeave: number;
+  employeesWithPersonalLeave: number;
+  employeesWithTeamLeave: number;
+  totalLeaveDays: number;
+  totalLeaveHoursCredit: number;
+  teamLeaveEvents: WeeklyPacingTeamLeaveSummary[];
+};
 
 export type WeeklyPacingReport = {
   company: { id: string; name: string };
@@ -88,6 +113,8 @@ export type WeeklyPacingReport = {
   remainingWorkDays: number;
   generatedAt: string;
   rows: WeeklyPacingRow[];
+  /** Leave ledger summary for this report week (personal + team). */
+  leaveSummary: WeeklyPacingLeaveSummary;
   warnings: string[];
 };
 
@@ -386,11 +413,15 @@ export function buildPacingRow(args: {
   today: string;
   weekStart: string;
   leaveDays?: number;
+  leaveDaysPersonal?: number;
+  leaveDaysTeam?: number;
 }): WeeklyPacingRow | null {
   if (!args.email.trim()) return null;
 
   const hoursWorkedLogged = Math.round((args.weeklySeconds / 3600) * 100) / 100;
   const leaveDays = args.leaveDays ?? 0;
+  const leaveDaysPersonal = args.leaveDaysPersonal ?? 0;
+  const leaveDaysTeam = args.leaveDaysTeam ?? 0;
   const leaveHoursCredit =
     Math.round(leaveDays * PACING_LEAVE_HOURS_PER_DAY * 100) / 100;
   const hoursWorked = Math.round((hoursWorkedLogged + leaveHoursCredit) * 100) / 100;
@@ -425,6 +456,8 @@ export function buildPacingRow(args: {
     managerEmail: null,
     hoursWorkedLogged,
     leaveDays,
+    leaveDaysPersonal,
+    leaveDaysTeam,
     leaveHoursCredit,
     hoursWorked,
     avgDailyPace,
@@ -455,6 +488,40 @@ export const PACING_STATUS_LABEL: Record<WeeklyPacingStatus, string> = {
   at_risk: "At risk",
   critical: "Critical",
 };
+
+/** Human-readable leave breakdown for tables and exports. */
+export function formatLeaveBreakdown(row: WeeklyPacingRow): string {
+  if (row.leaveDays <= 0) return "—";
+  const parts: string[] = [];
+  if (row.leaveDaysPersonal > 0) parts.push(`${row.leaveDaysPersonal} personal`);
+  if (row.leaveDaysTeam > 0) parts.push(`${row.leaveDaysTeam} team`);
+  if (!parts.length) return `${row.leaveDays}d`;
+  return parts.join(" + ");
+}
+
+export function buildLeaveSummaryFromRows(rows: WeeklyPacingRow[]): WeeklyPacingLeaveSummary {
+  let employeesOnLeave = 0;
+  let employeesWithPersonalLeave = 0;
+  let employeesWithTeamLeave = 0;
+  let totalLeaveDays = 0;
+  let totalLeaveHoursCredit = 0;
+  for (const r of rows) {
+    if (r.leaveDays <= 0) continue;
+    employeesOnLeave += 1;
+    if (r.leaveDaysPersonal > 0) employeesWithPersonalLeave += 1;
+    if (r.leaveDaysTeam > 0) employeesWithTeamLeave += 1;
+    totalLeaveDays += r.leaveDays;
+    totalLeaveHoursCredit += r.leaveHoursCredit;
+  }
+  return {
+    employeesOnLeave,
+    employeesWithPersonalLeave,
+    employeesWithTeamLeave,
+    totalLeaveDays: Math.round(totalLeaveDays * 10) / 10,
+    totalLeaveHoursCredit: Math.round(totalLeaveHoursCredit * 100) / 100,
+    teamLeaveEvents: [],
+  };
+}
 
 function normEmailKey(email: string): string {
   return String(email || "").trim().toLowerCase();

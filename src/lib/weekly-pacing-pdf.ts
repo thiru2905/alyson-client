@@ -3,6 +3,8 @@ import { autoTable } from "jspdf-autotable";
 import { formatRangeLabel } from "@/lib/time-dashboard-range";
 import {
   formatActiveLabel,
+  formatLeaveBreakdown,
+  PACING_LEAVE_HOURS_PER_DAY,
   PACING_STATUS_LABEL,
   type WeeklyPacingReport,
   type WeeklyPacingRow,
@@ -34,6 +36,10 @@ function renderWeeklyPacingPdf(
   const metTarget = rows.filter((r) => r.metTarget).length;
   const underTarget = rows.length - metTarget;
   const needsAttention = rows.filter((r) => r.status === "critical" || r.status === "at_risk").length;
+  const onLeave = rows.filter((r) => r.leaveDays > 0).length;
+  const leaveCreditHours = Math.round(
+    rows.reduce((s, r) => s + r.leaveHoursCredit, 0) * 100,
+  ) / 100;
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
@@ -43,23 +49,37 @@ function renderWeeklyPacingPdf(
   doc.text(`${report.company.name}`, margin, 44);
   doc.text(`Week: ${weekLabel} (${report.timeZoneLabel})`, margin, 56);
   doc.text(
-    `Target: ${report.targetHours}h/week · Pace = Mon–Thu total + Mon–Thu avg · ${report.pacingSampleDays.length} sample day(s)`,
+    `Target: ${report.targetHours}h/week · Worked = Logged + leave credit (+${PACING_LEAVE_HOURS_PER_DAY}h/workday)`,
     margin,
     68,
   );
   doc.text(`Generated: ${new Date(report.generatedAt).toLocaleString()}`, margin, 80);
+  let metaY = 92;
   if (filterSummary) {
-    doc.text(`Filters: ${filterSummary} · ${rows.length} employee${rows.length === 1 ? "" : "s"}`, margin, 92);
+    doc.text(`Filters: ${filterSummary} · ${rows.length} employee${rows.length === 1 ? "" : "s"}`, margin, metaY);
+    metaY += 12;
   } else {
-    doc.text(`${rows.length} employee${rows.length === 1 ? "" : "s"} in export`, margin, 92);
+    doc.text(`${rows.length} employee${rows.length === 1 ? "" : "s"} in export`, margin, metaY);
+    metaY += 12;
+  }
+  if (onLeave > 0 || report.leaveSummary.teamLeaveEvents.length > 0) {
+    doc.setTextColor(3, 105, 161);
+    doc.text(
+      `Leave: ${onLeave} employee${onLeave === 1 ? "" : "s"} on leave · +${leaveCreditHours}h total credit this export`,
+      margin,
+      metaY,
+    );
+    doc.setTextColor(20);
+    metaY += 12;
   }
 
-  const kpiY = filterSummary ? 108 : 96;
-  const kpiW = 118;
-  const gap = 8;
+  const kpiY = metaY + 4;
+  const kpiW = 100;
+  const gap = 6;
   const kpis: Array<{ label: string; value: string; fill: Rgb; text: Rgb }> = [
     { label: "Target met", value: String(metTarget), fill: [236, 253, 245], text: [4, 120, 87] },
     { label: "Under target", value: String(underTarget), fill: [245, 245, 245], text: [30, 30, 30] },
+    { label: "On leave", value: String(onLeave), fill: [224, 242, 254], text: [3, 105, 161] },
     { label: "Needs attention", value: String(needsAttention), fill: [254, 242, 242], text: [185, 28, 28] },
     { label: "Workdays left", value: String(report.remainingWorkDays), fill: [245, 245, 245], text: [30, 30, 30] },
   ];
@@ -82,6 +102,15 @@ function renderWeeklyPacingPdf(
 
   const tableStartY = kpiY + 58;
 
+  if (report.leaveSummary.teamLeaveEvents.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(3, 105, 161);
+    doc.text("Team leave this week", margin, tableStartY - 8);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+  }
+
   autoTable(doc, {
     startY: tableStartY,
     margin: { left: margin, right: margin },
@@ -90,8 +119,10 @@ function renderWeeklyPacingPdf(
       "Location",
       "Team",
       "Manager",
-      "Worked",
+      "Logged",
       "Leave",
+      "+Credit",
+      "Worked",
       "Avg/day",
       "Remaining",
       "Over",
@@ -108,10 +139,10 @@ function renderWeeklyPacingPdf(
       r.managerName
         ? `${r.managerName}${r.managerEmail ? `\n${r.managerEmail}` : ""}`
         : "—",
-      r.leaveDays > 0
-        ? `${r.hoursWorked.toFixed(2)}h\n(${r.hoursWorkedLogged.toFixed(1)}h + ${r.leaveHoursCredit.toFixed(0)}h)`
-        : `${r.hoursWorked.toFixed(2)}h`,
-      r.leaveDays > 0 ? `${r.leaveDays}d` : "—",
+      `${r.hoursWorkedLogged.toFixed(2)}h`,
+      r.leaveDays > 0 ? `${r.leaveDays}d\n${formatLeaveBreakdown(r)}` : "—",
+      r.leaveHoursCredit > 0 ? `+${r.leaveHoursCredit.toFixed(0)}h` : "—",
+      `${r.hoursWorked.toFixed(2)}h`,
       `${r.avgDailyPace.toFixed(2)}h`,
       r.metTarget ? "—" : `${r.hoursRemaining.toFixed(2)}h`,
       r.hoursOver > 0 ? `+${r.hoursOver.toFixed(2)}h` : "—",
@@ -124,27 +155,29 @@ function renderWeeklyPacingPdf(
     styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak", valign: "middle" },
     headStyles: { fillColor: [245, 245, 245], textColor: 20, fontSize: 7.5, fontStyle: "bold" },
     columnStyles: {
-      0: { cellWidth: 108 },
-      1: { cellWidth: 52 },
-      2: { cellWidth: 72 },
-      3: { cellWidth: 96 },
-      4: { halign: "right", cellWidth: 42 },
-      5: { halign: "right", cellWidth: 28 },
-      6: { halign: "right", cellWidth: 36 },
-      7: { halign: "right", cellWidth: 40 },
+      0: { cellWidth: 96 },
+      1: { cellWidth: 46 },
+      2: { cellWidth: 58 },
+      3: { cellWidth: 82 },
+      4: { halign: "right", cellWidth: 34 },
+      5: { halign: "right", cellWidth: 40 },
+      6: { halign: "right", cellWidth: 32 },
+      7: { halign: "right", cellWidth: 34 },
       8: { halign: "right", cellWidth: 32 },
-      9: { halign: "right", cellWidth: 38 },
-      10: { halign: "right", cellWidth: 30 },
-      11: { halign: "right", cellWidth: 36 },
-      12: { halign: "center", cellWidth: 30 },
-      13: { halign: "center", cellWidth: 46 },
+      9: { halign: "right", cellWidth: 36 },
+      10: { halign: "right", cellWidth: 28 },
+      11: { halign: "right", cellWidth: 32 },
+      12: { halign: "right", cellWidth: 26 },
+      13: { halign: "right", cellWidth: 32 },
+      14: { halign: "center", cellWidth: 26 },
+      15: { halign: "center", cellWidth: 40 },
     },
     didParseCell: (data) => {
       if (data.section !== "body") return;
       const row = rows[data.row.index];
       if (!row) return;
 
-      if (data.column.index === 13) {
+      if (data.column.index === 15) {
         const style = STATUS_ROW_STYLE[row.status];
         data.cell.styles.fillColor = style.fill;
         data.cell.styles.textColor = style.text;
@@ -155,16 +188,24 @@ function renderWeeklyPacingPdf(
       data.cell.styles.fillColor = style.fill;
       data.cell.styles.textColor = style.text;
 
-      if (data.column.index === 9) {
+      if (row.leaveDays > 0) {
+        data.cell.styles.fillColor = [224, 242, 254];
+      }
+
+      if (data.column.index === 11) {
         data.cell.styles.textColor =
           row.projectedPace >= report.targetHours ? [4, 120, 87] : [194, 65, 12];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 8 && row.hoursOver > 0) {
+      if (data.column.index === 10 && row.hoursOver > 0) {
         data.cell.styles.textColor = [4, 120, 87];
         data.cell.styles.fontStyle = "bold";
       }
-      if (data.column.index === 11) {
+      if (data.column.index === 6 && row.leaveHoursCredit > 0) {
+        data.cell.styles.textColor = [3, 105, 161];
+        data.cell.styles.fontStyle = "bold";
+      }
+      if (data.column.index === 13) {
         data.cell.styles.fontStyle = "bold";
       }
     },
@@ -211,6 +252,33 @@ function renderWeeklyPacingPdf(
   }
 
   doc.setTextColor(20);
+
+  if (report.leaveSummary.teamLeaveEvents.length > 0) {
+    ly += 18;
+    if (ly > pageH - 50) {
+      doc.addPage();
+      ly = margin;
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(3, 105, 161);
+    doc.text("Team leave events (this week)", margin, ly);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(60);
+    let teamY = ly + 10;
+    for (const ev of report.leaveSummary.teamLeaveEvents) {
+      doc.text(
+        `• ${ev.teamLabel} @ ${ev.location} · ${ev.startDate} – ${ev.endDate} · ${ev.daysInWeek}d (${ev.leaveType})`,
+        margin,
+        teamY,
+        { maxWidth: pageW - margin * 2 },
+      );
+      teamY += 10;
+    }
+    doc.setTextColor(20);
+    ly = teamY;
+  }
 
   if (report.warnings.length) {
     ly += 18;
