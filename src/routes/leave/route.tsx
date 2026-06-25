@@ -25,8 +25,8 @@ function LeaveLayout() {
             </h1>
           </div>
           <p className="mt-1.5 text-[13px] md:text-[14px] text-muted-foreground max-w-2xl leading-relaxed">
-            Per-employee leave ledger for active employees (same Active rules as Weekly Pacing). Records are append-only
-            and persisted to S3.
+            Per-employee leave ledger synced with Time Dashboard emails. Active status follows Weekly Pacing.
+            Records are append-only and persisted to S3.
           </p>
         </div>
 

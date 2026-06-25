@@ -34,7 +34,7 @@ export type EmployeeLeaveLedger = {
   jobTitle: string;
   team: string;
   location: string;
-  /** False when employee was removed from onboarding roster (history retained). */
+  /** False when employee is not on the current Time Doctor roster (history retained). */
   active: boolean;
   leaveEvents: LeaveRecordEvent[];
   updatedAt: string;
@@ -70,9 +70,17 @@ export function newLeaveEventId(): string {
 export function leaveDaysInclusive(startDate: string, endDate: string): number {
   const a = new Date(`${startDate}T12:00:00Z`);
   const b = new Date(`${endDate}T12:00:00Z`);
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 1;
-  const diff = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
-  return Math.max(1, diff);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  if (b < a) return 0;
+
+  let count = 0;
+  const cur = new Date(a);
+  while (cur.getTime() <= b.getTime()) {
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) count += 1;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return count;
 }
 
 export function sumLeaveDays(events: LeaveRecordEvent[]): number {

@@ -203,10 +203,15 @@ export function LeaveEmployeeLedgerDrawer({
                 />
               </Field>
               <div className="text-[12px] text-muted-foreground">
-                Duration: <span className="font-medium text-foreground">{previewDays} day(s)</span> (inclusive)
-                {" · "}
-                <span className="font-medium text-foreground">{remainingDays}</span> remaining of{" "}
-                {LIFETIME_LEAVE_DAYS_LIMIT}
+                Duration: <span className="font-medium text-foreground">{previewDays} workday(s)</span>
+                {previewDays > 0 ? " · weekends excluded" : endDate >= startDate ? " · no weekdays in range" : ""}
+                {previewDays > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">{remainingDays}</span> remaining of{" "}
+                    {LIFETIME_LEAVE_DAYS_LIMIT}
+                  </>
+                ) : null}
               </div>
               {limitError ? (
                 <div className="text-[12px] text-destructive">{limitError}</div>

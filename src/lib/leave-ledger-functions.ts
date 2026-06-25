@@ -40,18 +40,17 @@ function ledgersToArray(employees: Record<string, EmployeeLeaveLedger>) {
 
 export const getLeaveLedger = createServerFn({ method: "GET" }).handler(async () => {
   const data = await ensureLeaveOnS3();
-  return {
-    ledgers: ledgersToArray(data.employees),
-    updatedAt: data.updatedAt,
-    syncedFromOnboardingAt: data.syncedFromOnboardingAt,
-    onboardingUpdatedAt: data.onboardingUpdatedAt,
-    bucket: data.bucket,
-    key: data.key,
-    logKey: data.logKey,
-  };
+    return {
+      ledgers: ledgersToArray(data.employees),
+      updatedAt: data.updatedAt,
+      syncedFromOnboardingAt: data.syncedFromOnboardingAt,
+      bucket: data.bucket,
+      key: data.key,
+      logKey: data.logKey,
+    };
 });
 
-export const syncLeaveWithOnboarding = createServerFn({ method: "POST" })
+export const syncLeaveWithTimeDoctor = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => actorSchema.parse(data))
   .handler(async ({ data }) => {
     const result = await ensureLeaveOnS3(data.actor ?? null);
@@ -63,6 +62,9 @@ export const syncLeaveWithOnboarding = createServerFn({ method: "POST" })
       key: result.key,
     };
   });
+
+/** @deprecated Use syncLeaveWithTimeDoctor */
+export const syncLeaveWithOnboarding = syncLeaveWithTimeDoctor;
 
 export const recordLeave = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => appendLeaveSchema.parse(data))

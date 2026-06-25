@@ -14,8 +14,12 @@ import type {
   LeaveRecordEvent,
 } from "@/lib/leave-schema";
 import { leaveDaysInclusive, newLeaveEventId, validateLifetimeLeaveLimit } from "@/lib/leave-schema";
-import { ensureOnboardingOnS3 } from "@/lib/onboarding-s3.server";
-import type { OnboardingRow } from "@/lib/onboarding-schema";
+import { syncLeaveLedgersWithTimeDoctor, timeDoctorUserIds } from "@/lib/leave-roster.server";
+import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
+import {
+  timeDoctorPacingGetCompany,
+  timeDoctorPacingListUsers,
+} from "@/lib/time-doctor-functions";
 import { enrichLeaveLedgersWithPacingActive } from "@/lib/weekly-pacing-active.server";
 
 export const LEAVE_S3_BUCKET = "alyson-hr-orgchart";
@@ -75,51 +79,6 @@ function isMissingObjectError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
   return e.name === "NoSuchKey" || e.Code === "NoSuchKey" || e.$metadata?.httpStatusCode === 404;
-}
-
-function employeeIdFromRow(row: OnboardingRow): string {
-  return String(row["Employee ID"] ?? row._rowId ?? "").trim();
-}
-
-function ledgerFromOnboardingRow(
-  row: OnboardingRow,
-  existing?: EmployeeLeaveLedger | null,
-): EmployeeLeaveLedger {
-  const employeeId = employeeIdFromRow(row);
-  const now = new Date().toISOString();
-  return {
-    employeeId,
-    employeeName: String(row.Name ?? existing?.employeeName ?? "").trim() || employeeId,
-    officialEmail: String(row["Official Email"] ?? existing?.officialEmail ?? "").trim(),
-    jobTitle: String(row["Job Title"] ?? existing?.jobTitle ?? "").trim(),
-    team: String(row.Team ?? existing?.team ?? "").trim(),
-    location: String(row.Location ?? existing?.location ?? "").trim(),
-    active: true,
-    leaveEvents: existing?.leaveEvents ?? [],
-    updatedAt: existing?.updatedAt ?? now,
-  };
-}
-
-export function syncLeaveLedgersWithOnboarding(
-  onboardingRows: OnboardingRow[],
-  existing: Record<string, EmployeeLeaveLedger>,
-): Record<string, EmployeeLeaveLedger> {
-  const next: Record<string, EmployeeLeaveLedger> = {};
-  const seen = new Set<string>();
-
-  for (const row of onboardingRows) {
-    const id = employeeIdFromRow(row);
-    if (!id) continue;
-    seen.add(id);
-    next[id] = ledgerFromOnboardingRow(row, existing[id]);
-  }
-
-  for (const [id, ledger] of Object.entries(existing)) {
-    if (seen.has(id)) continue;
-    next[id] = { ...ledger, active: false };
-  }
-
-  return next;
 }
 
 async function readLogTail(): Promise<string> {
@@ -243,14 +202,20 @@ async function putLeaveToS3(
 }
 
 export async function ensureLeaveOnS3(actor?: string | null) {
-  const onboarding = await ensureOnboardingOnS3(actor);
+  const company = await timeDoctorPacingGetCompany();
+  let users: Awaited<ReturnType<typeof timeDoctorPacingListUsers>> = [];
+  try {
+    users = await timeDoctorPacingListUsers(company.id);
+  } catch {
+    users = [];
+  }
+
+  const rosterLookup = getOrgChartRosterLookup();
   const existing = await getLeaveFromS3();
   const prevEmployees = existing.file?.employees ?? {};
-  const synced = syncLeaveLedgersWithOnboarding(onboarding.rows, prevEmployees);
-  const onboardingIds = new Set(
-    onboarding.rows.map((row) => employeeIdFromRow(row)).filter((id) => Boolean(id)),
-  );
-  const merged = await enrichLeaveLedgersWithPacingActive(synced, onboardingIds);
+  const synced = syncLeaveLedgersWithTimeDoctor(users, prevEmployees, rosterLookup);
+  const tdIds = timeDoctorUserIds(users);
+  const merged = await enrichLeaveLedgersWithPacingActive(synced, tdIds);
 
   const prevCount = Object.keys(prevEmployees).length;
   const mergedCount = Object.keys(merged).length;
@@ -258,16 +223,14 @@ export async function ensureLeaveOnS3(actor?: string | null) {
   const rosterChanged =
     !existing.file ||
     mergedCount !== prevCount ||
-    onboarding.rows.some((row) => {
-      const id = employeeIdFromRow(row);
-      const prev = prevEmployees[id];
+    users.some((u) => {
+      const prev = prevEmployees[u.id];
       if (!prev) return true;
+      const email = String(u.email || "").trim();
       return (
-        prev.employeeName !== String(row.Name ?? "").trim() ||
-        prev.officialEmail !== String(row["Official Email"] ?? "").trim() ||
-        prev.team !== String(row.Team ?? "").trim() ||
-        prev.location !== String(row.Location ?? "").trim() ||
-        prev.jobTitle !== String(row["Job Title"] ?? "").trim()
+        prev.employeeName !== String(u.name || email).trim() ||
+        prev.officialEmail !== email ||
+        prev.jobTitle !== String(u.title ?? "").trim()
       );
     }) ||
     Object.entries(merged).some(([id, ledger]) => prevEmployees[id]?.active !== ledger.active);
@@ -280,7 +243,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
       bucket: existing.bucket,
       key: existing.key,
       logKey: LEAVE_LOG_S3_KEY,
-      onboardingUpdatedAt: onboarding.updatedAt,
+      rosterSource: "time-doctor" as const,
     };
   }
 
@@ -288,8 +251,8 @@ export async function ensureLeaveOnS3(actor?: string | null) {
     op: isBootstrap ? "bootstrap" : "sync",
     actor: actor ?? null,
     details: isBootstrap
-      ? `Bootstrapped leave ledger for ${mergedCount} employees from onboarding`
-      : `Synced roster with onboarding (${mergedCount} ledgers)`,
+      ? `Bootstrapped leave ledger for ${mergedCount} employees from Time Doctor`
+      : `Synced roster with Time Doctor (${mergedCount} ledgers)`,
     syncedFromOnboardingAt: new Date().toISOString(),
   });
 
@@ -300,7 +263,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
     bucket: saved.bucket,
     key: saved.key,
     logKey: LEAVE_LOG_S3_KEY,
-    onboardingUpdatedAt: onboarding.updatedAt,
+    rosterSource: "time-doctor" as const,
   };
 }
 
@@ -319,6 +282,9 @@ export async function appendLeaveRecord(args: {
   if (!ledger.active) throw new Error("Cannot record leave for inactive employee");
 
   const days = args.days ?? leaveDaysInclusive(args.startDate, args.endDate);
+  if (days <= 0) {
+    throw new Error("Leave range has no weekdays (Sat–Sun are not counted).");
+  }
   const limitCheck = validateLifetimeLeaveLimit(ledger.leaveEvents, days);
   if (!limitCheck.ok) throw new Error(limitCheck.message);
 

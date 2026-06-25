@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth";
 import {
   getLeaveLedger,
   recordLeave,
-  syncLeaveWithOnboarding,
+  syncLeaveWithTimeDoctor,
   voidLeave,
 } from "@/lib/leave-ledger-functions";
 import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
@@ -44,9 +44,9 @@ function LeaveEmployeesPage() {
   });
 
   const syncM = useMutation({
-    mutationFn: () => syncLeaveWithOnboarding({ data: { actor } }),
+    mutationFn: () => syncLeaveWithTimeDoctor({ data: { actor } }),
     onSuccess: () => {
-      toast.success("Synced employee roster from onboarding");
+      toast.success("Synced employee roster from Time Dashboard");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-analytics"] });
     },
@@ -128,11 +128,11 @@ function LeaveEmployeesPage() {
         <div>
           <div className="font-medium text-[13px]">Active employee leave ledger</div>
           <div className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
-            Synced with{" "}
-            <Link to="/employee-onboarding" className="text-foreground underline underline-offset-2">
-              Employee Onboarding
-            </Link>
-            . Only employees marked <strong>Active</strong> in{" "}
+            Employee list and emails come from{" "}
+            <Link to="/time-dashboard" className="text-foreground underline underline-offset-2">
+              Time Dashboard
+            </Link>{" "}
+            (Time Doctor — @cintara.ai / @revcloud.com). Only employees marked <strong>Active</strong> in{" "}
             <Link to="/time-dashboard/pacing" className="text-foreground underline underline-offset-2">
               Weekly Pacing
             </Link>{" "}
@@ -152,7 +152,7 @@ function LeaveEmployeesPage() {
           className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-1.5 shrink-0"
         >
           {syncM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Sync onboarding
+          Sync Time Dashboard
         </button>
       </div>
 
