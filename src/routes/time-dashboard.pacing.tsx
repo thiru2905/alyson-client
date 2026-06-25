@@ -1,11 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar } from "@/components/Skeleton";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { WeeklyPacingWeekPicker } from "@/components/WeeklyPacingWeekPicker";
-import { fetchWeeklyHoursTrend, fetchWeeklyPacingReport, getWeeklyPacingInsights } from "@/lib/time-doctor-pacing-functions";
+import {
+  fetchWeeklyHoursTrend,
+  fetchWeeklyPacingReport,
+  getWeeklyPacingInsights,
+  setWeeklyPacingActiveOverride,
+} from "@/lib/time-doctor-pacing-functions";
 import { WeeklyPacingTrendPanel } from "@/components/WeeklyPacingTrendPanel";
 import { formatRangeLabel, isIsoDate } from "@/lib/time-dashboard-range";
 import {
@@ -63,10 +69,104 @@ function rowClass(row: WeeklyPacingRow): string {
   return "hover:bg-muted/30";
 }
 
+function ActiveStatusEditor({
+  row,
+  disabled,
+  onConfirmChange,
+}: {
+  row: WeeklyPacingRow;
+  disabled?: boolean;
+  onConfirmChange: (next: boolean) => void;
+}) {
+  const [pending, setPending] = useState<boolean | null>(null);
+
+  return (
+    <>
+      <select
+        value={row.active ? "yes" : "no"}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = e.target.value === "yes";
+          if (next === row.active) return;
+          setPending(next);
+        }}
+        title={
+          row.activeOverridden
+            ? `Manual override (auto was ${formatActiveLabel(row.computedActive ?? !row.active)}). Saved in S3.`
+            : "Change Active status — saved permanently in S3"
+        }
+        className={
+          "h-7 min-w-[4.5rem] rounded-md border px-2 text-[11px] font-medium cursor-pointer disabled:opacity-50 " +
+          (row.active
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+            : "border-border bg-muted/40 text-muted-foreground")
+        }
+      >
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+      {row.activeOverridden ? (
+        <div className="text-[10px] text-muted-foreground mt-0.5">Manual</div>
+      ) : null}
+
+      <AlertDialog.Root open={pending != null} onOpenChange={(open) => !open && setPending(null)}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 bg-black/40 z-[80]" />
+          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[80] w-[92vw] max-w-md surface-card p-4">
+            <AlertDialog.Title className="font-medium text-[14px]">Update Active status?</AlertDialog.Title>
+            <AlertDialog.Description asChild>
+              <div className="mt-2 space-y-2 text-[12px] text-muted-foreground leading-relaxed">
+                <p>
+                  Set <span className="font-semibold text-foreground">{row.name}</span> to{" "}
+                  <span className="font-semibold text-foreground">{pending != null ? formatActiveLabel(pending) : "—"}</span>?
+                </p>
+                <p>
+                  This is saved permanently in S3 and applies to all future weekly pacing reports, trends, and AI
+                  insights (until you change it again).
+                </p>
+                {row.computedActive != null && pending != null && pending !== row.computedActive ? (
+                  <p>
+                    Auto-detected value was <strong>{formatActiveLabel(row.computedActive)}</strong> — your choice
+                    overrides it.
+                  </p>
+                ) : null}
+              </div>
+            </AlertDialog.Description>
+            <div className="mt-4 flex justify-end gap-2">
+              <AlertDialog.Cancel asChild>
+                <button
+                  type="button"
+                  className="h-8 px-3 rounded-md border border-border text-[12px] font-medium hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pending == null) return;
+                    onConfirmChange(pending);
+                    setPending(null);
+                  }}
+                  className="h-8 px-3 rounded-md bg-foreground text-background text-[12px] font-medium"
+                >
+                  Yes, save to S3
+                </button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+    </>
+  );
+}
+
 function WeeklyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const search = Route.useSearch();
   const defaultDay = pacingTodayIso();
 
@@ -238,6 +338,17 @@ function WeeklyPacingPage() {
     onSuccess: (r) => {
       setInsightsMd(r.insightsMd);
       toast.success("AI insights ready");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const activeOverrideM = useMutation({
+    mutationFn: (vars: { employeeId: string; email: string; name: string; active: boolean }) =>
+      setWeeklyPacingActiveOverride({ data: vars }),
+    onSuccess: (_r, vars) => {
+      void queryClient.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+      void queryClient.invalidateQueries({ queryKey: ["weekly-hours-trend"] });
+      toast.success(`${vars.name} → Active ${formatActiveLabel(vars.active)} (saved to S3)`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -684,6 +795,9 @@ function WeeklyPacingPage() {
                           Active
                           <SortIcon field="active" />
                         </button>
+                        <div className="text-[10px] font-normal text-muted-foreground mt-0.5 normal-case tracking-normal">
+                          Editable · saved in S3
+                        </div>
                       </th>
                       <th align="left">
                         <button
@@ -768,15 +882,18 @@ function WeeklyPacingPage() {
                             )}
                           </td>
                           <td>
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                r.active
-                                  ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200"
-                                  : "bg-muted text-muted-foreground"
-                              }`}
-                            >
-                              {formatActiveLabel(r.active)}
-                            </span>
+                            <ActiveStatusEditor
+                              row={r}
+                              disabled={activeOverrideM.isPending}
+                              onConfirmChange={(next) =>
+                                activeOverrideM.mutate({
+                                  employeeId: r.id,
+                                  email: r.email,
+                                  name: r.name,
+                                  active: next,
+                                })
+                              }
+                            />
                           </td>
                           <td>
                             <span

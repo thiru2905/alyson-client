@@ -37,6 +37,10 @@ export type WeeklyPacingRow = {
   metTarget: boolean;
   /** Present on the Cintara Google Workspace domain roster. */
   active: boolean;
+  /** Auto-computed active before any S3 override. */
+  computedActive?: boolean;
+  /** True when active was set manually and stored in S3. */
+  activeOverridden?: boolean;
   status: WeeklyPacingStatus;
 };
 

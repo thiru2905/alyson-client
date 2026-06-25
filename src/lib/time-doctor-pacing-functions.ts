@@ -37,7 +37,16 @@ const PacingRowSchema = z.object({
   weekProgressPct: z.number(),
   metTarget: z.boolean(),
   active: z.boolean(),
+  computedActive: z.boolean().optional(),
+  activeOverridden: z.boolean().optional(),
   status: z.enum(["target_met", "on_track", "behind", "at_risk", "critical"]),
+});
+
+const SetWeeklyPacingActiveInput = z.object({
+  employeeId: z.string().min(1),
+  email: z.string(),
+  name: z.string(),
+  active: z.boolean(),
 });
 
 const WeeklyPacingInsightsInput = z.object({
@@ -117,4 +126,13 @@ export const getWeeklyPacingInsights = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { generateWeeklyPacingInsights } = await import("@/lib/weekly-pacing-insights.server");
     return generateWeeklyPacingInsights(data as Parameters<typeof generateWeeklyPacingInsights>[0]);
+  });
+
+/** Persist Active Yes/No override to S3 (survives redeploys; used on every future report). */
+export const setWeeklyPacingActiveOverride = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => SetWeeklyPacingActiveInput.parse(data))
+  .handler(async ({ data }) => {
+    const { upsertWeeklyPacingActiveOverride } = await import("@/lib/weekly-pacing-active-s3.server");
+    const entry = await upsertWeeklyPacingActiveOverride(data);
+    return { entry };
   });

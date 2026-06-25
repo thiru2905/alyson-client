@@ -1,7 +1,10 @@
 import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
-import { resolveCintaraActiveForPacing } from "@/lib/cintara-active-members";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
+import {
+  loadWeeklyPacingActiveOverridesForReport,
+  resolvePacingActiveWithOverrides,
+} from "@/lib/weekly-pacing-active.server";
 import {
   timeDoctorPacingGetCompany,
   timeDoctorPacingListUsers,
@@ -60,7 +63,20 @@ function formatWeekLabel(weekStart: string, weekEnd: string): string {
 type PacingUserContext = {
   rosterLookup: ReturnType<typeof getOrgChartRosterLookup>;
   activeLookup: ReturnType<typeof getCintaraActiveMemberLookup>;
+  activeOverrides: Awaited<ReturnType<typeof loadWeeklyPacingActiveOverridesForReport>>;
 };
+
+function resolveRowActive(
+  ctx: PacingUserContext,
+  args: { employeeId: string; email: string; name: string },
+) {
+  return resolvePacingActiveWithOverrides(
+    ctx.activeOverrides,
+    ctx.activeLookup,
+    ctx.rosterLookup,
+    args,
+  );
+}
 
 function buildFilteredUserIds(
   users: Awaited<ReturnType<typeof timeDoctorPacingListUsers>>,
@@ -72,10 +88,7 @@ function buildFilteredUserIds(
     const email = (u.email || "").trim();
     const name = (u.name || u.email || "").trim();
     const withMeta = attachManagerToPacingRow({ email, name }, ctx.rosterLookup);
-    const active = resolveCintaraActiveForPacing(ctx.activeLookup, ctx.rosterLookup, {
-      email,
-      name,
-    });
+    const { active } = resolveRowActive(ctx, { employeeId: u.id, email, name });
     if (
       matchesTrendFacet({
         location: withMeta.location,
@@ -150,6 +163,8 @@ export async function buildWeeklyPacingReport(args?: {
 
   const rosterLookup = getOrgChartRosterLookup();
   const activeLookup = getCintaraActiveMemberLookup();
+  const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
+  const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
 
   const rows = users
     .map((u) => {
@@ -171,12 +186,16 @@ export async function buildWeeklyPacingReport(args?: {
       });
       if (!row) return null;
       const withManager = attachManagerToPacingRow(row, rosterLookup);
+      const resolved = resolveRowActive(pacingCtx, {
+        employeeId: withManager.id,
+        email: withManager.email,
+        name: withManager.name,
+      });
       return {
         ...withManager,
-        active: resolveCintaraActiveForPacing(activeLookup, rosterLookup, {
-          email: withManager.email,
-          name: withManager.name,
-        }),
+        active: resolved.active,
+        computedActive: resolved.computedActive,
+        activeOverridden: resolved.activeOverridden,
       };
     })
     .filter((r): r is NonNullable<typeof r> => r != null);
@@ -225,6 +244,7 @@ export async function buildWeeklyHoursTrendReport(args?: {
   const ctx: PacingUserContext = {
     rosterLookup: getOrgChartRosterLookup(),
     activeLookup: getCintaraActiveMemberLookup(),
+    activeOverrides: await loadWeeklyPacingActiveOverridesForReport(),
   };
   const filteredUserIds = buildFilteredUserIds(users, ctx, {
     locationFilter,
