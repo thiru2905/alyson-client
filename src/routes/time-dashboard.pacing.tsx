@@ -255,7 +255,7 @@ function WeeklyPacingPage() {
     onSuccess: (_r, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
       void queryClient.invalidateQueries({ queryKey: ["weekly-hours-trend"] });
-      toast.success(`${vars.name} → Active ${formatActiveLabel(vars.active)} (saved to S3)`);
+      toast.success(`${vars.name} → Active ${formatActiveLabel(vars.active)}`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -702,9 +702,6 @@ function WeeklyPacingPage() {
                           Active
                           <SortIcon field="active" />
                         </button>
-                        <div className="text-[10px] font-normal text-muted-foreground mt-0.5 normal-case tracking-normal">
-                          Editable · saved in S3
-                        </div>
                       </th>
                       <th align="left">
                         <button

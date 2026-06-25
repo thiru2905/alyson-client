@@ -165,7 +165,6 @@ export function WeeklyPacingActiveCell({ row, disabled, onConfirmChange }: Props
                   No
                 </button>
               </div>
-              <div className="text-[10px] text-muted-foreground mt-2 leading-snug">Saved permanently in S3</div>
             </div>,
             document.body,
           )
@@ -185,7 +184,6 @@ export function WeeklyPacingActiveCell({ row, disabled, onConfirmChange }: Props
                   </span>
                   ?
                 </p>
-                <p>This is saved permanently in S3 and applies to all future weekly pacing reports.</p>
               </div>
             </AlertDialog.Description>
             <div className="mt-4 flex justify-end gap-2">
@@ -207,7 +205,7 @@ export function WeeklyPacingActiveCell({ row, disabled, onConfirmChange }: Props
                   }}
                   className="h-8 px-3 rounded-md bg-foreground text-background text-[12px] font-medium"
                 >
-                  Yes, save to S3
+                  Yes, save
                 </button>
               </AlertDialog.Action>
             </div>

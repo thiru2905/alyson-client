@@ -51,7 +51,7 @@ const NAV: NavItem[] = [
   { to: "/employee-onboarding", label: "Employee Onboarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People" },
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },
-  { to: "/leave", label: "Leave", icon: Calendar, group: "People" },
+  { to: "/leave", label: "Leave", icon: Calendar, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/attendance", label: "Attendance", icon: Clock, group: "People" },
   { to: "/payroll", label: "Payroll", icon: DollarSign, group: "Money", roles: ["super_admin", "ceo", "finance", "hr"] },
   { to: "/bonus", label: "Bonus", icon: Gift, group: "Money", roles: ["super_admin", "ceo", "finance", "hr", "manager"] },

@@ -7,7 +7,7 @@ const ROUTES = [
   { to: "/team", label: "Team directory", group: "People" },
   { to: "/boarding", label: "Onboarding & offboarding", group: "People" },
   { to: "/performance", label: "Performance", group: "People" },
-  { to: "/leave", label: "Leave", group: "People" },
+  { to: "/leave", label: "Leave", group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/attendance", label: "Attendance", group: "People" },
   { to: "/payroll", label: "Payroll", group: "Money" },
   { to: "/bonus", label: "Bonus", group: "Money" },

@@ -16,7 +16,6 @@ import { Route as TeamRouteImport } from './routes/team'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as PerformanceRouteImport } from './routes/performance'
 import { Route as PayrollRouteImport } from './routes/payroll'
-import { Route as LeaveRouteImport } from './routes/leave'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as HandoverDocumentationRouteImport } from './routes/handover-documentation'
 import { Route as EquityRouteImport } from './routes/equity'
@@ -28,15 +27,19 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as LeaveRouteRouteImport } from './routes/leave/route'
 import { Route as BonusRouteRouteImport } from './routes/bonus/route'
 import { Route as AlysonNotetakerRouteRouteImport } from './routes/alyson-notetaker/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LeaveIndexRouteImport } from './routes/leave/index'
 import { Route as BonusIndexRouteImport } from './routes/bonus/index'
 import { Route as AlysonNotetakerIndexRouteImport } from './routes/alyson-notetaker/index'
 import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspace-activity.$userEmail'
 import { Route as WebhooksRecallRouteImport } from './routes/webhooks/recall'
 import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
+import { Route as LeaveAuditRouteImport } from './routes/leave/audit'
+import { Route as LeaveAnalyticsRouteImport } from './routes/leave/analytics'
 import { Route as EmployeeScoringUserEmailRouteImport } from './routes/employee-scoring.$userEmail'
 import { Route as BonusSimulateRouteImport } from './routes/bonus/simulate'
 import { Route as BonusPlansRouteImport } from './routes/bonus/plans'
@@ -96,11 +99,6 @@ const PayrollRoute = PayrollRouteImport.update({
   path: '/payroll',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LeaveRoute = LeaveRouteImport.update({
-  id: '/leave',
-  path: '/leave',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HelpRoute = HelpRouteImport.update({
   id: '/help',
   path: '/help',
@@ -156,6 +154,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LeaveRouteRoute = LeaveRouteRouteImport.update({
+  id: '/leave',
+  path: '/leave',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BonusRouteRoute = BonusRouteRouteImport.update({
   id: '/bonus',
   path: '/bonus',
@@ -170,6 +173,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const LeaveIndexRoute = LeaveIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LeaveRouteRoute,
 } as any)
 const BonusIndexRoute = BonusIndexRouteImport.update({
   id: '/',
@@ -201,6 +209,16 @@ const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
   getParentRoute: () => TimeDashboardRoute,
+} as any)
+const LeaveAuditRoute = LeaveAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => LeaveRouteRoute,
+} as any)
+const LeaveAnalyticsRoute = LeaveAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => LeaveRouteRoute,
 } as any)
 const EmployeeScoringUserEmailRoute =
   EmployeeScoringUserEmailRouteImport.update({
@@ -336,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alyson-notetaker': typeof AlysonNotetakerRouteRouteWithChildren
   '/bonus': typeof BonusRouteRouteWithChildren
+  '/leave': typeof LeaveRouteRouteWithChildren
   '/admin': typeof AdminRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
@@ -347,7 +366,6 @@ export interface FileRoutesByFullPath {
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
-  '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
   '/performance': typeof PerformanceRoute
   '/reports': typeof ReportsRoute
@@ -367,12 +385,15 @@ export interface FileRoutesByFullPath {
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
+  '/leave/analytics': typeof LeaveAnalyticsRoute
+  '/leave/audit': typeof LeaveAuditRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
+  '/leave/': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -398,7 +419,6 @@ export interface FileRoutesByTo {
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
-  '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
   '/performance': typeof PerformanceRoute
   '/reports': typeof ReportsRoute
@@ -418,12 +438,15 @@ export interface FileRoutesByTo {
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
+  '/leave/analytics': typeof LeaveAnalyticsRoute
+  '/leave/audit': typeof LeaveAuditRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker': typeof AlysonNotetakerIndexRoute
   '/bonus': typeof BonusIndexRoute
+  '/leave': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -441,6 +464,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/alyson-notetaker': typeof AlysonNotetakerRouteRouteWithChildren
   '/bonus': typeof BonusRouteRouteWithChildren
+  '/leave': typeof LeaveRouteRouteWithChildren
   '/admin': typeof AdminRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
@@ -452,7 +476,6 @@ export interface FileRoutesById {
   '/equity': typeof EquityRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
-  '/leave': typeof LeaveRoute
   '/payroll': typeof PayrollRoute
   '/performance': typeof PerformanceRoute
   '/reports': typeof ReportsRoute
@@ -472,12 +495,15 @@ export interface FileRoutesById {
   '/bonus/plans': typeof BonusPlansRoute
   '/bonus/simulate': typeof BonusSimulateRoute
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
+  '/leave/analytics': typeof LeaveAnalyticsRoute
+  '/leave/audit': typeof LeaveAuditRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
   '/alyson-notetaker/': typeof AlysonNotetakerIndexRoute
   '/bonus/': typeof BonusIndexRoute
+  '/leave/': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -496,6 +522,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alyson-notetaker'
     | '/bonus'
+    | '/leave'
     | '/admin'
     | '/app'
     | '/attendance'
@@ -507,7 +534,6 @@ export interface FileRouteTypes {
     | '/equity'
     | '/handover-documentation'
     | '/help'
-    | '/leave'
     | '/payroll'
     | '/performance'
     | '/reports'
@@ -527,12 +553,15 @@ export interface FileRouteTypes {
     | '/bonus/plans'
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
+    | '/leave/analytics'
+    | '/leave/audit'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
+    | '/leave/'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/unified-meetings'
     | '/api/cron/daily-reports'
@@ -558,7 +587,6 @@ export interface FileRouteTypes {
     | '/equity'
     | '/handover-documentation'
     | '/help'
-    | '/leave'
     | '/payroll'
     | '/performance'
     | '/reports'
@@ -578,12 +606,15 @@ export interface FileRouteTypes {
     | '/bonus/plans'
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
+    | '/leave/analytics'
+    | '/leave/audit'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker'
     | '/bonus'
+    | '/leave'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/unified-meetings'
     | '/api/cron/daily-reports'
@@ -600,6 +631,7 @@ export interface FileRouteTypes {
     | '/'
     | '/alyson-notetaker'
     | '/bonus'
+    | '/leave'
     | '/admin'
     | '/app'
     | '/attendance'
@@ -611,7 +643,6 @@ export interface FileRouteTypes {
     | '/equity'
     | '/handover-documentation'
     | '/help'
-    | '/leave'
     | '/payroll'
     | '/performance'
     | '/reports'
@@ -631,12 +662,15 @@ export interface FileRouteTypes {
     | '/bonus/plans'
     | '/bonus/simulate'
     | '/employee-scoring/$userEmail'
+    | '/leave/analytics'
+    | '/leave/audit'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
     | '/alyson-notetaker/'
     | '/bonus/'
+    | '/leave/'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/unified-meetings'
     | '/api/cron/daily-reports'
@@ -654,6 +688,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlysonNotetakerRouteRoute: typeof AlysonNotetakerRouteRouteWithChildren
   BonusRouteRoute: typeof BonusRouteRouteWithChildren
+  LeaveRouteRoute: typeof LeaveRouteRouteWithChildren
   AdminRoute: typeof AdminRoute
   AppRoute: typeof AppRoute
   AttendanceRoute: typeof AttendanceRoute
@@ -665,7 +700,6 @@ export interface RootRouteChildren {
   EquityRoute: typeof EquityRoute
   HandoverDocumentationRoute: typeof HandoverDocumentationRoute
   HelpRoute: typeof HelpRoute
-  LeaveRoute: typeof LeaveRoute
   PayrollRoute: typeof PayrollRoute
   PerformanceRoute: typeof PerformanceRoute
   ReportsRoute: typeof ReportsRoute
@@ -732,13 +766,6 @@ declare module '@tanstack/react-router' {
       path: '/payroll'
       fullPath: '/payroll'
       preLoaderRoute: typeof PayrollRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/leave': {
-      id: '/leave'
-      path: '/leave'
-      fullPath: '/leave'
-      preLoaderRoute: typeof LeaveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/help': {
@@ -818,6 +845,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/leave': {
+      id: '/leave'
+      path: '/leave'
+      fullPath: '/leave'
+      preLoaderRoute: typeof LeaveRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bonus': {
       id: '/bonus'
       path: '/bonus'
@@ -838,6 +872,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/leave/': {
+      id: '/leave/'
+      path: '/'
+      fullPath: '/leave/'
+      preLoaderRoute: typeof LeaveIndexRouteImport
+      parentRoute: typeof LeaveRouteRoute
     }
     '/bonus/': {
       id: '/bonus/'
@@ -880,6 +921,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/time-dashboard/$userId'
       preLoaderRoute: typeof TimeDashboardUserIdRouteImport
       parentRoute: typeof TimeDashboardRoute
+    }
+    '/leave/audit': {
+      id: '/leave/audit'
+      path: '/audit'
+      fullPath: '/leave/audit'
+      preLoaderRoute: typeof LeaveAuditRouteImport
+      parentRoute: typeof LeaveRouteRoute
+    }
+    '/leave/analytics': {
+      id: '/leave/analytics'
+      path: '/analytics'
+      fullPath: '/leave/analytics'
+      preLoaderRoute: typeof LeaveAnalyticsRouteImport
+      parentRoute: typeof LeaveRouteRoute
     }
     '/employee-scoring/$userEmail': {
       id: '/employee-scoring/$userEmail'
@@ -1105,6 +1160,22 @@ const BonusRouteRouteWithChildren = BonusRouteRoute._addFileChildren(
   BonusRouteRouteChildren,
 )
 
+interface LeaveRouteRouteChildren {
+  LeaveAnalyticsRoute: typeof LeaveAnalyticsRoute
+  LeaveAuditRoute: typeof LeaveAuditRoute
+  LeaveIndexRoute: typeof LeaveIndexRoute
+}
+
+const LeaveRouteRouteChildren: LeaveRouteRouteChildren = {
+  LeaveAnalyticsRoute: LeaveAnalyticsRoute,
+  LeaveAuditRoute: LeaveAuditRoute,
+  LeaveIndexRoute: LeaveIndexRoute,
+}
+
+const LeaveRouteRouteWithChildren = LeaveRouteRoute._addFileChildren(
+  LeaveRouteRouteChildren,
+)
+
 interface EmployeeScoringRouteChildren {
   EmployeeScoringUserEmailRoute: typeof EmployeeScoringUserEmailRoute
 }
@@ -1167,6 +1238,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlysonNotetakerRouteRoute: AlysonNotetakerRouteRouteWithChildren,
   BonusRouteRoute: BonusRouteRouteWithChildren,
+  LeaveRouteRoute: LeaveRouteRouteWithChildren,
   AdminRoute: AdminRoute,
   AppRoute: AppRoute,
   AttendanceRoute: AttendanceRoute,
@@ -1178,7 +1250,6 @@ const rootRouteChildren: RootRouteChildren = {
   EquityRoute: EquityRoute,
   HandoverDocumentationRoute: HandoverDocumentationRoute,
   HelpRoute: HelpRoute,
-  LeaveRoute: LeaveRoute,
   PayrollRoute: PayrollRoute,
   PerformanceRoute: PerformanceRoute,
   ReportsRoute: ReportsRoute,

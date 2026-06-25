@@ -1,5 +1,8 @@
 import { resolveCintaraActiveForPacing, type CintaraActiveMemberLookup } from "@/lib/cintara-active-members";
+import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
+import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 import type { OrgChartRosterLookup } from "@/lib/org-chart-roster";
+import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import {
   findWeeklyPacingActiveOverride,
   readWeeklyPacingActiveOverridesFromS3,
@@ -40,4 +43,30 @@ export function resolvePacingActiveWithOverrides(
     computedActive,
     activeOverridden: true,
   };
+}
+
+/** Active flag for Leave (and other modules) — same rules as Weekly Pacing, including S3 overrides. */
+export async function enrichLeaveLedgersWithPacingActive(
+  employees: Record<string, EmployeeLeaveLedger>,
+  onboardingEmployeeIds: Set<string>,
+): Promise<Record<string, EmployeeLeaveLedger>> {
+  const overrides = await loadWeeklyPacingActiveOverridesForReport();
+  const activeLookup = getCintaraActiveMemberLookup();
+  const rosterLookup = getOrgChartRosterLookup();
+  const next: Record<string, EmployeeLeaveLedger> = {};
+
+  for (const [id, ledger] of Object.entries(employees)) {
+    if (!onboardingEmployeeIds.has(id)) {
+      next[id] = { ...ledger, active: false };
+      continue;
+    }
+    const resolved = resolvePacingActiveWithOverrides(overrides, activeLookup, rosterLookup, {
+      employeeId: id,
+      email: ledger.officialEmail,
+      name: ledger.employeeName,
+    });
+    next[id] = { ...ledger, active: resolved.active };
+  }
+
+  return next;
 }
