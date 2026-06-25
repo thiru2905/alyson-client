@@ -1,12 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar } from "@/components/Skeleton";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { WeeklyPacingWeekPicker } from "@/components/WeeklyPacingWeekPicker";
+import { WeeklyPacingActiveCell } from "@/components/WeeklyPacingActiveCell";
 import {
   fetchWeeklyHoursTrend,
   fetchWeeklyPacingReport,
@@ -34,7 +33,7 @@ import { downloadCSV } from "@/lib/csv";
 import { downloadWeeklyPacingPdf } from "@/lib/weekly-pacing-pdf";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
-import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, ChevronDown, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
+import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/time-dashboard/pacing")({
@@ -68,195 +67,6 @@ function statusClass(status: WeeklyPacingStatus): string {
 function rowClass(row: WeeklyPacingRow): string {
   if (row.metTarget) return "bg-emerald-500/[0.06] hover:bg-emerald-500/10";
   return "hover:bg-muted/30";
-}
-
-function ActiveStatusEditor({
-  row,
-  disabled,
-  onConfirmChange,
-}: {
-  row: WeeklyPacingRow;
-  disabled?: boolean;
-  onConfirmChange: (next: boolean) => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [pending, setPending] = useState<boolean | null>(null);
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
-  const anchorRef = useRef<HTMLButtonElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const openMenu = useCallback(() => {
-    const el = anchorRef.current;
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setMenuPos({ top: rect.bottom + 6, left: Math.max(8, rect.left) });
-    }
-    setMenuOpen(true);
-  }, []);
-
-  const cancelClose = useCallback(() => {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-  }, []);
-
-  const scheduleClose = useCallback(() => {
-    cancelClose();
-    closeTimerRef.current = setTimeout(() => setMenuOpen(false), 150);
-  }, [cancelClose]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onScroll = () => setMenuOpen(false);
-    window.addEventListener("scroll", onScroll, true);
-    return () => window.removeEventListener("scroll", onScroll, true);
-  }, [menuOpen]);
-
-  function pick(next: boolean) {
-    setMenuOpen(false);
-    if (next === row.active) return;
-    setPending(next);
-  }
-
-  const badgeClass = row.active
-    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-    : "border-border bg-muted/40 text-muted-foreground";
-
-  return (
-    <>
-      <div
-        className="relative inline-block"
-        onMouseEnter={() => {
-          if (disabled) return;
-          cancelClose();
-          openMenu();
-        }}
-        onMouseLeave={scheduleClose}
-      >
-        <button
-          ref={anchorRef}
-          type="button"
-          disabled={disabled}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (disabled) return;
-            cancelClose();
-            openMenu();
-          }}
-          title={
-            row.activeOverridden
-              ? `Manual override (auto was ${formatActiveLabel(row.computedActive ?? !row.active)}). Click or hover to change.`
-              : "Click or hover to change Active status"
-          }
-          className={
-            "inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[11px] font-medium cursor-pointer transition-shadow hover:ring-2 hover:ring-foreground/15 disabled:opacity-50 disabled:cursor-not-allowed " +
-            badgeClass
-          }
-        >
-          {formatActiveLabel(row.active)}
-          <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-        </button>
-        {row.activeOverridden ? (
-          <div className="text-[10px] text-muted-foreground mt-0.5 text-center">Manual</div>
-        ) : null}
-      </div>
-
-      {menuOpen && !disabled
-        ? createPortal(
-            <div
-              className="fixed z-[90] rounded-lg border border-border bg-paper shadow-xl p-2.5 min-w-[152px]"
-              style={{ top: menuPos.top, left: menuPos.left }}
-              onMouseEnter={cancelClose}
-              onMouseLeave={scheduleClose}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-[11px] font-medium text-foreground px-0.5">Change active status?</div>
-              <div className="text-[10px] text-muted-foreground px-0.5 mt-0.5 mb-2">
-                Now: <span className="font-medium text-foreground">{formatActiveLabel(row.active)}</span>
-              </div>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => pick(true)}
-                  className={
-                    "flex-1 h-7 rounded-md text-[11px] font-medium border transition-colors " +
-                    (row.active
-                      ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-800 dark:text-emerald-200"
-                      : "border-border hover:bg-emerald-500/10 hover:border-emerald-500/30")
-                  }
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => pick(false)}
-                  className={
-                    "flex-1 h-7 rounded-md text-[11px] font-medium border transition-colors " +
-                    (!row.active
-                      ? "border-border bg-muted text-foreground"
-                      : "border-border hover:bg-muted/80")
-                  }
-                >
-                  No
-                </button>
-              </div>
-              <div className="text-[10px] text-muted-foreground mt-2 px-0.5 leading-snug">
-                Saved permanently in S3
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-
-      <AlertDialog.Root open={pending != null} onOpenChange={(open) => !open && setPending(null)}>
-        <AlertDialog.Portal>
-          <AlertDialog.Overlay className="fixed inset-0 bg-black/40 z-[100]" />
-          <AlertDialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] w-[92vw] max-w-md surface-card p-4">
-            <AlertDialog.Title className="font-medium text-[14px]">Update Active status?</AlertDialog.Title>
-            <AlertDialog.Description asChild>
-              <div className="mt-2 space-y-2 text-[12px] text-muted-foreground leading-relaxed">
-                <p>
-                  Set <span className="font-semibold text-foreground">{row.name}</span> to{" "}
-                  <span className="font-semibold text-foreground">{pending != null ? formatActiveLabel(pending) : "—"}</span>?
-                </p>
-                <p>
-                  This is saved permanently in S3 and applies to all future weekly pacing reports, trends, and AI
-                  insights (until you change it again).
-                </p>
-                {row.computedActive != null && pending != null && pending !== row.computedActive ? (
-                  <p>
-                    Auto-detected value was <strong>{formatActiveLabel(row.computedActive)}</strong> — your choice
-                    overrides it.
-                  </p>
-                ) : null}
-              </div>
-            </AlertDialog.Description>
-            <div className="mt-4 flex justify-end gap-2">
-              <AlertDialog.Cancel asChild>
-                <button
-                  type="button"
-                  className="h-8 px-3 rounded-md border border-border text-[12px] font-medium hover:bg-muted"
-                >
-                  Cancel
-                </button>
-              </AlertDialog.Cancel>
-              <AlertDialog.Action asChild>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pending == null) return;
-                    onConfirmChange(pending);
-                    setPending(null);
-                  }}
-                  className="h-8 px-3 rounded-md bg-foreground text-background text-[12px] font-medium"
-                >
-                  Yes, save to S3
-                </button>
-              </AlertDialog.Action>
-            </div>
-          </AlertDialog.Content>
-        </AlertDialog.Portal>
-      </AlertDialog.Root>
-    </>
-  );
 }
 
 function WeeklyPacingPage() {
@@ -763,7 +573,7 @@ function WeeklyPacingPage() {
             </div>
 
             <TableScroll>
-              <div className="surface-card overflow-hidden min-w-[1700px]">
+              <div className="surface-card min-w-[1700px]">
                 <table className="ops-table w-full">
                   <thead>
                     <tr>
@@ -978,8 +788,8 @@ function WeeklyPacingPage() {
                               `${r.requiredHoursPerDay.toFixed(2)}h`
                             )}
                           </td>
-                          <td className="relative" onClick={(e) => e.stopPropagation()}>
-                            <ActiveStatusEditor
+                          <td className="relative z-10 isolate" onClick={(e) => e.stopPropagation()}>
+                            <WeeklyPacingActiveCell
                               row={r}
                               disabled={activeOverrideM.isPending}
                               onConfirmChange={(next) =>
