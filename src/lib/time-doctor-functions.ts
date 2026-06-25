@@ -1832,18 +1832,21 @@ export const fetchTimeDoctorMonthlyUnderHoursReport = createServerFn({ method: "
     }
 
     const {
-      buildLeaveDaysLookup,
+      buildPacingLeaveContext,
       pacingLeaveHoursCredit,
       resolveLeaveDaysForEmployee,
     } = await import("@/lib/weekly-pacing-leave.server");
     const { getLeaveFromS3 } = await import("@/lib/leave-s3.server");
-    let leaveEmployees: Record<string, import("@/lib/leave-schema").EmployeeLeaveLedger> = {};
+    const { attachManagerToPacingRow } = await import("@/lib/org-chart-roster");
+    const { getOrgChartRosterLookup } = await import("@/lib/org-chart-roster.server");
+    let leaveFile: Awaited<ReturnType<typeof getLeaveFromS3>>["file"] = null;
     try {
-      const { file } = await getLeaveFromS3();
-      leaveEmployees = file?.employees ?? {};
+      const result = await getLeaveFromS3();
+      leaveFile = result.file;
     } catch (e) {
       warnings.push(`leave-ledger: ${String(e)}`);
     }
+    const rosterLookup = getOrgChartRosterLookup();
 
     const weekResults: UnderHoursWeek[] = [];
     for (const w of weeks) {
@@ -1854,21 +1857,25 @@ export const fetchTimeDoctorMonthlyUnderHoursReport = createServerFn({ method: "
         warnings.push(`${w.start} → ${w.end}: ${String(e)}`);
       }
 
-      const leaveLookup = buildLeaveDaysLookup(leaveEmployees, w.start, w.end);
+      const leaveCtx = buildPacingLeaveContext(leaveFile, w.start, w.end);
 
       const underThreshold = users
         .map((u) => {
           const seconds = secondsMap.get(u.id) ?? 0;
           const email = (u.email || "").trim();
-          const leaveDays = resolveLeaveDaysForEmployee(leaveLookup, {
+          const name = (u.name || u.email || "").trim();
+          const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
+          const leaveDays = resolveLeaveDaysForEmployee(leaveCtx, {
             employeeId: u.id,
             email,
+            team: meta.team,
+            location: meta.location,
           });
           const hours =
             Math.round((seconds / 3600 + pacingLeaveHoursCredit(leaveDays)) * 100) / 100;
           return {
             email,
-            name: (u.name || u.email || "").trim(),
+            name,
             hours,
           };
         })

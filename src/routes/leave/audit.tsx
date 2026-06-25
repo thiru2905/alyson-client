@@ -81,7 +81,7 @@ function LeaveAuditPage() {
                     <td className="text-[12px] max-w-[280px]">{r.details || "—"}</td>
                     {isSuperAdmin && (
                       <td className="font-mono text-[11px] text-muted-foreground max-w-[320px] overflow-x-auto whitespace-nowrap">
-                        {r.event ? JSON.stringify(r.event) : "—"}
+                        {r.event || r.teamEvent ? JSON.stringify(r.event ?? r.teamEvent) : "—"}
                       </td>
                     )}
                   </tr>
@@ -96,7 +96,7 @@ function LeaveAuditPage() {
 }
 
 function pillFor(op: LeaveOperation): string {
-  if (op === "void_leave") return "pill-danger";
-  if (op === "append_leave") return "pill-info";
+  if (op === "void_leave" || op === "void_team_leave") return "pill-danger";
+  if (op === "append_leave" || op === "append_team_leave") return "pill-info";
   return "pill-neutral";
 }

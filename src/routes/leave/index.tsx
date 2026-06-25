@@ -4,13 +4,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cloud, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { LeaveEmployeeLedgerDrawer } from "@/components/LeaveEmployeeLedgerDrawer";
+import { LeaveTeamLeavePanel } from "@/components/LeaveTeamLeavePanel";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
 import {
   getLeaveLedger,
   recordLeave,
+  recordTeamLeave,
   syncLeaveWithTimeDoctor,
   voidLeave,
+  voidTeamLeave,
 } from "@/lib/leave-ledger-functions";
 import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 import {
@@ -20,6 +23,7 @@ import {
   sumLeaveDays,
   sumLeaveDaysInYear,
 } from "@/lib/leave-schema";
+import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 
 export const Route = createFileRoute("/leave/")({
   component: LeaveEmployeesPage,
@@ -66,6 +70,7 @@ function LeaveEmployeesPage() {
       setSelected(r.ledger);
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-analytics"] });
+      void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to record leave"),
   });
@@ -83,7 +88,39 @@ function LeaveEmployeesPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to remove leave"),
   });
 
+  const teamLeaveM = useMutation({
+    mutationFn: (payload: {
+      location: string;
+      team: string;
+      leaveType: "annual" | "sick" | "personal" | "unpaid" | "other";
+      startDate: string;
+      endDate: string;
+      note?: string;
+    }) => recordTeamLeave({ data: { ...payload, actor } }),
+    onSuccess: (r) => {
+      toast.success(
+        `Team leave recorded — ${r.affectedCount} employee${r.affectedCount === 1 ? "" : "s"} get +${r.event.days * PACING_LEAVE_HOURS_PER_DAY}h/week credit`,
+      );
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: ["leave-audit-log"] });
+      void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to record team leave"),
+  });
+
+  const voidTeamM = useMutation({
+    mutationFn: (eventId: string) => voidTeamLeave({ data: { eventId, actor } }),
+    onSuccess: () => {
+      toast.success("Team leave removed");
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: ["leave-audit-log"] });
+      void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to remove team leave"),
+  });
+
   const ledgers = q.data?.ledgers ?? [];
+  const teamLeaves = q.data?.teamLeaves ?? [];
   const activeLedgers = useMemo(() => ledgers.filter((l) => l.active), [ledgers]);
 
   const filtered = useMemo(() => {
@@ -118,7 +155,7 @@ function LeaveEmployeesPage() {
     setDrawerOpen(true);
   };
 
-  const saving = recordM.isPending || voidM.isPending;
+  const saving = recordM.isPending || voidM.isPending || teamLeaveM.isPending || voidTeamM.isPending;
 
   return (
     <div className="px-5 md:px-8 py-6 space-y-5">
@@ -155,6 +192,15 @@ function LeaveEmployeesPage() {
           Sync Time Dashboard
         </button>
       </div>
+
+      <LeaveTeamLeavePanel
+        ledgers={ledgers}
+        teamLeaves={teamLeaves}
+        canEdit={canEdit}
+        saving={teamLeaveM.isPending || voidTeamM.isPending}
+        onRecord={(payload) => teamLeaveM.mutate(payload)}
+        onVoid={(eventId) => voidTeamM.mutate(eventId)}
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <MiniStat label="Active employees" value={String(totals.count)} />

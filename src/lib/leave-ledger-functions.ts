@@ -4,9 +4,11 @@ import { buildLeaveAnalyticsReport } from "@/lib/leave-analytics";
 import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 import {
   appendLeaveRecord,
+  appendTeamLeaveRecord,
   ensureLeaveOnS3,
   getLeaveOperationsLog,
   voidLeaveRecord,
+  voidTeamLeaveRecord,
 } from "@/lib/leave-s3.server";
 
 const actorSchema = z.object({
@@ -15,6 +17,20 @@ const actorSchema = z.object({
 
 const appendLeaveSchema = actorSchema.extend({
   employeeId: z.string().min(1),
+  leaveType: z.enum(["annual", "sick", "personal", "unpaid", "other"]),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  days: z.number().positive().optional(),
+  note: z.string().optional(),
+});
+
+const voidTeamLeaveSchema = actorSchema.extend({
+  eventId: z.string().min(1),
+});
+
+const appendTeamLeaveSchema = actorSchema.extend({
+  location: z.string().min(1),
+  team: z.string().min(1),
   leaveType: z.enum(["annual", "sick", "personal", "unpaid", "other"]),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -42,6 +58,7 @@ export const getLeaveLedger = createServerFn({ method: "GET" }).handler(async ()
   const data = await ensureLeaveOnS3();
     return {
       ledgers: ledgersToArray(data.employees),
+      teamLeaves: data.teamLeaves ?? [],
       updatedAt: data.updatedAt,
       syncedFromOnboardingAt: data.syncedFromOnboardingAt,
       bucket: data.bucket,
@@ -56,6 +73,7 @@ export const syncLeaveWithTimeDoctor = createServerFn({ method: "POST" })
     const result = await ensureLeaveOnS3(data.actor ?? null);
     return {
       ledgers: ledgersToArray(result.employees),
+      teamLeaves: result.teamLeaves ?? [],
       updatedAt: result.updatedAt,
       syncedFromOnboardingAt: result.syncedFromOnboardingAt,
       bucket: result.bucket,
@@ -90,6 +108,36 @@ export const voidLeave = createServerFn({ method: "POST" })
       actor: data.actor ?? null,
     });
     return { removed: result.removed, ledger: result.ledger };
+  });
+
+export const recordTeamLeave = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => appendTeamLeaveSchema.parse(data))
+  .handler(async ({ data }) => {
+    const result = await appendTeamLeaveRecord({
+      location: data.location,
+      team: data.team,
+      leaveType: data.leaveType,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      days: data.days,
+      note: data.note,
+      actor: data.actor ?? null,
+    });
+    return {
+      event: result.event,
+      affectedCount: result.affectedCount,
+      teamLeaves: result.teamLeaves,
+    };
+  });
+
+export const voidTeamLeave = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => voidTeamLeaveSchema.parse(data))
+  .handler(async ({ data }) => {
+    const result = await voidTeamLeaveRecord({
+      eventId: data.eventId,
+      actor: data.actor ?? null,
+    });
+    return { removed: result.removed, teamLeaves: result.teamLeaves };
   });
 
 export const getLeaveAnalytics = createServerFn({ method: "GET" })

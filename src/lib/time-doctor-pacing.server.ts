@@ -1,5 +1,5 @@
 import {
-  loadLeaveDaysForPacingWeek,
+  loadPacingLeaveContext,
   resolveLeaveDaysForEmployee,
 } from "@/lib/weekly-pacing-leave.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
@@ -170,12 +170,14 @@ export async function buildWeeklyPacingReport(args?: {
   const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
   const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
 
-  let leaveLookup: Awaited<ReturnType<typeof loadLeaveDaysForPacingWeek>> = {
-    byEmployeeId: new Map(),
-    byEmail: new Map(),
+  let leaveCtx: Awaited<ReturnType<typeof loadPacingLeaveContext>> = {
+    lookup: { byEmployeeId: new Map(), byEmail: new Map() },
+    teamLeaves: [],
+    rangeStart: pacingWeekStart,
+    rangeEnd: metrics.weekEnd,
   };
   try {
-    leaveLookup = await loadLeaveDaysForPacingWeek(pacingWeekStart, metrics.weekEnd);
+    leaveCtx = await loadPacingLeaveContext(pacingWeekStart, metrics.weekEnd);
   } catch (e) {
     warnings.push(`leave-ledger: ${String(e)}`);
   }
@@ -183,9 +185,13 @@ export async function buildWeeklyPacingReport(args?: {
   const rows = users
     .map((u) => {
       const email = (u.email || "").trim();
-      const leaveDays = resolveLeaveDaysForEmployee(leaveLookup, {
+      const name = (u.name || u.email || "").trim();
+      const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
+      const leaveDays = resolveLeaveDaysForEmployee(leaveCtx, {
         employeeId: u.id,
         email,
+        team: meta.team,
+        location: meta.location,
       });
       const daySeconds = sampleDays.map((day) => {
         const cacheKey = `${company.id}:${day}:${day}`;
@@ -195,7 +201,7 @@ export async function buildWeeklyPacingReport(args?: {
       const row = buildPacingRow({
         id: u.id,
         email,
-        name: (u.name || u.email || "").trim(),
+        name,
         title: u.title ?? "",
         weeklySeconds: weekly.get(u.id) ?? 0,
         dailyHours: daySeconds.map((s) => s / 3600),
@@ -205,7 +211,7 @@ export async function buildWeeklyPacingReport(args?: {
         leaveDays,
       });
       if (!row) return null;
-      const withManager = attachManagerToPacingRow(row, rosterLookup);
+      const withManager = { ...row, ...meta };
       const resolved = resolveRowActive(pacingCtx, {
         employeeId: withManager.id,
         email: withManager.email,

@@ -40,7 +40,29 @@ export type EmployeeLeaveLedger = {
   updatedAt: string;
 };
 
-export type LeaveOperation = "bootstrap" | "sync" | "append_leave" | "void_leave";
+/** Team-wide leave for a location + team — credits all matching active employees in Weekly Pacing. */
+export type TeamLeaveEvent = {
+  id: string;
+  location: string;
+  team: string;
+  leaveType: LeaveType;
+  /** ISO date YYYY-MM-DD */
+  startDate: string;
+  /** ISO date YYYY-MM-DD */
+  endDate: string;
+  days: number;
+  note?: string;
+  createdAt: string;
+  createdBy?: string | null;
+};
+
+export type LeaveOperation =
+  | "bootstrap"
+  | "sync"
+  | "append_leave"
+  | "void_leave"
+  | "append_team_leave"
+  | "void_team_leave";
 
 export type LeaveLogEntry = {
   ts: string;
@@ -50,6 +72,7 @@ export type LeaveLogEntry = {
   employeeName?: string | null;
   details?: string;
   event?: LeaveRecordEvent;
+  teamEvent?: TeamLeaveEvent;
   employeeCount?: number;
 };
 
@@ -58,6 +81,8 @@ export type LeaveDataFile = {
   updatedAt: string;
   syncedFromOnboardingAt: string | null;
   employees: Record<string, EmployeeLeaveLedger>;
+  /** Location + team leave blocks (auto +7h/day in Weekly Pacing for matching employees). */
+  teamLeaves?: TeamLeaveEvent[];
 };
 
 /** Maximum lifetime leave days per employee (all types combined). */
@@ -65,6 +90,52 @@ export const LIFETIME_LEAVE_DAYS_LIMIT = 10;
 
 export function newLeaveEventId(): string {
   return `leave_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function newTeamLeaveEventId(): string {
+  return `team_leave_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Normalize team/location labels for matching (same rules as leave analytics). */
+export function normLeaveFacet(value: string, fallback: string): string {
+  const v = String(value || "").trim();
+  return v || fallback;
+}
+
+export function matchesTeamLocation(
+  employeeLocation: string,
+  employeeTeam: string,
+  leaveLocation: string,
+  leaveTeam: string,
+): boolean {
+  return (
+    normLeaveFacet(employeeLocation, "Unknown") === normLeaveFacet(leaveLocation, "Unknown") &&
+    normLeaveFacet(employeeTeam, "Unassigned") === normLeaveFacet(leaveTeam, "Unassigned")
+  );
+}
+
+export type LeaveDateRange = { startDate: string; endDate: string };
+
+/** Count unique weekday leave days across overlapping ranges within a report window. */
+export function countLeaveWorkdaysUnion(
+  ranges: LeaveDateRange[],
+  rangeStart: string,
+  rangeEnd: string,
+): number {
+  const days = new Set<string>();
+  for (const e of ranges) {
+    const start = e.startDate > rangeStart ? e.startDate : rangeStart;
+    const end = e.endDate < rangeEnd ? e.endDate : rangeEnd;
+    if (start > end) continue;
+    const cur = new Date(`${start}T12:00:00Z`);
+    const endD = new Date(`${end}T12:00:00Z`);
+    while (cur.getTime() <= endD.getTime()) {
+      const dow = cur.getUTCDay();
+      if (dow !== 0 && dow !== 6) days.add(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+  return days.size;
 }
 
 export function leaveDaysInclusive(startDate: string, endDate: string): number {
@@ -83,20 +154,21 @@ export function leaveDaysInclusive(startDate: string, endDate: string): number {
   return count;
 }
 
-/** Weekday leave days from events overlapping an inclusive date range. */
+/** Weekday leave days from events overlapping an inclusive date range (union — no double-count). */
 export function countLeaveWorkdaysInRange(
   events: LeaveRecordEvent[],
   rangeStart: string,
   rangeEnd: string,
 ): number {
-  let total = 0;
-  for (const e of events) {
-    const start = e.startDate > rangeStart ? e.startDate : rangeStart;
-    const end = e.endDate < rangeEnd ? e.endDate : rangeEnd;
-    if (start > end) continue;
-    total += leaveDaysInclusive(start, end);
-  }
-  return total;
+  return countLeaveWorkdaysUnion(events, rangeStart, rangeEnd);
+}
+
+export function countTeamLeaveWorkdaysInRange(
+  events: TeamLeaveEvent[],
+  rangeStart: string,
+  rangeEnd: string,
+): number {
+  return countLeaveWorkdaysUnion(events, rangeStart, rangeEnd);
 }
 
 export function sumLeaveDays(events: LeaveRecordEvent[]): number {

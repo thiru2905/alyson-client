@@ -497,7 +497,7 @@ function WeeklyPacingPage() {
             </div>
 
             <p className="text-[12px] text-muted-foreground leading-relaxed max-w-4xl">
-              <strong>Worked</strong> = Time Doctor hours + leave credit (+7h per leave workday). <strong>Leave</strong> = approved leave days this week (weekdays only).
+              <strong>Worked</strong> = Time Doctor hours + leave credit (+7h per leave workday, including team leave). <strong>Leave</strong> = personal + team leave workdays this week.
               <strong> Pace</strong> = Mon–Thu total + Mon–Thu average.
               Mon–Thu example: <strong>7h</strong> → <strong>14h</strong>. Friday: compare actual hours vs Mon–Thu projection (e.g. worked <strong>40.79h</strong>, pace <strong>46.70h</strong>).
               {" "}<strong className="text-emerald-700 dark:text-emerald-300">Green rows</strong> have already reached {report.targetHours}h.

@@ -12,8 +12,15 @@ import type {
   LeaveLogEntry,
   LeaveOperation,
   LeaveRecordEvent,
+  TeamLeaveEvent,
 } from "@/lib/leave-schema";
-import { leaveDaysInclusive, newLeaveEventId, validateLifetimeLeaveLimit } from "@/lib/leave-schema";
+import {
+  leaveDaysInclusive,
+  matchesTeamLocation,
+  newLeaveEventId,
+  newTeamLeaveEventId,
+  validateLifetimeLeaveLimit,
+} from "@/lib/leave-schema";
 import { syncLeaveLedgersWithTimeDoctor, timeDoctorUserIds } from "@/lib/leave-roster.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import {
@@ -143,7 +150,11 @@ export async function getLeaveFromS3() {
     const r = await s3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (!r.Body) return { file: null as LeaveDataFile | null, bucket, key };
     const parsed = JSON.parse(await streamToString(r.Body)) as LeaveDataFile;
-    return { file: parsed, bucket, key };
+    const file: LeaveDataFile = {
+      ...parsed,
+      teamLeaves: parsed.teamLeaves ?? [],
+    };
+    return { file, bucket, key };
   } catch (err) {
     if (isMissingObjectError(err)) return { file: null, bucket, key };
     throw err;
@@ -153,12 +164,14 @@ export async function getLeaveFromS3() {
 async function putLeaveToS3(
   employees: Record<string, EmployeeLeaveLedger>,
   args: {
+    teamLeaves: TeamLeaveEvent[];
     op: LeaveOperation;
     actor?: string | null;
     employeeId?: string | null;
     employeeName?: string | null;
     details?: string;
     event?: LeaveRecordEvent;
+    teamEvent?: TeamLeaveEvent;
     syncedFromOnboardingAt?: string | null;
   },
 ) {
@@ -172,6 +185,7 @@ async function putLeaveToS3(
     updatedAt,
     syncedFromOnboardingAt: args.syncedFromOnboardingAt ?? updatedAt,
     employees,
+    teamLeaves: args.teamLeaves,
   };
 
   await s3().send(
@@ -195,10 +209,11 @@ async function putLeaveToS3(
     employeeName: args.employeeName ?? null,
     details: args.details,
     event: args.event,
+    teamEvent: args.teamEvent,
     employeeCount: Object.keys(employees).length,
   });
 
-  return { bucket, key, updatedAt, employees };
+  return { bucket, key, updatedAt, employees, teamLeaves: args.teamLeaves };
 }
 
 export async function ensureLeaveOnS3(actor?: string | null) {
@@ -213,6 +228,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
   const rosterLookup = getOrgChartRosterLookup();
   const existing = await getLeaveFromS3();
   const prevEmployees = existing.file?.employees ?? {};
+  const prevTeamLeaves = existing.file?.teamLeaves ?? [];
   const synced = syncLeaveLedgersWithTimeDoctor(users, prevEmployees, rosterLookup);
   const tdIds = timeDoctorUserIds(users);
   const merged = await enrichLeaveLedgersWithPacingActive(synced, tdIds);
@@ -238,6 +254,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
   if (!isBootstrap && !rosterChanged && existing.file) {
     return {
       employees: merged,
+      teamLeaves: prevTeamLeaves,
       updatedAt: existing.file.updatedAt,
       syncedFromOnboardingAt: existing.file.syncedFromOnboardingAt,
       bucket: existing.bucket,
@@ -248,6 +265,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
   }
 
   const saved = await putLeaveToS3(merged, {
+    teamLeaves: prevTeamLeaves,
     op: isBootstrap ? "bootstrap" : "sync",
     actor: actor ?? null,
     details: isBootstrap
@@ -258,6 +276,7 @@ export async function ensureLeaveOnS3(actor?: string | null) {
 
   return {
     employees: saved.employees,
+    teamLeaves: saved.teamLeaves,
     updatedAt: saved.updatedAt,
     syncedFromOnboardingAt: saved.updatedAt,
     bucket: saved.bucket,
@@ -309,6 +328,7 @@ export async function appendLeaveRecord(args: {
   };
 
   const saved = await putLeaveToS3(employees, {
+    teamLeaves: data.teamLeaves ?? [],
     op: "append_leave",
     actor: args.actor ?? null,
     employeeId: ledger.employeeId,
@@ -343,6 +363,7 @@ export async function voidLeaveRecord(args: {
   };
 
   const saved = await putLeaveToS3(employees, {
+    teamLeaves: data.teamLeaves ?? [],
     op: "void_leave",
     actor: args.actor ?? null,
     employeeId: ledger.employeeId,
@@ -353,4 +374,76 @@ export async function voidLeaveRecord(args: {
   });
 
   return { removed, ledger: saved.employees[args.employeeId]! };
+}
+
+export async function appendTeamLeaveRecord(args: {
+  location: string;
+  team: string;
+  leaveType: TeamLeaveEvent["leaveType"];
+  startDate: string;
+  endDate: string;
+  days?: number;
+  note?: string;
+  actor?: string | null;
+}) {
+  const data = await ensureLeaveOnS3(args.actor ?? null);
+  const location = args.location.trim();
+  const team = args.team.trim();
+  if (!location || !team) throw new Error("Location and team are required");
+
+  const days = args.days ?? leaveDaysInclusive(args.startDate, args.endDate);
+  if (days <= 0) {
+    throw new Error("Leave range has no weekdays (Sat–Sun are not counted).");
+  }
+
+  const affected = Object.values(data.employees).filter(
+    (l) => l.active && matchesTeamLocation(l.location, l.team, location, team),
+  );
+  if (!affected.length) {
+    throw new Error(`No active employees found for ${team} at ${location}`);
+  }
+
+  const event: TeamLeaveEvent = {
+    id: newTeamLeaveEventId(),
+    location,
+    team,
+    leaveType: args.leaveType,
+    startDate: args.startDate,
+    endDate: args.endDate,
+    days,
+    note: args.note?.trim() || undefined,
+    createdAt: new Date().toISOString(),
+    createdBy: args.actor ?? null,
+  };
+
+  const teamLeaves = [...(data.teamLeaves ?? []), event];
+  const saved = await putLeaveToS3(data.employees, {
+    teamLeaves,
+    op: "append_team_leave",
+    actor: args.actor ?? null,
+    details: `Team leave ${days} day(s) for ${team} @ ${location} (${args.startDate} – ${args.endDate}) · ${affected.length} employee(s)`,
+    teamEvent: event,
+    syncedFromOnboardingAt: data.syncedFromOnboardingAt,
+  });
+
+  return { event, affectedCount: affected.length, teamLeaves: saved.teamLeaves };
+}
+
+export async function voidTeamLeaveRecord(args: { eventId: string; actor?: string | null }) {
+  const data = await ensureLeaveOnS3(args.actor ?? null);
+  const teamLeaves = data.teamLeaves ?? [];
+  const removed = teamLeaves.find((e) => e.id === args.eventId);
+  if (!removed) throw new Error("Team leave record not found");
+
+  const nextTeamLeaves = teamLeaves.filter((e) => e.id !== args.eventId);
+  const saved = await putLeaveToS3(data.employees, {
+    teamLeaves: nextTeamLeaves,
+    op: "void_team_leave",
+    actor: args.actor ?? null,
+    details: `Removed team leave for ${removed.team} @ ${removed.location} (${removed.startDate} – ${removed.endDate})`,
+    teamEvent: removed,
+    syncedFromOnboardingAt: data.syncedFromOnboardingAt,
+  });
+
+  return { removed, teamLeaves: saved.teamLeaves };
 }
