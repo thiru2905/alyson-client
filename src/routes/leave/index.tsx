@@ -71,6 +71,7 @@ function LeaveEmployeesPage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-analytics"] });
       void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+      void qc.invalidateQueries({ queryKey: ["monthly-pacing-report"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to record leave"),
   });
@@ -104,6 +105,7 @@ function LeaveEmployeesPage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-audit-log"] });
       void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+      void qc.invalidateQueries({ queryKey: ["monthly-pacing-report"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to record team leave"),
   });
@@ -115,6 +117,7 @@ function LeaveEmployeesPage() {
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-audit-log"] });
       void qc.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
+      void qc.invalidateQueries({ queryKey: ["monthly-pacing-report"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to remove team leave"),
   });

@@ -398,6 +398,12 @@ function WeeklyPacingPage() {
               <ArrowLeft className="h-3.5 w-3.5" />
               Time Dashboard
             </Link>
+            <Link
+              to="/time-dashboard/monthly-pacing"
+              className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
+            >
+              Monthly Pacing
+            </Link>
             <button
               onClick={() => {
                 if (draftMatchesApplied) {

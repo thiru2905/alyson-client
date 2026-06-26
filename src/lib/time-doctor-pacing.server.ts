@@ -33,7 +33,15 @@ import {
   type WeeklyHoursTrendReport,
   type WeeklyPacingReport,
 } from "@/lib/weekly-pacing";
-import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
+import {
+  buildMonthlyPacingRow,
+  computeMonthPacingMetrics,
+  monthLabel,
+  monthStartIso,
+  monthYearFromIso,
+  resolveMonthlyRollupDay,
+  type MonthlyPacingReport,
+} from "@/lib/monthly-pacing";
 
 function weekStartSundayIso(day: string): string {
   return timeDoctorPacingWeekStartSunday(day);
@@ -256,6 +264,149 @@ export async function buildWeeklyPacingReport(args?: {
     timeZoneLabel: company.timeZoneLabel ?? getTimeDoctorTimezoneLabel(),
     today: rollupDay,
     week: { start: pacingWeekStart, end: metrics.weekEnd },
+    pacingSampleDays: metrics.pacingSampleDays,
+    elapsedWorkDays: metrics.elapsedWorkDays,
+    totalWorkDays: metrics.totalWorkDays,
+    remainingWorkDays: metrics.remainingWorkDays,
+    generatedAt: new Date().toISOString(),
+    rows,
+    leaveSummary,
+    warnings: warnings.slice(0, 8),
+  };
+}
+
+/** Month-to-date pacing: same row model as weekly, target = workdays in month × 7h. */
+export async function buildMonthlyPacingReport(args?: {
+  month?: string;
+  day?: string;
+}): Promise<MonthlyPacingReport> {
+  const today = timeDoctorTodayIso();
+  const monthYear = args?.month?.trim() || monthYearFromIso(today);
+  if (!/^\d{4}-\d{2}$/.test(monthYear)) {
+    throw new Error("Invalid month — use YYYY-MM");
+  }
+  const rollupDay = args?.day ?? resolveMonthlyRollupDay(monthYear, today);
+  const monthStart = monthStartIso(monthYear);
+  const company = await timeDoctorPacingGetCompany();
+  const warnings: string[] = [];
+  const rangeCache = new Map<string, Map<string, number>>();
+
+  let periodSeconds = new Map<string, number>();
+  try {
+    periodSeconds = await timeDoctorPacingLoadRangeSeconds(
+      company.id,
+      monthStart,
+      rollupDay,
+      rangeCache,
+    );
+  } catch (e) {
+    warnings.push(`monthly-worklogs: ${String(e)}`);
+  }
+
+  let users: Awaited<ReturnType<typeof timeDoctorPacingListUsers>> = [];
+  try {
+    users = await timeDoctorPacingListUsers(company.id);
+  } catch (e) {
+    warnings.push(`users: ${String(e)}`);
+  }
+
+  const metrics = computeMonthPacingMetrics({ monthYear, rollupDay });
+  const sampleDays = metrics.pacingSampleDays;
+
+  await Promise.all(
+    sampleDays.map(async (day) => {
+      try {
+        await timeDoctorPacingLoadRangeSeconds(company.id, day, day, rangeCache);
+      } catch (e) {
+        warnings.push(`daily-worklogs-${day}: ${String(e)}`);
+      }
+    }),
+  );
+
+  const rosterLookup = getOrgChartRosterLookup();
+  const activeLookup = getCintaraActiveMemberLookup();
+  const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
+  const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
+
+  let leaveCtx: Awaited<ReturnType<typeof loadPacingLeaveContext>> = {
+    lookup: { byEmployeeId: new Map(), byEmail: new Map() },
+    teamLeaves: [],
+    employees: {},
+    rangeStart: monthStart,
+    rangeEnd: metrics.monthEnd,
+  };
+  try {
+    leaveCtx = await loadPacingLeaveContext(monthStart, metrics.monthEnd);
+  } catch (e) {
+    warnings.push(`leave-ledger: ${String(e)}`);
+  }
+
+  const rows = users
+    .map((u) => {
+      const email = (u.email || "").trim();
+      const name = (u.name || u.email || "").trim();
+      const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
+      const leave = resolveLeaveBreakdownForEmployee(leaveCtx, {
+        employeeId: u.id,
+        email,
+        team: meta.team,
+        location: meta.location,
+      });
+      const dailyLeaveHours = resolveDailyLeaveHoursForSample(
+        leaveCtx,
+        { employeeId: u.id, email, team: meta.team, location: meta.location },
+        sampleDays,
+      );
+      const daySeconds = sampleDays.map((day) => {
+        const cacheKey = `${company.id}:${day}:${day}`;
+        const dayMap = rangeCache.get(cacheKey);
+        return dayMap?.get(u.id) ?? 0;
+      });
+      const row = buildMonthlyPacingRow({
+        id: u.id,
+        email,
+        name,
+        title: u.title ?? "",
+        periodSeconds: periodSeconds.get(u.id) ?? 0,
+        dailyHours: daySeconds.map((s, i) =>
+          Math.round((s / 3600 + (dailyLeaveHours[i] ?? 0)) * 100) / 100,
+        ),
+        metrics,
+        rollupDay,
+        leaveDays: leave.leaveDays,
+        leaveDaysPersonal: leave.leaveDaysPersonal,
+        leaveDaysTeam: leave.leaveDaysTeam,
+      });
+      if (!row) return null;
+      const withManager = { ...row, ...meta };
+      const resolved = resolveRowActive(pacingCtx, {
+        employeeId: withManager.id,
+        email: withManager.email,
+        name: withManager.name,
+      });
+      return {
+        ...withManager,
+        active: resolved.active,
+        computedActive: resolved.computedActive,
+        activeOverridden: resolved.activeOverridden,
+      };
+    })
+    .filter((r): r is NonNullable<typeof r> => r != null);
+
+  const leaveSummary = buildLeaveSummaryFromRows(rows);
+  leaveSummary.teamLeaveEvents = summarizeTeamLeavesForWeek(
+    leaveCtx.teamLeaves,
+    monthStart,
+    metrics.monthEnd,
+  );
+
+  return {
+    company: { id: company.id, name: company.name },
+    targetHours: metrics.targetHours,
+    timeZone: company.timeZone ?? "America/Chicago",
+    timeZoneLabel: company.timeZoneLabel ?? getTimeDoctorTimezoneLabel(),
+    today: rollupDay,
+    month: { start: monthStart, end: metrics.monthEnd, label: monthLabel(monthYear) },
     pacingSampleDays: metrics.pacingSampleDays,
     elapsedWorkDays: metrics.elapsedWorkDays,
     totalWorkDays: metrics.totalWorkDays,

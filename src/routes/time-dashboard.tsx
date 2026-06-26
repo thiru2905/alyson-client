@@ -11,7 +11,7 @@ import {
   formatRangeLabel,
   isIsoDate,
 } from "@/lib/time-dashboard-range";
-import { ArrowDownAZ, ArrowUpAZ, Clock, Download, FileText, Loader2, RefreshCw, TrendingDown } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Download, FileText, Loader2, RefreshCw, TrendingDown } from "lucide-react";
 import { downloadCSV } from "@/lib/csv";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -375,6 +375,14 @@ function TimeDashboardPage() {
                 >
                   <TrendingDown className="h-3.5 w-3.5" />
                   Weekly Pacing
+                </Link>
+                <Link
+                  to="/time-dashboard/monthly-pacing"
+                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
+                  title="Month-to-date pacing — workdays in month × 7h target"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Monthly Pacing
                 </Link>
                 <button
                   onClick={() => void exportUnderHoursPdf()}

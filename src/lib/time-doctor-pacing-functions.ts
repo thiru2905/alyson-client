@@ -3,6 +3,13 @@ import { z } from "zod";
 
 const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+const MonthSchema = z.string().regex(/^\d{4}-\d{2}$/);
+
+const MonthlyPacingInput = z.object({
+  month: MonthSchema.optional(),
+  day: DateSchema.optional(),
+});
+
 const WeeklyPacingInput = z.object({
   targetHours: z.number().min(1).max(168).optional(),
   day: DateSchema.optional(),
@@ -117,6 +124,13 @@ export const fetchWeeklyPacingReport = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { buildWeeklyPacingReport } = await import("@/lib/time-doctor-pacing.server");
     return buildWeeklyPacingReport(data);
+  });
+
+export const fetchMonthlyPacingReport = createServerFn({ method: "GET" })
+  .inputValidator((data: unknown) => MonthlyPacingInput.parse(data ?? {}))
+  .handler(async ({ data }) => {
+    const { buildMonthlyPacingReport } = await import("@/lib/time-doctor-pacing.server");
+    return buildMonthlyPacingReport(data);
   });
 
 export const fetchWeeklyHoursTrend = createServerFn({ method: "GET" })

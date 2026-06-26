@@ -37,6 +37,7 @@ import { Route as AlysonNotetakerIndexRouteImport } from './routes/alyson-noteta
 import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspace-activity.$userEmail'
 import { Route as WebhooksRecallRouteImport } from './routes/webhooks/recall'
 import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
+import { Route as TimeDashboardMonthlyPacingRouteImport } from './routes/time-dashboard.monthly-pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
 import { Route as LeaveCalendarRouteImport } from './routes/leave/calendar'
 import { Route as LeaveAuditRouteImport } from './routes/leave/audit'
@@ -206,6 +207,12 @@ const TimeDashboardPacingRoute = TimeDashboardPacingRouteImport.update({
   path: '/pacing',
   getParentRoute: () => TimeDashboardRoute,
 } as any)
+const TimeDashboardMonthlyPacingRoute =
+  TimeDashboardMonthlyPacingRouteImport.update({
+    id: '/monthly-pacing',
+    path: '/monthly-pacing',
+    getParentRoute: () => TimeDashboardRoute,
+  } as any)
 const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
@@ -395,6 +402,7 @@ export interface FileRoutesByFullPath {
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
@@ -449,6 +457,7 @@ export interface FileRoutesByTo {
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
@@ -507,6 +516,7 @@ export interface FileRoutesById {
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
+  '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
   '/workspace-activity/$userEmail': typeof WorkspaceActivityUserEmailRoute
@@ -566,6 +576,7 @@ export interface FileRouteTypes {
     | '/leave/audit'
     | '/leave/calendar'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
@@ -620,6 +631,7 @@ export interface FileRouteTypes {
     | '/leave/audit'
     | '/leave/calendar'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
@@ -677,6 +689,7 @@ export interface FileRouteTypes {
     | '/leave/audit'
     | '/leave/calendar'
     | '/time-dashboard/$userId'
+    | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
     | '/workspace-activity/$userEmail'
@@ -925,6 +938,13 @@ declare module '@tanstack/react-router' {
       path: '/pacing'
       fullPath: '/time-dashboard/pacing'
       preLoaderRoute: typeof TimeDashboardPacingRouteImport
+      parentRoute: typeof TimeDashboardRoute
+    }
+    '/time-dashboard/monthly-pacing': {
+      id: '/time-dashboard/monthly-pacing'
+      path: '/monthly-pacing'
+      fullPath: '/time-dashboard/monthly-pacing'
+      preLoaderRoute: typeof TimeDashboardMonthlyPacingRouteImport
       parentRoute: typeof TimeDashboardRoute
     }
     '/time-dashboard/$userId': {
@@ -1211,11 +1231,13 @@ const EmployeeScoringRouteWithChildren = EmployeeScoringRoute._addFileChildren(
 
 interface TimeDashboardRouteChildren {
   TimeDashboardUserIdRoute: typeof TimeDashboardUserIdRoute
+  TimeDashboardMonthlyPacingRoute: typeof TimeDashboardMonthlyPacingRoute
   TimeDashboardPacingRoute: typeof TimeDashboardPacingRoute
 }
 
 const TimeDashboardRouteChildren: TimeDashboardRouteChildren = {
   TimeDashboardUserIdRoute: TimeDashboardUserIdRoute,
+  TimeDashboardMonthlyPacingRoute: TimeDashboardMonthlyPacingRoute,
   TimeDashboardPacingRoute: TimeDashboardPacingRoute,
 }
 
