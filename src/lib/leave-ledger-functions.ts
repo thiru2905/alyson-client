@@ -6,6 +6,7 @@ import {
   appendLeaveRecord,
   appendTeamLeaveRecord,
   ensureLeaveOnS3,
+  getLeaveFromS3,
   getLeaveOperationsLog,
   voidLeaveRecord,
   voidTeamLeaveRecord,
@@ -56,9 +57,11 @@ function ledgersToArray(employees: Record<string, EmployeeLeaveLedger>) {
 
 export const getLeaveLedger = createServerFn({ method: "GET" }).handler(async () => {
   const data = await ensureLeaveOnS3();
+  const direct = await getLeaveFromS3();
+  const teamLeaves = direct.file?.teamLeaves ?? data.teamLeaves ?? [];
     return {
       ledgers: ledgersToArray(data.employees),
-      teamLeaves: data.teamLeaves ?? [],
+      teamLeaves,
       updatedAt: data.updatedAt,
       syncedFromOnboardingAt: data.syncedFromOnboardingAt,
       bucket: data.bucket,

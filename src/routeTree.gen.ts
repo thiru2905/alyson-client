@@ -38,6 +38,7 @@ import { Route as WorkspaceActivityUserEmailRouteImport } from './routes/workspa
 import { Route as WebhooksRecallRouteImport } from './routes/webhooks/recall'
 import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
+import { Route as LeaveCalendarRouteImport } from './routes/leave/calendar'
 import { Route as LeaveAuditRouteImport } from './routes/leave/audit'
 import { Route as LeaveAnalyticsRouteImport } from './routes/leave/analytics'
 import { Route as EmployeeScoringUserEmailRouteImport } from './routes/employee-scoring.$userEmail'
@@ -209,6 +210,11 @@ const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   id: '/$userId',
   path: '/$userId',
   getParentRoute: () => TimeDashboardRoute,
+} as any)
+const LeaveCalendarRoute = LeaveCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => LeaveRouteRoute,
 } as any)
 const LeaveAuditRoute = LeaveAuditRouteImport.update({
   id: '/audit',
@@ -387,6 +393,7 @@ export interface FileRoutesByFullPath {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
+  '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
@@ -440,6 +447,7 @@ export interface FileRoutesByTo {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
+  '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
@@ -497,6 +505,7 @@ export interface FileRoutesById {
   '/employee-scoring/$userEmail': typeof EmployeeScoringUserEmailRoute
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
+  '/leave/calendar': typeof LeaveCalendarRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
   '/webhooks/recall': typeof WebhooksRecallRoute
@@ -555,6 +564,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/leave/analytics'
     | '/leave/audit'
+    | '/leave/calendar'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
@@ -608,6 +618,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/leave/analytics'
     | '/leave/audit'
+    | '/leave/calendar'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
@@ -664,6 +675,7 @@ export interface FileRouteTypes {
     | '/employee-scoring/$userEmail'
     | '/leave/analytics'
     | '/leave/audit'
+    | '/leave/calendar'
     | '/time-dashboard/$userId'
     | '/time-dashboard/pacing'
     | '/webhooks/recall'
@@ -922,6 +934,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TimeDashboardUserIdRouteImport
       parentRoute: typeof TimeDashboardRoute
     }
+    '/leave/calendar': {
+      id: '/leave/calendar'
+      path: '/calendar'
+      fullPath: '/leave/calendar'
+      preLoaderRoute: typeof LeaveCalendarRouteImport
+      parentRoute: typeof LeaveRouteRoute
+    }
     '/leave/audit': {
       id: '/leave/audit'
       path: '/audit'
@@ -1163,12 +1182,14 @@ const BonusRouteRouteWithChildren = BonusRouteRoute._addFileChildren(
 interface LeaveRouteRouteChildren {
   LeaveAnalyticsRoute: typeof LeaveAnalyticsRoute
   LeaveAuditRoute: typeof LeaveAuditRoute
+  LeaveCalendarRoute: typeof LeaveCalendarRoute
   LeaveIndexRoute: typeof LeaveIndexRoute
 }
 
 const LeaveRouteRouteChildren: LeaveRouteRouteChildren = {
   LeaveAnalyticsRoute: LeaveAnalyticsRoute,
   LeaveAuditRoute: LeaveAuditRoute,
+  LeaveCalendarRoute: LeaveCalendarRoute,
   LeaveIndexRoute: LeaveIndexRoute,
 }
 

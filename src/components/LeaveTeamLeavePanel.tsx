@@ -29,6 +29,10 @@ type Props = {
     note?: string;
   }) => void;
   onVoid?: (eventId: string) => void;
+  initialStartDate?: string;
+  initialEndDate?: string;
+  /** Show recent team leave list below the form (default true). */
+  showRecentList?: boolean;
 };
 
 export function LeaveTeamLeavePanel({
@@ -38,6 +42,9 @@ export function LeaveTeamLeavePanel({
   saving,
   onRecord,
   onVoid,
+  initialStartDate,
+  initialEndDate,
+  showRecentList = true,
 }: Props) {
   const activeLedgers = useMemo(() => ledgers.filter((l) => l.active), [ledgers]);
 
@@ -60,6 +67,11 @@ export function LeaveTeamLeavePanel({
   useEffect(() => {
     if (!location && locations.length) setLocation(locations[0]!);
   }, [location, locations]);
+
+  useEffect(() => {
+    if (initialStartDate) setStartDate(initialStartDate);
+    if (initialEndDate) setEndDate(initialEndDate);
+  }, [initialStartDate, initialEndDate]);
 
   const teamsForLocation = useMemo(() => {
     if (!location) return [];
@@ -214,7 +226,7 @@ export function LeaveTeamLeavePanel({
         </FormFooter>
       ) : null}
 
-      {sortedTeamLeaves.length > 0 ? (
+      {showRecentList && sortedTeamLeaves.length > 0 ? (
         <div className="border-t border-border pt-3">
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium mb-2">
             Recent team leave

@@ -25,13 +25,13 @@ function LeaveLayout() {
             </h1>
           </div>
           <p className="mt-1.5 text-[13px] md:text-[14px] text-muted-foreground max-w-2xl leading-relaxed">
-            Per-employee leave ledger synced with Time Dashboard emails. Record team-wide leave by location + team for automatic Weekly Pacing credit (+7h/workday).
-            Records are append-only and persisted to S3.
+            Per-employee leave ledger and team leave calendar. Team leave (location + team) syncs between Employees and Team calendar — +7h/workday in Weekly Pacing.
           </p>
         </div>
 
         <div className="shrink-0 flex items-center gap-2 flex-wrap">
           <Tab to="/leave" label="Employees" />
+          <Tab to="/leave/calendar" label="Team calendar" icon={Calendar} />
           <Tab to="/leave/analytics" label="Analytics" icon={BarChart3} />
           <Tab to="/leave/audit" label="Audit log" icon={FileText} />
         </div>
@@ -47,7 +47,7 @@ function Tab({
   label,
   icon: Icon,
 }: {
-  to: "/leave" | "/leave/analytics" | "/leave/audit";
+  to: "/leave" | "/leave/calendar" | "/leave/analytics" | "/leave/audit";
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
 }) {

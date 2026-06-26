@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cloud, Loader2, RefreshCw, Search } from "lucide-react";
+import { Cloud, CalendarDays, Loader2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { LeaveEmployeeLedgerDrawer } from "@/components/LeaveEmployeeLedgerDrawer";
 import { LeaveTeamLeavePanel } from "@/components/LeaveTeamLeavePanel";
@@ -99,7 +99,7 @@ function LeaveEmployeesPage() {
     }) => recordTeamLeave({ data: { ...payload, actor } }),
     onSuccess: (r) => {
       toast.success(
-        `Team leave recorded — ${r.affectedCount} employee${r.affectedCount === 1 ? "" : "s"} get +${r.event.days * PACING_LEAVE_HOURS_PER_DAY}h/week credit`,
+        `Team leave recorded — ${r.affectedCount} employee${r.affectedCount === 1 ? "" : "s"} · visible on Team calendar`,
       );
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-audit-log"] });
@@ -182,15 +182,24 @@ function LeaveEmployeesPage() {
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => syncM.mutate()}
-          disabled={syncM.isPending || !canEdit}
-          className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-        >
-          {syncM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          Sync Time Dashboard
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Link
+            to="/leave/calendar"
+            className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-muted inline-flex items-center gap-1.5"
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            Team calendar
+          </Link>
+          <button
+            type="button"
+            onClick={() => syncM.mutate()}
+            disabled={syncM.isPending || !canEdit}
+            className="h-8 px-3 rounded-md border border-border text-xs font-medium hover:bg-muted disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {syncM.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Sync Time Dashboard
+          </button>
+        </div>
       </div>
 
       <LeaveTeamLeavePanel
