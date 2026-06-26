@@ -322,6 +322,25 @@ function WeeklyPacingPage() {
 
   function exportCsv() {
     if (!report || !rows.length) return;
+    const csvHeaders = [
+      "email",
+      "name",
+      "location",
+      "team",
+      "manager_name",
+      "manager_email",
+      "hours_worked",
+      "avg_daily_pace_mon_thu",
+      "projected_pace",
+      "pace_vs_target",
+      "hours_remaining",
+      "hours_over_target",
+      "pace_delta",
+      "remaining_work_days",
+      "required_hours_per_day",
+      "active",
+      "status",
+    ] as const;
     downloadCSV(
       `${exportFilenameBase}.csv`,
       rows.map((r) => ({
@@ -331,13 +350,7 @@ function WeeklyPacingPage() {
         team: r.team ?? "",
         manager_name: r.managerName ?? "",
         manager_email: r.managerEmail ?? "",
-        hours_logged: r.hoursWorkedLogged.toFixed(2),
-        leave_days: r.leaveDays,
-        leave_days_personal: r.leaveDaysPersonal,
-        leave_days_team: r.leaveDaysTeam,
-        leave_breakdown: formatLeaveBreakdown(r),
-        leave_hours_credit: r.leaveHoursCredit.toFixed(2),
-        hours_worked_effective: r.hoursWorked.toFixed(2),
+        hours_worked: r.hoursWorked.toFixed(2),
         avg_daily_pace_mon_thu: r.avgDailyPace.toFixed(2),
         projected_pace: r.projectedPace.toFixed(2),
         pace_vs_target: r.paceDelta.toFixed(2),
@@ -349,6 +362,7 @@ function WeeklyPacingPage() {
         active: formatActiveLabel(r.active),
         status: PACING_STATUS_LABEL[r.status],
       })),
+      [...csvHeaders],
     );
     toast.success(`CSV downloaded (${rows.length} employee${rows.length === 1 ? "" : "s"})`);
   }
