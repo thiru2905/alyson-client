@@ -16,23 +16,9 @@ Vercel redeploys automatically when `main` updates.
 
 In [Vercel Dashboard](https://vercel.com) → **alyson-client** → **Settings** → **Environment Variables** → **Production**:
 
-Copy everything your app needs from local `.env` (Google DWD JSON, Time Doctor, Supabase, Clerk, etc.), plus:
+Copy **all** production variables from your local **`.env`** into Vercel → **Settings** → **Environment Variables** → **Production** (Time Doctor OAuth, Google DWD, Supabase, Clerk, AWS, Recall, etc.). See [docs/TIME_DOCTOR_OAUTH.md](./TIME_DOCTOR_OAUTH.md) for token auto-refresh.
 
-| Variable | Value |
-|----------|--------|
-| `RESEND_API_KEY` | From [resend.com](https://resend.com) |
-| `RESEND_FROM_EMAIL` | Verified sender, e.g. `Alyson HR <reports@cintara.ai>` |
-| `DAILY_REPORT_ENABLED` | `true` |
-| `DAILY_REPORT_RECIPIENTS` | `alysonclient@cintara.ai,thirumalai@cintara.ai` |
-| `DAILY_REPORT_CRON_SECRET` | Long random string (same as local) |
-| `CRON_SECRET` | **Same value** as `DAILY_REPORT_CRON_SECRET` (Vercel cron auth) |
-| `DAILY_REPORT_INCLUDE_HOURLY` | `false` |
-| `DAILY_REPORT_INCLUDE_SCORING` | `true` |
-| `DAILY_REPORT_INCLUDE_WORKSPACE` | `true` |
-| `DAILY_REPORT_INCLUDE_TIME_DOCTOR` | `true` |
-| `DAILY_REPORT_HOURS_BACK` | `24` |
-
-Template without secrets: [env.production.example](../env.production.example)
+Optional template for non-secret defaults only: [env.production.example](../env.production.example)
 
 **Important:** Never prefix server secrets with `VITE_` (they would leak to the browser).
 

@@ -23,6 +23,7 @@ import { MonthlyPacingMonthPicker } from "@/components/MonthlyPacingMonthPicker"
 import { WeeklyPacingActiveCell } from "@/components/WeeklyPacingActiveCell";
 import { downloadCSV } from "@/lib/csv";
 import { fmtDate } from "@/lib/format";
+import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { pacingTodayIso } from "@/lib/weekly-pacing";
 import { monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
 import { useAuth } from "@/lib/auth";
@@ -386,7 +387,7 @@ function MonthlyPacingPage() {
 
         {q.isError ? (
           <div className="surface-card p-4 text-sm text-destructive">
-            {q.error instanceof Error ? q.error.message : "Failed to load monthly pacing"}
+            {timeDoctorErrorBannerText(q.error, "Failed to load monthly pacing")}
           </div>
         ) : null}
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/time-doctor-pacing-functions";
 import { WeeklyPacingTrendPanel } from "@/components/WeeklyPacingTrendPanel";
 import { formatRangeLabel, isIsoDate } from "@/lib/time-dashboard-range";
+import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import {
   filterPacingRows,
   isFridayOrLater,
@@ -259,7 +260,7 @@ function WeeklyPacingPage() {
       setInsightsMd(r.insightsMd);
       toast.success("AI insights ready");
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(timeDoctorErrorBannerText(e, e.message)),
   });
 
   const activeOverrideM = useMutation({
@@ -270,7 +271,7 @@ function WeeklyPacingPage() {
       void queryClient.invalidateQueries({ queryKey: ["weekly-hours-trend"] });
       toast.success(`${vars.name} → Active ${formatActiveLabel(vars.active)}`);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => toast.error(timeDoctorErrorBannerText(e, e.message)),
   });
 
   function applyWeek() {
@@ -448,7 +449,7 @@ function WeeklyPacingPage() {
 
         {q.isError ? (
           <div className="surface-card p-4 text-sm text-destructive">
-            {q.error instanceof Error ? q.error.message : "Failed to load pacing report"}
+            {timeDoctorErrorBannerText(q.error, "Failed to load pacing report")}
           </div>
         ) : null}
 

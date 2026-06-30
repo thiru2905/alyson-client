@@ -2,6 +2,17 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { format, parseISO, startOfMonth, startOfWeek, subDays } from "date-fns";
 import { clampRange, defaultDetailRange, defaultListRange } from "@/lib/time-dashboard-range";
+import { formatTimeDoctorAuthError } from "@/lib/time-doctor-auth-errors";
+import {
+  canConfigureTimeDoctorRefresh,
+  getValidAccessToken,
+  refreshTimeDoctorAccessToken,
+  timeDoctorOAuthEnv,
+  TimeDoctorAuthError,
+} from "@/lib/time-doctor-token-manager.server";
+
+export { canConfigureTimeDoctorRefresh };
+export { isTimeDoctorReauthError, TIME_DOCTOR_REAUTH_MESSAGE } from "@/lib/time-doctor-auth-errors";
 
 /**
  * Server-only Time Doctor integration.
@@ -905,172 +916,13 @@ function groupBy<T extends { userId: string }>(items: T[]): Map<string, T[]> {
 }
 
 function timeDoctorEnv() {
-  // Keep it very close to workforce_analytics naming.
-  const API_BASE_URL = (process.env.API_BASE_URL ?? "").trim();
-  const API_ACCESS_TOKEN = (process.env.API_ACCESS_TOKEN ?? "").trim();
-  const API_REFRESH_TOKEN = (process.env.API_REFRESH_TOKEN ?? "").trim();
-  const OAUTH_CLIENT_ID = (process.env.OAUTH_CLIENT_ID ?? "").trim();
-  const OAUTH_CLIENT_SECRET = (process.env.OAUTH_CLIENT_SECRET ?? "").trim();
-  const OAUTH_REDIRECT_URL = (process.env.OAUTH_REDIRECT_URL ?? "").trim();
-
-  if (!API_BASE_URL) {
-    throw new Error("Missing env API_BASE_URL (e.g. https://webapi.timedoctor.com/v1.1).");
-  }
-  // Access token is required unless we can refresh seamlessly.
-  const canRefresh = !!API_REFRESH_TOKEN && !!OAUTH_CLIENT_ID && !!OAUTH_CLIENT_SECRET;
-  if (!API_ACCESS_TOKEN && !canRefresh) {
-    throw new Error(
-      "Missing env API_ACCESS_TOKEN. Provide an access token or configure refresh (API_REFRESH_TOKEN, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET).",
-    );
-  }
-  return {
-    API_BASE_URL,
-    API_ACCESS_TOKEN,
-    API_REFRESH_TOKEN,
-    OAUTH_CLIENT_ID,
-    OAUTH_CLIENT_SECRET,
-    OAUTH_REDIRECT_URL,
-  };
-}
-
-type TokenState = { accessToken: string; refreshToken: string; expiresAtMs: number | null };
-const tokenState: TokenState = { accessToken: "", refreshToken: "", expiresAtMs: null };
-let refreshInFlight: Promise<string> | null = null;
-let lastSuccessfulRefreshMs = 0;
-
-/** Re-use refreshed access token within a warm server process (~45 min). */
-const REFRESH_INTERVAL_MS = 45 * 60 * 1000;
-
-export function canConfigureTimeDoctorRefresh() {
-  try {
-    const env = timeDoctorEnv();
-    return !!(env.API_REFRESH_TOKEN && env.OAUTH_CLIENT_ID && env.OAUTH_CLIENT_SECRET);
-  } catch {
-    return false;
-  }
-}
-
-function parseAccessTokenExpiresAtMs(): number | null {
-  const raw = process.env.API_ACCESS_TOKEN_EXPIRES_AT?.trim();
-  if (!raw) return null;
-  if (/^\d+$/.test(raw)) {
-    const n = Number(raw);
-    return n > 1e12 ? n : n * 1000;
-  }
-  const d = new Date(raw);
-  return Number.isFinite(d.getTime()) ? d.getTime() : null;
-}
-
-function initTokensOnce() {
-  const env = timeDoctorEnv();
-  // Always reflect latest env values (dev-friendly).
-  tokenState.accessToken = env.API_ACCESS_TOKEN;
-  tokenState.refreshToken = env.API_REFRESH_TOKEN || "";
-  const envExpiry = parseAccessTokenExpiresAtMs();
-  if (envExpiry != null) tokenState.expiresAtMs = envExpiry;
-}
-
-function shouldProactivelyRefresh(skewMs = 60_000): boolean {
-  if (!tokenState.expiresAtMs) return false;
-  return Date.now() + skewMs >= tokenState.expiresAtMs;
-}
-
-function shouldRefreshByAge(): boolean {
-  if (!lastSuccessfulRefreshMs) return true;
-  return Date.now() - lastSuccessfulRefreshMs >= REFRESH_INTERVAL_MS;
-}
-
-function tokenEndpointFromBaseUrl(baseUrl: string): string {
-  const u = new URL(baseUrl);
-  return `${u.origin}/oauth/v2/token`;
-}
-
-async function refreshAccessToken(): Promise<string> {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = (async () => {
-    initTokensOnce();
-    const env = timeDoctorEnv();
-    const refreshToken = tokenState.refreshToken || env.API_REFRESH_TOKEN;
-    if (!refreshToken) throw new Error("Missing API_REFRESH_TOKEN; cannot refresh.");
-    if (!env.OAUTH_CLIENT_ID || !env.OAUTH_CLIENT_SECRET) {
-      throw new Error("Missing OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET; cannot refresh.");
-    }
-
-    const tokenUrl = tokenEndpointFromBaseUrl(env.API_BASE_URL);
-    // Time Doctor docs show refresh without redirect_uri:
-    // `.../oauth/v2/token?client_id=...&client_secret=...&grant_type=refresh_token&refresh_token=...`
-    // In practice some providers parse query, some parse body; we send BOTH, then fall back to GET.
-    const params = new URLSearchParams();
-    params.set("client_id", env.OAUTH_CLIENT_ID);
-    params.set("client_secret", env.OAUTH_CLIENT_SECRET);
-    params.set("grant_type", "refresh_token");
-    params.set("refresh_token", refreshToken);
-
-    const postWithBodyAndQuery = async () => {
-      const u = new URL(tokenUrl);
-      for (const [k, v] of params.entries()) u.searchParams.set(k, v);
-      const res = await fetch(u.toString(), {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "alyson-hr/1.0",
-        },
-        body: params,
-        cache: "no-store",
-      });
-      const text = await res.text().catch(() => "");
-      return { res, text };
-    };
-
-    const getWithQuery = async () => {
-      const u = new URL(tokenUrl);
-      for (const [k, v] of params.entries()) u.searchParams.set(k, v);
-      const res = await fetch(u.toString(), {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "alyson-hr/1.0",
-        },
-        cache: "no-store",
-      });
-      const text = await res.text().catch(() => "");
-      return { res, text };
-    };
-
-    let { res, text } = await postWithBodyAndQuery();
-    if (!res.ok) ({ res, text } = await getWithQuery());
-
-    if (!res.ok) {
-      throw new Error(`OAuth refresh failed ${res.status} ${res.statusText}: ${text}`.slice(0, 2000));
-    }
-
-    const json = JSON.parse(text) as { access_token?: string; refresh_token?: string; expires_in?: number };
-    const newAccessToken = (json.access_token ?? "").trim();
-    if (!newAccessToken) throw new Error("OAuth refresh response missing access_token.");
-
-    tokenState.accessToken = newAccessToken;
-    if ((json.refresh_token ?? "").trim()) tokenState.refreshToken = (json.refresh_token ?? "").trim();
-    if (typeof json.expires_in === "number" && Number.isFinite(json.expires_in)) {
-      tokenState.expiresAtMs = Date.now() + Math.max(0, json.expires_in - 30) * 1000;
-    } else {
-      tokenState.expiresAtMs = Date.now() + 55 * 60 * 1000;
-    }
-    lastSuccessfulRefreshMs = Date.now();
-
-    return tokenState.accessToken;
-  })().finally(() => {
-    refreshInFlight = null;
-  });
-
-  return refreshInFlight;
+  return timeDoctorOAuthEnv();
 }
 
 async function upstreamFetch<T>(
   path: string,
   init?: RequestInit & { params?: Record<string, string | number | undefined>; auth?: "auto_refresh" | "access_only" },
 ): Promise<T> {
-  initTokensOnce();
   const env = timeDoctorEnv();
 
   const url = new URL(path.replace(/^\//, ""), env.API_BASE_URL.replace(/\/+$/, "") + "/");
@@ -1102,40 +954,36 @@ async function upstreamFetch<T>(
     });
   };
 
-  const canRefresh =
-    init?.auth !== "access_only" &&
-    !!env.API_REFRESH_TOKEN &&
-    !!env.OAUTH_CLIENT_ID &&
-    !!env.OAUTH_CLIENT_SECRET;
+  const canRefresh = init?.auth !== "access_only" && canConfigureTimeDoctorRefresh();
 
-  let token = tokenState.accessToken || env.API_ACCESS_TOKEN;
-
-  if (canRefresh && (shouldRefreshByAge() || shouldProactivelyRefresh() || !token)) {
-    try {
-      token = await refreshAccessToken();
-    } catch (refreshErr) {
-      if (!token) {
-        throw refreshErr instanceof Error ? refreshErr : new Error(String(refreshErr));
-      }
-    }
+  let token: string;
+  try {
+    token = await getValidAccessToken({ accessOnly: init?.auth === "access_only" });
+  } catch (e) {
+    throw e instanceof TimeDoctorAuthError ? e : new TimeDoctorAuthError(String(e));
   }
 
   let res = await doFetch(token);
   let text = await res.text().catch(() => "");
 
-  if (!res.ok && (res.status === 401 || res.status === 403)) {
-    if (canRefresh) {
-      try {
-        const newToken = await refreshAccessToken();
-        res = await doFetch(newToken);
-        text = await res.text().catch(() => "");
-      } catch (refreshErr) {
-        throw refreshErr instanceof Error ? refreshErr : new Error(String(refreshErr));
-      }
+  if (!res.ok && (res.status === 401 || res.status === 403) && canRefresh) {
+    try {
+      const newToken = await refreshTimeDoctorAccessToken();
+      res = await doFetch(newToken);
+      text = await res.text().catch(() => "");
+    } catch (refreshErr) {
+      throw refreshErr instanceof TimeDoctorAuthError
+        ? refreshErr
+        : new TimeDoctorAuthError(String(refreshErr));
     }
   }
 
-  if (!res.ok) throw new Error(`Upstream error ${res.status} ${res.statusText}: ${text}`.slice(0, 2000));
+  if (!res.ok) {
+    if ((res.status === 401 || res.status === 403) && canRefresh) {
+      throw new TimeDoctorAuthError(formatTimeDoctorAuthError(text || res.statusText));
+    }
+    throw new Error(`Upstream error ${res.status} ${res.statusText}: ${text}`.slice(0, 2000));
+  }
   try {
     return JSON.parse(text) as T;
   } catch {

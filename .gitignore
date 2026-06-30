@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.*
 .env.local
+.time-doctor-oauth-tokens.json
 *.json
 
 # build outputs

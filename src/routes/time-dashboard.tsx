@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
+import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
 
 export const Route = createFileRoute("/time-dashboard")({
@@ -305,7 +306,7 @@ function TimeDashboardPage() {
     if (table.error && !table.data) {
       return {
         tone: "error" as const,
-        text: table.error instanceof Error ? table.error.message : "Failed to load Time Doctor dashboard",
+        text: timeDoctorErrorBannerText(table.error, "Failed to load Time Doctor dashboard"),
       };
     }
     return null;
