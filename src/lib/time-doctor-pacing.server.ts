@@ -1,6 +1,7 @@
 import {
   loadPacingLeaveContext,
-  resolveDailyLeaveHoursForSample,
+  resolveDailyLeaveHoursForPacingSample,
+  resolveLeaveBreakdownForPacingEmployee,
   resolveLeaveBreakdownForEmployee,
   summarizeTeamLeavesForWeek,
   pacingLeaveHoursCredit,
@@ -203,15 +204,26 @@ export async function buildWeeklyPacingReport(args?: {
       const email = (u.email || "").trim();
       const name = (u.name || u.email || "").trim();
       const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
-      const leave = resolveLeaveBreakdownForEmployee(leaveCtx, {
+      const resolved = resolveRowActive(pacingCtx, {
+        employeeId: u.id,
+        email,
+        name,
+      });
+      const leaveArgs = {
         employeeId: u.id,
         email,
         team: meta.team,
         location: meta.location,
-      });
-      const dailyLeaveHours = resolveDailyLeaveHoursForSample(
+      };
+      const leave = resolveLeaveBreakdownForPacingEmployee(
         leaveCtx,
-        { employeeId: u.id, email, team: meta.team, location: meta.location },
+        resolved.active,
+        leaveArgs,
+      );
+      const dailyLeaveHours = resolveDailyLeaveHoursForPacingSample(
+        leaveCtx,
+        resolved.active,
+        leaveArgs,
         sampleDays,
       );
       const daySeconds = sampleDays.map((day) => {
@@ -237,11 +249,6 @@ export async function buildWeeklyPacingReport(args?: {
       });
       if (!row) return null;
       const withManager = { ...row, ...meta };
-      const resolved = resolveRowActive(pacingCtx, {
-        employeeId: withManager.id,
-        email: withManager.email,
-        name: withManager.name,
-      });
       return {
         ...withManager,
         active: resolved.active,
@@ -347,15 +354,26 @@ export async function buildMonthlyPacingReport(args?: {
       const email = (u.email || "").trim();
       const name = (u.name || u.email || "").trim();
       const meta = attachManagerToPacingRow({ email, name }, rosterLookup);
-      const leave = resolveLeaveBreakdownForEmployee(leaveCtx, {
+      const resolved = resolveRowActive(pacingCtx, {
+        employeeId: u.id,
+        email,
+        name,
+      });
+      const leaveArgs = {
         employeeId: u.id,
         email,
         team: meta.team,
         location: meta.location,
-      });
-      const dailyLeaveHours = resolveDailyLeaveHoursForSample(
+      };
+      const leave = resolveLeaveBreakdownForPacingEmployee(
         leaveCtx,
-        { employeeId: u.id, email, team: meta.team, location: meta.location },
+        resolved.active,
+        leaveArgs,
+      );
+      const dailyLeaveHours = resolveDailyLeaveHoursForPacingSample(
+        leaveCtx,
+        resolved.active,
+        leaveArgs,
         sampleDays,
       );
       const daySeconds = sampleDays.map((day) => {
@@ -380,11 +398,6 @@ export async function buildMonthlyPacingReport(args?: {
       });
       if (!row) return null;
       const withManager = { ...row, ...meta };
-      const resolved = resolveRowActive(pacingCtx, {
-        employeeId: withManager.id,
-        email: withManager.email,
-        name: withManager.name,
-      });
       return {
         ...withManager,
         active: resolved.active,

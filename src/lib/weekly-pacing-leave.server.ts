@@ -29,6 +29,12 @@ export type EmployeeLeaveBreakdown = {
   leaveDaysTeam: number;
 };
 
+export const ZERO_LEAVE_BREAKDOWN: EmployeeLeaveBreakdown = {
+  leaveDays: 0,
+  leaveDaysPersonal: 0,
+  leaveDaysTeam: 0,
+};
+
 export type PacingLeaveContext = {
   lookup: LeaveDaysLookup;
   teamLeaves: TeamLeaveEvent[];
@@ -146,6 +152,21 @@ export function resolveLeaveBreakdownForEmployee(
   return leaveBreakdownForEmployee(ctx, args);
 }
 
+/** Skip leave credit for inactive / former employees on pacing reports. */
+export function resolveLeaveBreakdownForPacingEmployee(
+  ctx: PacingLeaveContext,
+  active: boolean,
+  args: {
+    employeeId: string;
+    email: string;
+    team?: string | null;
+    location?: string | null;
+  },
+): EmployeeLeaveBreakdown {
+  if (!active) return ZERO_LEAVE_BREAKDOWN;
+  return leaveBreakdownForEmployee(ctx, args);
+}
+
 function isWeekdayOnLeave(ranges: LeaveDateRange[], day: string): boolean {
   if (!isWeekdayIso(day)) return false;
   return ranges.some((r) => day >= r.startDate && day <= r.endDate);
@@ -173,6 +194,22 @@ export function resolveDailyLeaveHoursForSample(
   return sampleDays.map((day) =>
     isWeekdayOnLeave(allRanges, day) ? PACING_LEAVE_HOURS_PER_DAY : 0,
   );
+}
+
+/** Skip daily leave sample credit for inactive / former employees. */
+export function resolveDailyLeaveHoursForPacingSample(
+  ctx: PacingLeaveContext,
+  active: boolean,
+  args: {
+    employeeId: string;
+    email: string;
+    team?: string | null;
+    location?: string | null;
+  },
+  sampleDays: string[],
+): number[] {
+  if (!active) return sampleDays.map(() => 0);
+  return resolveDailyLeaveHoursForSample(ctx, args, sampleDays);
 }
 
 /** @deprecated Use resolveLeaveBreakdownForEmployee */
