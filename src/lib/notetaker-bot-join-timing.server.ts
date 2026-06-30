@@ -5,6 +5,18 @@ import type { CalendarMeetingRef } from "@/lib/notetaker-bot-join-report.types";
 export const MAX_PLAUSIBLE_EARLY_SECONDS = 20 * 60;
 export const LATE_GRACE_SECONDS = 2 * 60;
 
+/** Matches resolvePlannedCalendarJoinAt MIN_SCHEDULE_AHEAD_MS — Recall honors join_at only when this far ahead. */
+export const DEFERRED_BOT_JOIN_MIN_AHEAD_MS = 90 * 1000;
+
+/** True when join_at is far enough ahead that Recall should create the bot (Notetaker may join immediately). */
+export function isDeferredBotJoin(
+  botJoinAt: string,
+  minAheadMs: number = DEFERRED_BOT_JOIN_MIN_AHEAD_MS,
+): boolean {
+  const joinMs = new Date(botJoinAt).getTime();
+  return Number.isFinite(joinMs) && joinMs > Date.now() + minAheadMs;
+}
+
 function secondsBetween(startIso: string, endIso: string): number | null {
   const a = Date.parse(startIso);
   const b = Date.parse(endIso);

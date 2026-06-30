@@ -1,7 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarClock, CalendarDays, ChevronDown, Link2, RefreshCw, Unplug } from "lucide-react";
+import { CalendarDays, Link2, RefreshCw, Unplug } from "lucide-react";
+
+/** Temporarily disabled — bots enter waiting room early and transcripts are unreliable. Use Sync now. */
+const SMART_SCHEDULE_ENABLED = false;
 import { PageHeader } from "@/components/AppShell";
 import { toast } from "sonner";
 
@@ -208,7 +211,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="View workspace meetings below. Use Smart schedule (pick meetings) or Sync now (all pending) on your connected calendar."
+        description="View workspace meetings below. Use Sync now on your connected calendar to reserve bots for pending meetings."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -241,18 +244,6 @@ export function UnifiedMeetingsPage() {
           connected={calendarQ.data?.connected ?? []}
           bulkScheduledByCalendar={bulkScheduledByCalendar}
           onSync={(args) => calendarActionM.mutate({ action: "sync", ...args })}
-          onScheduleSelected={async (calendarId, eventIds) => {
-            const json = await calendarActionM.mutateAsync({
-              action: "sync",
-              calendarId,
-              eventIds,
-            });
-            const sync = json.sync as { scheduled?: number; scheduledEventIds?: string[] } | undefined;
-            return {
-              scheduledCount: sync?.scheduled ?? 0,
-              scheduledEventIds: sync?.scheduledEventIds ?? [],
-            };
-          }}
           onDisconnect={(calendarId) => calendarActionM.mutate({ action: "disconnect", calendarId })}
           busy={calendarActionM.isPending}
         />
@@ -357,7 +348,6 @@ function RecallCalendarPanel({
   connected,
   bulkScheduledByCalendar,
   onSync,
-  onScheduleSelected,
   onDisconnect,
   busy,
 }: {
@@ -369,10 +359,6 @@ function RecallCalendarPanel({
   connected: RecallCalendarConnection[];
   bulkScheduledByCalendar: Record<string, string[]>;
   onSync: (args: { calendarId: string; eventIds?: string[]; scheduleAll?: boolean; maxNewBots?: number }) => void;
-  onScheduleSelected: (
-    calendarId: string,
-    eventIds: string[],
-  ) => Promise<{ scheduledCount: number; scheduledEventIds: string[] }>;
   onDisconnect: (calendarId: string) => void;
   busy: boolean;
 }) {
@@ -390,10 +376,14 @@ function RecallCalendarPanel({
           <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Connect Google Calendar once for{" "}
-            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>. Use{" "}
-            <span className="text-foreground font-medium">Smart schedule</span> picks specific meetings;{" "}
+            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>.{" "}
             <span className="text-foreground font-medium">Sync now</span> reserves bots for all pending upcoming
             meetings. Each bot joins ~2 min before start.
+            {!SMART_SCHEDULE_ENABLED ? (
+              <span className="block mt-1 text-amber-700 dark:text-amber-300">
+                Smart schedule (pick specific meetings) is temporarily disabled.
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -437,7 +427,6 @@ function RecallCalendarPanel({
           bulkScheduledIds={bulkScheduledByCalendar[c.recallCalendarId] ?? []}
           busy={busy}
           onSync={onSync}
-          onScheduleSelected={onScheduleSelected}
           onDisconnect={onDisconnect}
         />
       ))}
@@ -450,77 +439,27 @@ function RecallCalendarConnectionRow({
   bulkScheduledIds,
   busy,
   onSync,
-  onScheduleSelected,
   onDisconnect,
 }: {
   connection: RecallCalendarConnection;
   bulkScheduledIds: string[];
   busy: boolean;
   onSync: (args: { calendarId: string; eventIds?: string[]; scheduleAll?: boolean; maxNewBots?: number }) => void;
-  onScheduleSelected: (
-    calendarId: string,
-    eventIds: string[],
-  ) => Promise<{ scheduledCount: number; scheduledEventIds: string[] }>;
   onDisconnect: (calendarId: string) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [userScheduledIds, setUserScheduledIds] = useState<Set<string>>(() => new Set());
-  const [scheduling, setScheduling] = useState(false);
   const pending = c.pending;
   const allMeetings = pending?.events ?? [];
   const bulkScheduledSet = useMemo(() => new Set(bulkScheduledIds), [bulkScheduledIds]);
   const meetingRow = (eventId: string) => allMeetings.find((m) => m.eventId === eventId);
 
-  /** Persisted in S3 (recall calendar event id) or just scheduled this session. */
   const isScheduled = (eventId: string) => {
-    if (userScheduledIds.has(eventId) || bulkScheduledSet.has(eventId)) return true;
+    if (bulkScheduledSet.has(eventId)) return true;
     return Boolean(meetingRow(eventId)?.scheduledInApp);
   };
 
   const pendingCount = allMeetings.filter(
     (e) => !isScheduled(e.eventId) && !isMeetingOver(e.startTime, e.endTime),
   ).length;
-
-  const closeMenu = () => {
-    setMenuOpen(false);
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelect = (eventId: string) => {
-    const row = meetingRow(eventId);
-    if (isScheduled(eventId)) return;
-    if (row && isMeetingOver(row.startTime, row.endTime)) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(eventId)) next.delete(eventId);
-      else next.add(eventId);
-      return next;
-    });
-  };
-
-  const scheduleSelected = async () => {
-    const ids = [...selectedIds];
-    if (!ids.length || scheduling) return;
-    setScheduling(true);
-    try {
-      const { scheduledEventIds } = await onScheduleSelected(c.recallCalendarId, ids);
-      if (scheduledEventIds.length) {
-        setUserScheduledIds((prev) => {
-          const next = new Set(prev);
-          for (const id of scheduledEventIds) next.add(id);
-          return next;
-        });
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          for (const id of scheduledEventIds) next.delete(id);
-          return next;
-        });
-      }
-    } finally {
-      setScheduling(false);
-    }
-  };
 
   return (
     <div className="rounded-md border border-border px-3 py-2 space-y-2">
@@ -530,7 +469,7 @@ function RecallCalendarConnectionRow({
           <div className="text-[11px] text-muted-foreground font-mono">{c.recallCalendarId}</div>
           {pending && (
             <div className="text-[11px] text-muted-foreground mt-0.5">
-              {allMeetings.length} upcoming · {pendingCount} pending in Smart schedule
+              {allMeetings.length} upcoming · {pendingCount} pending (use Sync now)
             </div>
           )}
           {c.lastSyncSummary && (
@@ -541,114 +480,6 @@ function RecallCalendarConnectionRow({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setMenuOpen((v) => !v)}
-              className="h-7 px-2.5 rounded-md border border-primary/40 bg-primary/10 text-[11px] font-medium inline-flex items-center gap-1 disabled:opacity-50"
-              title="Check meetings, then Schedule selected"
-            >
-              <CalendarClock className="h-3 w-3" />
-              Smart schedule
-              {pendingCount > 0 ? (
-                <span className="min-w-[1.25rem] h-4 px-1 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] inline-flex items-center justify-center">
-                  {pendingCount}
-                </span>
-              ) : null}
-              <ChevronDown className="h-3 w-3" />
-            </button>
-            {menuOpen && (
-              <>
-                <button
-                  type="button"
-                  className="fixed inset-0 z-10 cursor-default"
-                  aria-label="Close smart schedule menu"
-                  onClick={closeMenu}
-                />
-                <div className="absolute right-0 top-full mt-1 z-20 w-[min(100vw-2rem,380px)] rounded-md border border-border bg-background shadow-lg text-[11px] flex flex-col max-h-[min(70vh,420px)]">
-                  <div className="px-3 py-2 border-b border-border shrink-0">
-                    <div className="font-medium text-[12px]">Smart schedule</div>
-                    <p className="text-muted-foreground leading-relaxed mt-1">
-                      Check pending meetings, then Schedule selected. Scheduled status is saved in S3 with join time
-                      (~2 min before start).
-                    </p>
-                  </div>
-
-                  <div className="overflow-y-auto flex-1 py-1">
-                    {allMeetings.length === 0 ? (
-                      <div className="px-3 py-4 text-muted-foreground">
-                        No upcoming meetings. Click Sync now to refresh the list from Google Calendar.
-                      </div>
-                    ) : (
-                      allMeetings.map((e) => {
-                        const scheduled = isScheduled(e.eventId);
-                        const isSelected = selectedIds.has(e.eventId);
-                        const meetingOver = isMeetingOver(e.startTime, e.endTime);
-                        const rowDisabled = scheduled || meetingOver || busy || scheduling;
-                        return (
-                          <label
-                            key={e.eventId}
-                            className={`flex items-start gap-2 px-3 py-2 hover:bg-muted/40 ${rowDisabled && !isSelected ? "opacity-60" : "cursor-pointer"}`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-0.5 shrink-0"
-                              checked={isSelected}
-                              disabled={rowDisabled}
-                              onChange={() => toggleSelect(e.eventId)}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-medium truncate">{e.title}</span>
-                                {scheduled ? (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px]">
-                                    Scheduled
-                                  </span>
-                                ) : meetingOver ? (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-red-500/10 text-red-700 dark:text-red-300 text-[10px]">
-                                    Meeting over
-                                  </span>
-                                ) : (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-[10px]">
-                                    Pending
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-muted-foreground mt-0.5">Starts {fmt(e.startTime)}</div>
-                              {scheduled && e.botJoinAt ? (
-                                <div className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 mt-0.5">
-                                  Bot joins {fmt(e.botJoinAt)}
-                                </div>
-                              ) : null}
-                              {meetingOver && !scheduled ? (
-                                <div className="text-[10px] text-red-600/80 dark:text-red-400/80 mt-0.5">
-                                  Past meeting time — cannot schedule
-                                </div>
-                              ) : null}
-                            </div>
-                          </label>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div className="px-3 py-2 border-t border-border shrink-0">
-                    <button
-                      type="button"
-                      disabled={selectedIds.size === 0 || busy || scheduling}
-                      className="w-full h-7 rounded-md bg-foreground text-background text-[11px] font-medium disabled:opacity-40"
-                      onClick={() => void scheduleSelected()}
-                    >
-                      {scheduling
-                        ? "Scheduling…"
-                        : `Schedule selected (${selectedIds.size} meeting${selectedIds.size === 1 ? "" : "s"})`}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
           <button
             type="button"
             disabled={busy}

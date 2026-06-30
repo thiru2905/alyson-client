@@ -33,11 +33,20 @@ export const Route = createFileRoute("/api/recall/calendar/status")({
             return Response.json({ ok: true, ...r });
           }
           if (body.action === "sync" && body.calendarId) {
+            // Smart schedule (pick specific meetings) temporarily disabled — waiting-room / transcript issues.
+            if (body.eventIds?.length) {
+              return Response.json(
+                {
+                  ok: false,
+                  error:
+                    "Smart schedule is temporarily disabled. Use Sync now to reserve bots for all pending meetings.",
+                },
+                { status: 503 },
+              );
+            }
             const sync = await syncRecallCalendarNow(body.calendarId, {
-              eventIds: body.eventIds,
               scheduleAll: body.scheduleAll,
               maxNewBots: body.maxNewBots,
-              refreshBotConfig: Boolean(body.eventIds?.length),
             });
             return Response.json({ ok: true, sync });
           }
