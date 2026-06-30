@@ -1,5 +1,6 @@
 const DEFAULT_ALLOWED = [
   "alysonclient@cintara.ai",
+  "notetaker@cintara.ai",
   "mohita@cintara.ai",
   "thirumalai@cintara.ai",
   "vinit@cintara.ai",

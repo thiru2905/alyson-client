@@ -366,7 +366,7 @@ function RecallCalendarPanel({
   const allowedEmails =
     allowlist?.length
       ? allowlist
-      : ["alysonclient@cintara.ai", "mohita@cintara.ai", "thirumalai@cintara.ai", "vinit@cintara.ai"];
+      : ["alysonclient@cintara.ai", "notetaker@cintara.ai", "mohita@cintara.ai", "thirumalai@cintara.ai", "vinit@cintara.ai"];
 
   return (
     <div className="surface-card p-4 space-y-3">
