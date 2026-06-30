@@ -1,3 +1,4 @@
+import { isDeferredBotJoin } from "@/lib/notetaker-bot-join-timing.server";
 import {
   patchRecallBotRecordingConfig,
   recallBotRecordingConfig,
@@ -104,7 +105,7 @@ export async function linkBotToNotetakerSession(args: BotSessionLinkArgs): Promi
     console.warn(`[notetaker-dispatch] register-bot unreachable for ${botId}:`, e);
   }
 
-  if (!registered) {
+  if (!registered && !isDeferredBotJoin(args.botJoinAt)) {
     try {
       const res = await notetakerGet(`/api/session/${encodeURIComponent(botId)}`);
       if (!res.ok) {
@@ -228,7 +229,7 @@ export async function cancelScheduledRecallBot(botId: string): Promise<void> {
 
 /**
  * Create a Recall bot with live transcript pipeline.
- * Always prefers Notetaker `/api/create-bot` (including future join_at) so sessions + webhooks register correctly.
+ * Deferred joins (>~90s): Recall first (honors join_at). Near-term: Notetaker first (transcripts).
  */
 export async function dispatchBotWithLiveTranscripts(args: {
   meetingUrl: string;
@@ -283,6 +284,22 @@ export async function dispatchBotWithLiveTranscripts(args: {
     });
     return { botId, creationSource: "notetaker_managed" as const };
   };
+
+  const deferredJoin = isDeferredBotJoin(args.botJoinAt);
+
+  if (deferredJoin) {
+    try {
+      return await recallDispatch();
+    } catch (recallErr) {
+      try {
+        return await notetakerDispatch();
+      } catch (notetakerErr) {
+        const rc = recallErr instanceof Error ? recallErr.message : String(recallErr);
+        const nt = notetakerErr instanceof Error ? notetakerErr.message : String(notetakerErr);
+        throw new Error(`Recall (deferred): ${rc}; Notetaker fallback: ${nt}`);
+      }
+    }
+  }
 
   try {
     return await notetakerDispatch();
