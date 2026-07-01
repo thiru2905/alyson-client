@@ -3,11 +3,18 @@ import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { dispatchBotWithLiveTranscripts, ensureBotTranscriptPipeline } from "@/lib/notetaker-bot-dispatch.server";
+import {
+  abortMeetingBotReservation,
+  commitMeetingBotReservation,
+  meetingInstanceDedupeKey,
+  resolveOrReserveMeetingBot,
+} from "@/lib/meeting-bot-reserve.server";
 import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { unifiedScheduledStatusForUi } from "@/lib/unified-scheduled-lifecycle.server";
 import {
   readUnifiedScheduledStateFromS3,
+  mutateUnifiedScheduledStateInS3,
   unifiedScheduledStateUsesS3,
   writeUnifiedScheduledStateToS3,
   type UnifiedScheduledStateEntry,
@@ -415,7 +422,7 @@ export async function listAllUnifiedScheduledBotSessions(): Promise<UnifiedSched
 }
 
 function dedupeKey(meetingUrl: string, startTime: string): string {
-  return `${meetingUrl}|${startTime}`;
+  return meetingInstanceDedupeKey(meetingUrl, startTime);
 }
 
 // Legacy key included calendar user; keep for backward compatibility
@@ -610,17 +617,100 @@ async function scheduleMeetingInternal(
     };
   }
 
-  const state = await readState();
   const key = dedupeKey(meeting.meetingUrl, meeting.startTime);
   const legacyKey = dedupeKeyLegacy(meeting.meetingUrl, meeting.startTime, meeting.calendarUserEmail);
+  const catalogTitle = buildUnifiedTitle(meeting.title, meeting.startTime);
+
+  const state = await readState();
   const existingIdx = state.scheduled.findIndex(
     (s) => s.dedupeKey === key || s.dedupeKey === legacyKey,
   );
-
-  const priorJoinPassed = existingIdx >= 0 && new Date(state.scheduled[existingIdx]!.botJoinAt).getTime() < Date.now() - 60_000;
+  const priorJoinPassed =
+    existingIdx >= 0 && new Date(state.scheduled[existingIdx]!.botJoinAt).getTime() < Date.now() - 60_000;
   const inWindow = resolvePlannedCalendarJoinAt(meeting.startTime, meeting.endTime, joinOffsetMs) != null;
   const shouldRedispatch =
     Boolean(options?.forceRedispatch) || (existingIdx >= 0 && inWindow && priorJoinPassed);
+
+  const buildEntry = (botId: string, creationSource: StateEntry["creationSource"]): StateEntry => ({
+    dedupeKey: key,
+    googleEventId: meeting.googleEventId,
+    iCalUID: meeting.iCalUID,
+    calendarUserEmail: meeting.calendarUserEmail,
+    title: catalogTitle,
+    meetingUrl: meeting.meetingUrl!,
+    startTime: meeting.startTime,
+    endTime: meeting.endTime,
+    botJoinAt: joinAt,
+    recallBotId: botId,
+    creationSource,
+    scheduledAt: nowIso(),
+    lastStatusAt: nowIso(),
+    transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
+    status: "scheduled",
+  });
+
+  if (unifiedScheduledStateUsesS3()) {
+    if (shouldRedispatch) {
+      await mutateUnifiedScheduledStateInS3((s) => ({
+        state: {
+          ...s,
+          scheduled: s.scheduled.filter((row) => row.dedupeKey !== key && row.dedupeKey !== legacyKey),
+        },
+        value: true,
+      }));
+    }
+
+    const reservation = await resolveOrReserveMeetingBot({
+      dedupeKey: key,
+      buildPlaceholder: () => ({
+        ...buildEntry("pending", "notetaker_managed"),
+        recallBotId: "pending",
+      }),
+    });
+
+    if (reservation.kind === "existing") {
+      if (!shouldRedispatch) {
+        await ensureBotTranscriptPipeline({
+          botId: reservation.botId,
+          title: catalogTitle,
+          meetingUrl: meeting.meetingUrl!,
+          botJoinAt: reservation.entry.botJoinAt || joinAt,
+          metadata: { source: "unified_meetings", google_event_id: meeting.googleEventId },
+        });
+        return { scheduled: false, error: "Already scheduled (dedupe). Bot id is stored in S3 state." };
+      }
+      return {
+        scheduled: false,
+        error: "Could not re-dispatch — another sync just scheduled a bot for this meeting",
+      };
+    }
+
+    try {
+      const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes);
+      await commitMeetingBotReservation({
+        dedupeKey: key,
+        slotId: reservation.slotId,
+        botId,
+        entry: buildEntry(botId, creationSource),
+      });
+      await registerScheduledBotInSessionsCatalog({
+        botId,
+        title: catalogTitle,
+        meetingUrl: meeting.meetingUrl,
+        createdAt: nowIso(),
+        status: "scheduled",
+      });
+      return {
+        scheduled: true,
+        redispatched: shouldRedispatch && existingIdx >= 0,
+        botJoinAt: joinAt,
+      };
+    } catch (e) {
+      await abortMeetingBotReservation({ dedupeKey: key, slotId: reservation.slotId }).catch(() => {});
+      const message = e instanceof Error ? e.message : "Failed to schedule bot";
+      return { scheduled: false, error: message };
+    }
+  }
 
   if (existingIdx >= 0 && !shouldRedispatch) {
     const existing = state.scheduled[existingIdx]!;

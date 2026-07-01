@@ -121,21 +121,32 @@ async function ensureBucketExists(bucket: string) {
 }
 
 export async function readUnifiedScheduledStateFromS3(): Promise<UnifiedScheduledState> {
+  const { state } = await readUnifiedScheduledStateFromS3WithEtag();
+  return state;
+}
+
+export async function readUnifiedScheduledStateFromS3WithEtag(): Promise<{
+  state: UnifiedScheduledState;
+  etag: string | null;
+}> {
   const bucket = bucketName();
   const client = s3();
   try {
     const r = await client.send(new GetObjectCommand({ Bucket: bucket, Key: STATE_KEY }));
-    if (!r.Body) return emptyState();
+    if (!r.Body) return { state: emptyState(), etag: r.ETag ?? null };
     const parsed = JSON.parse(await streamToString(r.Body)) as UnifiedScheduledState;
-    return normalizeState(parsed);
+    return { state: normalizeState(parsed), etag: r.ETag ?? null };
   } catch (e: unknown) {
     const code = (e as { name?: string })?.name;
-    if (code === "NoSuchKey" || code === "NotFound") return emptyState();
+    if (code === "NoSuchKey" || code === "NotFound") return { state: emptyState(), etag: null };
     throw e;
   }
 }
 
-export async function writeUnifiedScheduledStateToS3(state: UnifiedScheduledState): Promise<void> {
+export async function writeUnifiedScheduledStateToS3(
+  state: UnifiedScheduledState,
+  opts?: { ifMatch?: string | null },
+): Promise<void> {
   const bucket = bucketName();
   await ensureBucketExists(bucket);
   const body: UnifiedScheduledState = {
@@ -150,8 +161,33 @@ export async function writeUnifiedScheduledStateToS3(state: UnifiedScheduledStat
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
       Metadata: { kind: "alyson-unified-scheduled-state" },
+      ...(opts?.ifMatch ? { IfMatch: opts.ifMatch } : {}),
     }),
   );
+}
+
+function isPreconditionFailed(err: unknown): boolean {
+  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+  return e?.name === "PreconditionFailed" || e?.$metadata?.httpStatusCode === 412;
+}
+
+/** Optimistic concurrency for unified schedule index — prevents duplicate bot dispatch races. */
+export async function mutateUnifiedScheduledStateInS3<T>(
+  mutate: (state: UnifiedScheduledState) => { state: UnifiedScheduledState; value: T },
+  maxAttempts = 8,
+): Promise<T> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { state, etag } = await readUnifiedScheduledStateFromS3WithEtag();
+    const { state: next, value } = mutate(state);
+    try {
+      await writeUnifiedScheduledStateToS3(next, etag ? { ifMatch: etag } : undefined);
+      return value;
+    } catch (err) {
+      if (isPreconditionFailed(err) && attempt < maxAttempts - 1) continue;
+      throw err;
+    }
+  }
+  throw new Error("Failed to update unified scheduled state after concurrent writes");
 }
 
 function emptyState(): UnifiedScheduledState {

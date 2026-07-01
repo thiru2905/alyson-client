@@ -3,11 +3,17 @@ import { resolvePlannedCalendarJoinAt } from "@/lib/unifiedMeetingsService";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import {
   readUnifiedScheduledStateFromS3,
-  writeUnifiedScheduledStateToS3,
   unifiedScheduledStateUsesS3,
   type UnifiedScheduledStateEntry,
 } from "@/lib/unified-scheduled-s3.server";
-import { cancelScheduledRecallBot, dispatchBotWithLiveTranscripts, ensureBotTranscriptPipeline } from "@/lib/notetaker-bot-dispatch.server";
+import { dispatchBotWithLiveTranscripts, ensureBotTranscriptPipeline } from "@/lib/notetaker-bot-dispatch.server";
+import {
+  abortMeetingBotReservation,
+  commitMeetingBotReservation,
+  isReservingBotId,
+  meetingInstanceDedupeKey,
+  resolveOrReserveMeetingBot,
+} from "@/lib/meeting-bot-reserve.server";
 import {
   eventTitleFromRaw,
   listAllRecallCalendarEvents,
@@ -37,14 +43,9 @@ export function recallCalendarDedupeKey(event: RecallCalendarEvent): string {
   return `${start}-${url}`;
 }
 
-function normalizeIsoForDedupe(iso: string): string {
-  const ms = new Date(iso).getTime();
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : String(iso).trim();
-}
-
-/** Same key format as unifiedMeetingsService (url|start). */
+/** Same key format as unifiedMeetingsService (url|start). One bot per meeting instance. */
 export function unifiedScheduleDedupeKey(meetingUrl: string, startTime: string): string {
-  return `${String(meetingUrl).trim()}|${normalizeIsoForDedupe(startTime)}`;
+  return meetingInstanceDedupeKey(meetingUrl, startTime);
 }
 
 function findActiveScheduledRowForEvent(
@@ -59,9 +60,18 @@ function findActiveScheduledRowForEvent(
     (row) =>
       row.dedupeKey === dedupeKey &&
       isActiveUnifiedScheduledStatus(row.status) &&
-      Boolean(row.recallBotId),
+      Boolean(row.recallBotId) &&
+      !isReservingBotId(row.recallBotId),
   );
   if (byMeeting) return byMeeting;
+
+  const inFlight = scheduledRows.find(
+    (row) =>
+      row.dedupeKey === dedupeKey &&
+      isActiveUnifiedScheduledStatus(row.status) &&
+      isReservingBotId(row.recallBotId),
+  );
+  if (inFlight) return inFlight;
 
   return scheduledRows.find(
     (row) =>
@@ -78,51 +88,9 @@ export function shouldAutoScheduleRecallEvent(event: RecallCalendarEvent): boole
   return Boolean(joinAt);
 }
 
-async function persistScheduledBot(
-  event: RecallCalendarEvent,
-  botId: string,
-  joinAt: string,
-  creationSource: "notetaker_managed" | "direct_recall_fallback" | "recall_calendar_v2",
-) {
-  const title = eventTitleFromRaw(event);
-  await registerScheduledBotInSessionsCatalog({
-    botId,
-    title,
-    meetingUrl: event.meeting_url || undefined,
-    createdAt: new Date().toISOString(),
-    status: "scheduled",
-  });
-
-  if (!unifiedScheduledStateUsesS3()) return;
-  const key = unifiedScheduleDedupeKey(String(event.meeting_url), event.start_time);
-  const state = await readUnifiedScheduledStateFromS3();
-  const entry: UnifiedScheduledStateEntry = {
-    dedupeKey: key,
-    googleEventId: event.platform_id || event.id,
-    iCalUID: event.ical_uid,
-    calendarUserEmail: "",
-    title,
-    meetingUrl: String(event.meeting_url),
-    startTime: event.start_time,
-    endTime: event.end_time,
-    botJoinAt: joinAt,
-    recallBotId: botId,
-    recallCalendarEventId: event.id,
-    creationSource,
-    scheduledAt: new Date().toISOString(),
-    lastStatusAt: new Date().toISOString(),
-    transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
-    status: "scheduled",
-  };
-  const idx = state.scheduled.findIndex((s) => s.dedupeKey === key);
-  if (idx >= 0) state.scheduled[idx] = entry;
-  else state.scheduled.push(entry);
-  await writeUnifiedScheduledStateToS3(state);
-}
-
 export async function processRecallCalendarEvent(
   event: RecallCalendarEvent,
-  options?: { refreshBotConfig?: boolean },
+  _options?: { refreshBotConfig?: boolean },
 ): Promise<{
   action: "scheduled" | "skipped" | "deleted" | "refreshed";
   botId?: string;
@@ -144,31 +112,75 @@ export async function processRecallCalendarEvent(
   }
 
   const hadRecallCalendarBot = Boolean(event.bots?.length);
-  const shouldRefreshConfig = options?.refreshBotConfig !== false;
+  const title = eventTitleFromRaw(event);
+  const meetingUrl = String(event.meeting_url);
+  const dedupe = unifiedScheduleDedupeKey(meetingUrl, event.start_time);
 
-  let scheduledState: Awaited<ReturnType<typeof readUnifiedScheduledStateFromS3>> | null = null;
-  let existingRow: UnifiedScheduledStateEntry | undefined;
-  if (unifiedScheduledStateUsesS3()) {
-    scheduledState = await readUnifiedScheduledStateFromS3();
-    existingRow = findActiveScheduledRowForEvent(scheduledState.scheduled, event);
-  }
-  const existingBotId = existingRow?.recallBotId;
-  const reservedForAnotherCalendar =
-    Boolean(existingRow) && existingRow?.recallCalendarEventId !== event.id;
-
-  if (existingBotId && !shouldRefreshConfig) {
-    const title = eventTitleFromRaw(event);
-    if (hadRecallCalendarBot) {
-      try {
-        await removeBotFromRecallCalendarEvent(event.id);
-      } catch {
-        // Non-fatal — avoid a second Recall-native bot on this duplicate invite.
-      }
+  if (hadRecallCalendarBot) {
+    try {
+      await removeBotFromRecallCalendarEvent(event.id);
+    } catch {
+      // Drop Recall-native calendar bots — we manage one bot per meeting in app state.
     }
-    await ensureBotTranscriptPipeline({
-      botId: existingBotId,
+  }
+
+  if (!unifiedScheduledStateUsesS3()) {
+    const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
+      meetingUrl,
+      botJoinAt: joinAt,
       title,
-      meetingUrl: String(event.meeting_url),
+      joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
+      metadata: {
+        source: "recall_calendar_v2",
+        recall_calendar_event_id: event.id,
+        recall_calendar_id: event.calendar_id,
+        ical_uid: event.ical_uid,
+        meeting_url: event.meeting_url,
+        meeting_start_time: event.start_time,
+        meeting_end_time: event.end_time,
+        summary: title,
+      },
+    });
+    await registerScheduledBotInSessionsCatalog({
+      botId,
+      title,
+      meetingUrl,
+      createdAt: new Date().toISOString(),
+      status: "scheduled",
+    });
+    return {
+      action: "scheduled",
+      botId,
+      reason: `Reserved via ${creationSource} — joins at ${joinAt}`,
+    };
+  }
+
+  const reservation = await resolveOrReserveMeetingBot({
+    dedupeKey: dedupe,
+    buildPlaceholder: () => ({
+      dedupeKey: dedupe,
+      googleEventId: event.platform_id || event.id,
+      iCalUID: event.ical_uid || "",
+      calendarUserEmail: "",
+      title,
+      meetingUrl,
+      startTime: event.start_time,
+      endTime: event.end_time,
+      botJoinAt: joinAt,
+      recallBotId: "",
+      recallCalendarEventId: event.id,
+      scheduledAt: new Date().toISOString(),
+      lastStatusAt: new Date().toISOString(),
+      transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
+      status: "scheduled",
+    }),
+  });
+
+  if (reservation.kind === "existing") {
+    await ensureBotTranscriptPipeline({
+      botId: reservation.botId,
+      title,
+      meetingUrl,
       botJoinAt: joinAt,
       metadata: {
         source: "recall_calendar_v2",
@@ -178,71 +190,70 @@ export async function processRecallCalendarEvent(
     });
     return {
       action: "skipped",
-      reason: reservedForAnotherCalendar
-        ? "Bot already scheduled for this meeting link + start time (dedupe)"
-        : "Bot already scheduled — transcript pipeline verified",
+      botId: reservation.botId,
+      reason: "Bot already scheduled for this meeting link + start time (one bot per meeting)",
     };
   }
 
-  if (reservedForAnotherCalendar && existingBotId) {
-    if (hadRecallCalendarBot) {
-      try {
-        await removeBotFromRecallCalendarEvent(event.id);
-      } catch {
-        // ignore
-      }
-    }
+  try {
+    const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
+      meetingUrl,
+      botJoinAt: joinAt,
+      title,
+      joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
+      metadata: {
+        source: "recall_calendar_v2",
+        recall_calendar_event_id: event.id,
+        recall_calendar_id: event.calendar_id,
+        ical_uid: event.ical_uid,
+        meeting_url: event.meeting_url,
+        meeting_start_time: event.start_time,
+        meeting_end_time: event.end_time,
+        summary: title,
+      },
+    });
+
+    await commitMeetingBotReservation({
+      dedupeKey: dedupe,
+      slotId: reservation.slotId,
+      botId,
+      entry: {
+        dedupeKey: dedupe,
+        googleEventId: event.platform_id || event.id,
+        iCalUID: event.ical_uid || "",
+        calendarUserEmail: "",
+        title,
+        meetingUrl,
+        startTime: event.start_time,
+        endTime: event.end_time,
+        botJoinAt: joinAt,
+        recallBotId: botId,
+        recallCalendarEventId: event.id,
+        creationSource,
+        scheduledAt: new Date().toISOString(),
+        lastStatusAt: new Date().toISOString(),
+        transcriptWebhookUrl: resolveRecallTranscriptWebhookUrl(),
+        status: "scheduled",
+      },
+    });
+
+    await registerScheduledBotInSessionsCatalog({
+      botId,
+      title,
+      meetingUrl,
+      createdAt: new Date().toISOString(),
+      status: "scheduled",
+    });
+
     return {
-      action: "skipped",
-      botId: existingBotId,
-      reason: "Bot already scheduled for this meeting link + start time (dedupe)",
+      action: "scheduled",
+      botId,
+      reason: `Reserved via ${creationSource} — joins at ${joinAt}`,
     };
+  } catch (e) {
+    await abortMeetingBotReservation({ dedupeKey: dedupe, slotId: reservation.slotId }).catch(() => {});
+    throw e;
   }
-
-  // Drop Recall Calendar bots (often missing transcript webhooks) before re-creating via Notetaker.
-  if (hadRecallCalendarBot) {
-    try {
-      await removeBotFromRecallCalendarEvent(event.id);
-    } catch {
-      // Non-fatal — cancel individual bot ids below.
-    }
-  }
-  const priorBotIds = [
-    ...new Set(
-      [existingBotId, event.bots?.[0]?.bot_id].filter((id): id is string => Boolean(id?.trim())),
-    ),
-  ];
-  for (const priorId of priorBotIds) {
-    await cancelScheduledRecallBot(priorId);
-  }
-
-  const title = eventTitleFromRaw(event);
-  const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
-    meetingUrl: String(event.meeting_url),
-    botJoinAt: joinAt,
-    title,
-    joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
-    metadata: {
-      source: "recall_calendar_v2",
-      recall_calendar_event_id: event.id,
-      recall_calendar_id: event.calendar_id,
-      ical_uid: event.ical_uid,
-      meeting_url: event.meeting_url,
-      meeting_start_time: event.start_time,
-      meeting_end_time: event.end_time,
-      summary: title,
-    },
-  });
-
-  await persistScheduledBot(event, botId, joinAt, creationSource);
-  const replacedPriorBot = Boolean(existingBotId || hadRecallCalendarBot);
-  return {
-    action: replacedPriorBot ? "refreshed" : "scheduled",
-    botId,
-    reason: replacedPriorBot
-      ? `Re-scheduled via ${creationSource} — joins at ${joinAt}`
-      : `Reserved via ${creationSource} — joins at ${joinAt}`,
-  };
 }
 
 export type RecallCalendarSyncResult = {
