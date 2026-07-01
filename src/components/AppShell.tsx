@@ -1,10 +1,10 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
   Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send, Link2, Activity, Trophy,
-  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles, List,
+  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles, List, ChevronDown,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -77,6 +77,43 @@ const NAV: NavItem[] = [
 ];
 
 const ROLES: AppRole[] = ["super_admin", "ceo", "finance", "hr", "manager", "employee"];
+const SIDEBAR_COLLAPSED_KEY = "alyson-sidebar-collapsed";
+const NAV_GROUPS_COLLAPSED_KEY = "alyson-nav-groups-collapsed";
+const NAV_GROUPS = ["Workspace", "People", "Money", "Ops", "Admin"] as const;
+type NavGroup = (typeof NAV_GROUPS)[number];
+
+function readSidebarCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function readNavGroupsCollapsed(): Partial<Record<NavGroup, boolean>> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(NAV_GROUPS_COLLAPSED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<Record<NavGroup, boolean>>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistNavGroupsCollapsed(next: Partial<Record<NavGroup, boolean>>) {
+  try {
+    window.localStorage.setItem(NAV_GROUPS_COLLAPSED_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function isNavItemActive(pathname: string, item: NavItem): boolean {
+  return item.end ? pathname === item.to : pathname.startsWith(item.to);
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -91,11 +128,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [superAdminCode, setSuperAdminCode] = useState("");
   const [superAdminError, setSuperAdminError] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<AppRole | null>(null);
+  const [groupsCollapsed, setGroupsCollapsed] = useState<Partial<Record<NavGroup, boolean>>>({});
+  const prevPathRef = useRef<string | null>(null);
 
   const visible = NAV.filter((n) => !n.roles || hasAnyRole(n.roles));
-  const grouped = groupBy(visible, (n) => n.group);
+  const grouped = useMemo(() => groupBy(visible, (n) => n.group), [visible]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+
+  useEffect(() => {
+    setCollapsed(readSidebarCollapsed());
+    setGroupsCollapsed(readNavGroupsCollapsed());
+  }, []);
+
+  const toggleNavGroup = (group: NavGroup) => {
+    setGroupsCollapsed((prev) => {
+      const next = { ...prev, [group]: !(prev[group] ?? false) };
+      persistNavGroupsCollapsed(next);
+      return next;
+    });
+  };
+
+  // Expand the group for the new page only when the route changes (not when user collapses in place).
+  useEffect(() => {
+    const path = location.pathname;
+    if (prevPathRef.current === path) return;
+    prevPathRef.current = path;
+
+    setGroupsCollapsed((prev) => {
+      let next: Partial<Record<NavGroup, boolean>> | null = null;
+      for (const g of NAV_GROUPS) {
+        const items = grouped[g];
+        if (!items?.length) continue;
+        if (!items.some((item) => isNavItemActive(path, item))) continue;
+        if (!next) next = { ...prev };
+        next[g] = false;
+      }
+      if (next) persistNavGroupsCollapsed(next);
+      return next ?? prev;
+    });
+  }, [location.pathname, grouped]);
+
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -186,10 +270,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "shrink-0",
         ].join(" ")}
       >
-        <div className="px-3 pt-4 pb-3 border-b border-sidebar-border flex items-center gap-2.5">
+        <div
+          className={[
+            "px-3 pt-4 pb-3 border-b border-sidebar-border flex items-center gap-2.5",
+            collapsed && !mobileOpen ? "justify-center px-2" : "",
+          ].join(" ")}
+        >
           <Link
             to="/"
-            className="flex items-center gap-2.5 min-w-0 flex-1 rounded-md hover:bg-sidebar-accent/60 transition-colors px-1.5 py-1 -mx-1.5"
+            className={[
+              "flex items-center gap-2.5 min-w-0 rounded-md hover:bg-sidebar-accent/60 transition-colors px-1.5 py-1 -mx-1.5",
+              collapsed && !mobileOpen ? "justify-center mx-0 px-0" : "flex-1",
+            ].join(" ")}
             aria-label="Go to landing page"
           >
             {(!collapsed || mobileOpen) && (
@@ -214,46 +306,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 px-2 py-3 space-y-3 overflow-y-auto">
-          {(["Workspace", "People", "Money", "Ops", "Admin"] as const).map((g) => {
+          {NAV_GROUPS.map((g) => {
             const items = grouped[g];
             if (!items?.length) return null;
             const showLabel = !collapsed || mobileOpen;
+            const groupShut = Boolean(showLabel && groupsCollapsed[g]);
             return (
               <div key={g}>
-                {showLabel && (
-                  <div className="px-2 pb-1 text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-medium">{g}</div>
+                {showLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => toggleNavGroup(g)}
+                    aria-expanded={!groupShut}
+                    className="w-full flex items-center justify-between gap-2 px-2 pb-1 text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-medium rounded-md hover:bg-sidebar-accent/40 hover:text-foreground transition-colors"
+                  >
+                    <span>{g}</span>
+                    <ChevronDown
+                      className={[
+                        "h-3 w-3 shrink-0 transition-transform duration-200",
+                        groupShut ? "-rotate-90" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                ) : null}
+                {!groupShut && (
+                  <div className="space-y-0.5">
+                    {items.map((item) => {
+                      const active = isNavItemActive(location.pathname, item);
+                      const Icon = item.icon;
+                      const iconOnly = collapsed && !mobileOpen;
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to as "/"}
+                          title={iconOnly ? item.label : undefined}
+                          className={
+                            "flex items-center gap-2.5 py-1.5 rounded-md text-[13px] transition-colors " +
+                            (iconOnly ? "justify-center px-2" : "px-2") +
+                            (active
+                              ? " bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                              : " text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")
+                          }
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          {showLabel && (
+                            <span className="truncate flex items-center gap-2 min-w-0">
+                              <span className="truncate">{item.label}</span>
+                              {NEW_BADGE_ROUTES.has(item.to) && (
+                                <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300">
+                                  New
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 )}
-                <div className="space-y-0.5">
-                  {items.map((item) => {
-                    const active = item.end ? location.pathname === item.to : location.pathname.startsWith(item.to);
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.to}
-                        to={item.to as "/"}
-                        title={collapsed && !mobileOpen ? item.label : undefined}
-                        className={
-                          "flex items-center gap-2.5 px-2 py-1.5 rounded-md text-[13px] transition-colors " +
-                          (active
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                            : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")
-                        }
-                      >
-                        <Icon className="h-4 w-4 shrink-0" />
-                        {showLabel && (
-                          <span className="truncate flex items-center gap-2 min-w-0">
-                            <span className="truncate">{item.label}</span>
-                            {NEW_BADGE_ROUTES.has(item.to) && (
-                              <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300">
-                                New
-                              </span>
-                            )}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
               </div>
             );
           })}
@@ -290,14 +400,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          <div className="flex items-center gap-1">
+          <div className={["flex items-center gap-1", collapsed && !mobileOpen ? "justify-center" : ""].join(" ")}>
             <button onClick={toggle} title="Toggle theme" className="h-8 w-8 grid place-items-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground transition-colors">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-            <button onClick={() => setCollapsed((c) => !c)} title="Collapse" className="hidden md:grid h-8 w-8 place-items-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={toggleCollapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              className="hidden md:grid h-8 w-8 place-items-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground transition-colors"
+            >
               {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
             </button>
-            <button onClick={signOut} title="Sign out" className="h-8 w-8 grid place-items-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground transition-colors ml-auto">
+            <button onClick={signOut} title="Sign out" className={["h-8 w-8 grid place-items-center rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-foreground transition-colors", collapsed && !mobileOpen ? "" : "ml-auto"].join(" ")}>
               <LogOut className="h-4 w-4" />
             </button>
           </div>
@@ -324,6 +440,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onAi={() => setAiOpen((o) => !o)}
           onMenu={() => setMobileOpen(true)}
           onSearch={() => setPaletteOpen(true)}
+          onToggleSidebar={toggleCollapsed}
+          sidebarCollapsed={collapsed}
           themePalette={palette}
           onThemePalette={setPalette}
         />
@@ -346,12 +464,16 @@ function TopBar({
   onAi,
   onMenu,
   onSearch,
+  onToggleSidebar,
+  sidebarCollapsed,
   themePalette,
   onThemePalette,
 }: {
   onAi: () => void;
   onMenu: () => void;
   onSearch: () => void;
+  onToggleSidebar: () => void;
+  sidebarCollapsed: boolean;
   themePalette: string;
   onThemePalette: (p: any) => void;
 }) {
@@ -360,6 +482,15 @@ function TopBar({
     <div className="h-12 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-20 flex items-center px-3 md:px-5 gap-2 md:gap-3">
       <button onClick={onMenu} className="md:hidden h-8 w-8 grid place-items-center rounded-md hover:bg-muted text-muted-foreground" aria-label="Open menu">
         <Menu className="h-4 w-4" />
+      </button>
+      <button
+        onClick={onToggleSidebar}
+        className="hidden md:grid h-8 w-8 place-items-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-expanded={!sidebarCollapsed}
+        title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        {sidebarCollapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
       </button>
       <button
         onClick={onSearch}
