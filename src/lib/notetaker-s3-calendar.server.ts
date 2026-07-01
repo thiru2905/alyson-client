@@ -244,6 +244,22 @@ export type NotesCoverageReport = {
   missingNotes: Array<{ prefix: string; botId: string | null; day: string; title: string }>;
 };
 
+export type TasksCoverageReport = {
+  totalMeetings: number;
+  withTranscript: number;
+  withNotes: number;
+  withBoth: number;
+  withTasks: number;
+  missingTasks: Array<{
+    prefix: string;
+    botId: string | null;
+    day: string;
+    title: string;
+    notesKey: string;
+    transcriptKey: string;
+  }>;
+};
+
 /** List transcripts in S3 that have no notes.md (read-only audit). */
 export async function auditNotesCoverageFromS3(): Promise<NotesCoverageReport> {
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
@@ -288,6 +304,58 @@ export async function auditNotesCoverageFromS3(): Promise<NotesCoverageReport> {
     withNotes: notesPrefixes.size,
     withBoth,
     missingNotes,
+  };
+}
+
+/** Meetings with notes + transcript but no tasks.json in S3. */
+export async function auditTasksCoverageFromS3(): Promise<TasksCoverageReport> {
+  const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
+  const client = s3();
+  const notesBase = "alyson-notetaker/meetingnotes/";
+  const transcriptBase = "alyson-notetaker/transcripts/";
+  const tasksBase = "alyson-notetaker/meetingtasks/";
+
+  const [notesPrefixes, transcriptPrefixes, tasksPrefixes] = await Promise.all([
+    listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md", { minSize: 1 }),
+    listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt", { minSize: 1 }),
+    listMeetingAssetPrefixes(client, bucket, tasksBase, "tasks.json", { minSize: 1 }),
+  ]);
+
+  const allPrefixes = new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]);
+  const botIndexDocs = await getBotIndexDocs(client, bucket);
+  const botIndexByPrefix = new Map(botIndexDocs.map((d) => [String(d.prefix), d]));
+  const titleByPrefix = await loadTitleByPrefix(botIndexDocs);
+
+  const missingTasks: TasksCoverageReport["missingTasks"] = [];
+  let withBoth = 0;
+
+  for (const p of transcriptPrefixes) {
+    const hasNotes = notesPrefixes.has(p);
+    if (!hasNotes) continue;
+    withBoth += 1;
+    if (tasksPrefixes.has(p)) continue;
+
+    const parsed = parsePrefix(p);
+    const idx = botIndexByPrefix.get(p);
+    missingTasks.push({
+      prefix: p,
+      botId: idx?.botId ? String(idx.botId) : null,
+      day: parsed.date,
+      title: titleByPrefix.get(p) || idx?.title || parsed.title || "Meeting",
+      notesKey: `${notesBase}${p}/notes.md`,
+      transcriptKey: `${transcriptBase}${p}/transcript.txt`,
+    });
+  }
+
+  missingTasks.sort((a, b) => b.day.localeCompare(a.day));
+
+  return {
+    totalMeetings: allPrefixes.size,
+    withTranscript: transcriptPrefixes.size,
+    withNotes: notesPrefixes.size,
+    withBoth,
+    withTasks: tasksPrefixes.size,
+    missingTasks,
   };
 }
 

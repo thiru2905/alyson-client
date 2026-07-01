@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/AppShell";
 import { CalendarDays, Captions, CheckSquare, Copy, DollarSign, FileText, X } from "lucide-react";
 import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
+import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -407,6 +408,7 @@ function CalendarPage() {
                   {backfillM.isPending ? "Generating all notes…" : `Generate all ${coverage.missingNotes.length} missing`}
                 </button>
               )}
+              <MeetingTasksBackfillButton invalidateQueryKeys={[["notetaker-calendar"]]} />
             </div>
           )}
           <div className="ml-auto flex items-center gap-1.5">

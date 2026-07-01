@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Captions, List } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { MeetingListView } from "@/components/MeetingListView";
+import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
 import { listMeetingsFromS3Range, getMeetingParticipantsBatch } from "@/lib/notetaker-s3-calendar-functions";
 import {
   loadCachedParticipantsForPrefixes,
@@ -106,6 +107,7 @@ function MeetingListPage() {
           <div className="text-[12px] text-muted-foreground">
             {q.isLoading ? "Loading…" : `${meetings.length} meeting${meetings.length === 1 ? "" : "s"}`}
           </div>
+          <MeetingTasksBackfillButton invalidateQueryKeys={[["notetaker-meeting-list"]]} />
           <div className="ml-auto flex items-center gap-1.5">
             <button
               type="button"

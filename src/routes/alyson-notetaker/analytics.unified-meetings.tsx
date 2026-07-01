@@ -1,7 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CalendarDays, Link2, RefreshCw, Unplug } from "lucide-react";
+
+/** Auto-trigger Sync now on Unified Meetings when upcoming − scheduled > 0. Set VITE_RECALL_CALENDAR_AUTO_SYNC=false to disable. */
+const RECALL_CALENDAR_AUTO_SYNC =
+  String(import.meta.env.VITE_RECALL_CALENDAR_AUTO_SYNC ?? "true").trim().toLowerCase() !== "false";
+
+const AUTO_SYNC_COOLDOWN_MS = 90_000;
 
 /** Temporarily disabled — bots enter waiting room early and transcripts are unreliable. Use Sync now. */
 const SMART_SCHEDULE_ENABLED = false;
@@ -124,6 +130,11 @@ export function UnifiedMeetingsPage() {
       };
     },
     staleTime: 30_000,
+    refetchInterval: (query) => {
+      const connected = query.state.data?.connected ?? [];
+      const pending = connected.reduce((n, c) => n + (c.pending?.pendingCount ?? 0), 0);
+      return pending > 0 ? 20_000 : 60_000;
+    },
   });
 
   const calendarActionM = useMutation({
@@ -211,7 +222,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="View workspace meetings below. Use Sync now on your connected calendar to reserve bots for pending meetings."
+        description="Connected calendars auto-sync when new meetings need bots (upcoming − scheduled > 0). Bots join ~2 min before each meeting."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -461,6 +472,33 @@ function RecallCalendarConnectionRow({
     (e) => !isScheduled(e.eventId) && !isMeetingOver(e.startTime, e.endTime),
   ).length;
 
+  const upcomingCount = allMeetings.length;
+  const scheduledInAppCount = allMeetings.filter((e) => e.scheduledInApp).length;
+  const serverPending = pending?.pendingCount ?? pendingCount;
+  const scheduleGap = Math.max(0, upcomingCount - scheduledInAppCount);
+  const needsAutoSync = scheduleGap > 0 || serverPending > 0;
+
+  const syncAttemptRef = useRef<{ at: number; gap: number; calendarId: string }>({
+    at: 0,
+    gap: 0,
+    calendarId: "",
+  });
+
+  useEffect(() => {
+    if (!RECALL_CALENDAR_AUTO_SYNC || busy || !needsAutoSync) return;
+
+    const now = Date.now();
+    const prev = syncAttemptRef.current;
+    const gap = Math.max(serverPending, scheduleGap);
+    const sameRun =
+      prev.calendarId === c.recallCalendarId && prev.gap === gap && now - prev.at < AUTO_SYNC_COOLDOWN_MS;
+    if (sameRun) return;
+
+    syncAttemptRef.current = { at: now, gap, calendarId: c.recallCalendarId };
+    toast.message(`Auto-syncing ${gap} pending meeting${gap === 1 ? "" : "s"}…`);
+    onSync({ calendarId: c.recallCalendarId, scheduleAll: true });
+  }, [busy, c.recallCalendarId, needsAutoSync, onSync, scheduleGap, serverPending]);
+
   return (
     <div className="rounded-md border border-border px-3 py-2 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -469,12 +507,17 @@ function RecallCalendarConnectionRow({
           <div className="text-[11px] text-muted-foreground font-mono">{c.recallCalendarId}</div>
           {pending && (
             <div className="text-[11px] text-muted-foreground mt-0.5">
-              {allMeetings.length} upcoming · {pendingCount} pending (use Sync now)
+              {upcomingCount} upcoming · {scheduledInAppCount} scheduled in app · {serverPending} pending
+              {needsAutoSync && RECALL_CALENDAR_AUTO_SYNC ? (
+                <span className="text-foreground">
+                  {busy ? " — auto-syncing…" : " — auto-sync when this page is open"}
+                </span>
+              ) : null}
             </div>
           )}
           {c.lastSyncSummary && (
             <div className="text-[11px] text-muted-foreground mt-0.5">
-              Last sync: {c.lastSyncSummary.scheduled} scheduled · {c.lastSyncSummary.skipped} skipped
+              Last sync run: {c.lastSyncSummary.scheduled} reserved · {c.lastSyncSummary.skipped} skipped
               {c.lastSyncSummary.errors ? ` · ${c.lastSyncSummary.errors} errors` : ""}
             </div>
           )}

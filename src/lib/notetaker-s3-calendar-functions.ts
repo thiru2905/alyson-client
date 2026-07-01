@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getNotesMdFromS3, getTranscriptTextFromS3, listMeetingsFromS3, auditNotesCoverageFromS3 } from "@/lib/notetaker-s3-calendar.server";
+import { getNotesMdFromS3, getTranscriptTextFromS3, listMeetingsFromS3, auditNotesCoverageFromS3, auditTasksCoverageFromS3 } from "@/lib/notetaker-s3-calendar.server";
 import { resolveMeetingParticipants, buildCalendarAttendeesByBotId } from "@/lib/notetaker-meeting-participants.server";
-import { resolveMeetingListTasks } from "@/lib/notetaker-meeting-list-tasks.server";
+import { resolveMeetingListTasks, backfillAllMeetingTasksFromS3 } from "@/lib/notetaker-meeting-list-tasks.server";
 import { ensureMeetingNotesInS3, ensureMeetingNotesByPrefix, backfillAllMissingNotesFromS3 } from "@/lib/notetaker-auto-persist.server";
+import { requireMeetingTasksBackfillAdmin } from "@/lib/clerk-auth.server";
 
 const RangeInput = z.object({
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -194,5 +195,26 @@ export const backfillMissingNotetakerNotes = createServerFn({ method: "POST" })
       results,
       report: after,
     };
+  });
+
+const ClerkTokenInput = z.object({
+  clerkToken: z.string().min(1),
+});
+
+/** Admin-only: audit which historical meetings lack tasks.json in S3. */
+export const auditMeetingTasksCoverage = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => ClerkTokenInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireMeetingTasksBackfillAdmin(data.clerkToken);
+    const report = await auditTasksCoverageFromS3();
+    return { report };
+  });
+
+/** Admin-only: generate tasks for all meetings (notes + transcript in S3, no tasks yet). */
+export const backfillAllMeetingTasks = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => ClerkTokenInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireMeetingTasksBackfillAdmin(data.clerkToken);
+    return backfillAllMeetingTasksFromS3();
   });
 

@@ -455,3 +455,46 @@ export async function maybeGenerateMeetingTasksWhenReady(botId: string): Promise
 
   await ensureMeetingTasksForBot(id);
 }
+
+export type BackfillMeetingTasksResult = {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  remainingMissing: number;
+  results: Array<{ prefix: string; botId: string | null; ok: boolean; skipped?: string }>;
+};
+
+/** Generate tasks.json for every meeting in S3 that has notes + transcript but no tasks yet. */
+export async function backfillAllMeetingTasksFromS3(): Promise<BackfillMeetingTasksResult> {
+  const { auditTasksCoverageFromS3 } = await import("@/lib/notetaker-s3-calendar.server");
+  const report = await auditTasksCoverageFromS3();
+  const results: BackfillMeetingTasksResult["results"] = [];
+
+  for (const m of report.missingTasks) {
+    const r = await ensureMeetingTasksInS3({
+      prefix: m.prefix,
+      title: m.title,
+      day: m.day,
+      notesKey: m.notesKey,
+      transcriptKey: m.transcriptKey,
+      botId: m.botId,
+      hasNotes: true,
+      hasTranscript: true,
+    });
+    results.push({
+      prefix: m.prefix,
+      botId: m.botId,
+      ok: r.ok,
+      skipped: r.skipped,
+    });
+  }
+
+  const after = await auditTasksCoverageFromS3();
+  return {
+    attempted: results.length,
+    succeeded: results.filter((x) => x.ok).length,
+    failed: results.filter((x) => !x.ok).length,
+    remainingMissing: after.missingTasks.length,
+    results,
+  };
+}
