@@ -104,7 +104,7 @@ export type BotJoinReport = {
   calendarError?: string;
   diagnostics: BotJoinReportDiagnostics;
   critical: BotJoinCriticalMetrics;
-  /** Calendar-eligible meetings the bot successfully joined. */
+  /** Eligible calendar meetings for this account that the bot successfully joined. */
   joinedMeetings: BotJoinReportRow[];
   /** Eligible calendar meetings with no successful bot join. */
   missedMeetings: CalendarMeetingRef[];

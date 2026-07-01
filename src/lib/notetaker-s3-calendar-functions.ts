@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getNotesMdFromS3, getTranscriptTextFromS3, listMeetingsFromS3, auditNotesCoverageFromS3 } from "@/lib/notetaker-s3-calendar.server";
+import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
 import { ensureMeetingNotesInS3, ensureMeetingNotesByPrefix, backfillAllMissingNotesFromS3 } from "@/lib/notetaker-auto-persist.server";
 
 const RangeInput = z.object({
@@ -27,12 +28,32 @@ export const getMeetingNotesMdFromS3 = createServerFn({ method: "POST" })
 
 const TranscriptInput = z.object({ transcriptKey: z.string().min(1) });
 
+const ParticipantsInput = z
+  .object({
+    transcriptKey: z.string().min(1).optional(),
+    botId: z.string().min(1).nullable().optional(),
+    hasTranscript: z.boolean().optional(),
+  })
+  .refine((d) => Boolean(d.transcriptKey || d.botId), { message: "transcriptKey or botId required" });
+
 /** POST — direct S3 read, no LLM generation. */
 export const getMeetingTranscriptTextFromS3 = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => TranscriptInput.parse(data))
   .handler(async ({ data }) => {
     const transcriptText = await getTranscriptTextFromS3({ transcriptKey: data.transcriptKey });
     return { transcriptText };
+  });
+
+/** Speakers + calendar invitees for one meeting. */
+export const getMeetingParticipantsFromS3 = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => ParticipantsInput.parse(data))
+  .handler(async ({ data }) => {
+    const participants = await resolveMeetingParticipants({
+      transcriptKey: data.transcriptKey,
+      botId: data.botId,
+      hasTranscript: data.hasTranscript,
+    });
+    return { participants };
   });
 
 const EnsureNotesInput = z

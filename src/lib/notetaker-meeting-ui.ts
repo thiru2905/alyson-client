@@ -10,6 +10,13 @@ export type NotetakerMeetingRow = {
   hasTranscript?: boolean;
 };
 
+export type MeetingListParticipant = {
+  name: string;
+  source: "transcript" | "calendar";
+  utterances?: number;
+  words?: number;
+};
+
 export function meetingNotesKey(m: NotetakerMeetingRow): string {
   return m.notesKey ?? `alyson-notetaker/meetingnotes/${m.prefix}/notes.md`;
 }

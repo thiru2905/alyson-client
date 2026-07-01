@@ -1,16 +1,21 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Captions, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
-import { getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3 } from "@/lib/notetaker-s3-calendar-functions";
+import { Captions, ChevronDown, Copy, FileText, Loader2, Users } from "lucide-react";
+import {
+  getMeetingNotesMdFromS3,
+  getMeetingParticipantsFromS3,
+  getMeetingTranscriptTextFromS3,
+} from "@/lib/notetaker-s3-calendar-functions";
 import {
   formatMeetingListWhen,
   meetingNotesKey,
   meetingTranscriptKey,
+  type MeetingListParticipant,
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
 import { toast } from "sonner";
 
-type PanelKind = "notes" | "transcript";
+type PanelKind = "participants" | "notes" | "transcript";
 
 function panelButtonClass(active: boolean) {
   return (
@@ -33,6 +38,21 @@ function MeetingListCard({
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
 
+  const participantsQ = useQuery({
+    queryKey: ["meeting-list-participants", meeting.prefix, transcriptKey, meeting.botId],
+    queryFn: () =>
+      getMeetingParticipantsFromS3({
+        data: {
+          transcriptKey,
+          botId: meeting.botId,
+          hasTranscript: meeting.hasTranscript,
+        },
+      }),
+    enabled: openPanel === "participants",
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
   const notesQ = useQuery({
     queryKey: ["meeting-list-notes", notesKey],
     queryFn: () => getMeetingNotesMdFromS3({ data: { notesKey } }),
@@ -49,11 +69,17 @@ function MeetingListCard({
     retry: false,
   });
 
+  const participants = (participantsQ.data?.participants ?? []) as MeetingListParticipant[];
+
   const panelLoading =
-    (openPanel === "notes" && notesQ.isLoading) || (openPanel === "transcript" && transcriptQ.isLoading);
+    (openPanel === "participants" && participantsQ.isLoading) ||
+    (openPanel === "notes" && notesQ.isLoading) ||
+    (openPanel === "transcript" && transcriptQ.isLoading);
 
   const panelError =
-    (openPanel === "notes" && notesQ.isError) || (openPanel === "transcript" && transcriptQ.isError);
+    (openPanel === "participants" && participantsQ.isError) ||
+    (openPanel === "notes" && notesQ.isError) ||
+    (openPanel === "transcript" && transcriptQ.isError);
 
   const copyableText =
     openPanel === "notes"
@@ -87,6 +113,17 @@ function MeetingListCard({
         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
+            onClick={() => onTogglePanel("participants")}
+            className={panelButtonClass(openPanel === "participants")}
+          >
+            <Users className="h-3 w-3" />
+            View participants
+            <ChevronDown
+              className={"h-3 w-3 transition " + (openPanel === "participants" ? "rotate-180" : "")}
+            />
+          </button>
+          <button
+            type="button"
             onClick={() => onTogglePanel("notes")}
             disabled={meeting.hasNotes === false}
             className={panelButtonClass(openPanel === "notes") + (meeting.hasNotes === false ? " opacity-40" : "")}
@@ -114,18 +151,22 @@ function MeetingListCard({
         <div className="flex flex-col border-t border-border/60 bg-muted/20 px-3 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              {openPanel === "notes" ? "Meeting notes" : "Transcript"}
+              {openPanel === "participants" && "Participants"}
+              {openPanel === "notes" && "Meeting notes"}
+              {openPanel === "transcript" && "Transcript"}
             </div>
-            <button
-              type="button"
-              onClick={() => void copyPanelContent()}
-              disabled={panelLoading || panelError || !copyableText}
-              className="h-7 w-7 shrink-0 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40"
-              title="Copy"
-              aria-label={openPanel === "notes" ? "Copy notes" : "Copy transcript"}
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
+            {(openPanel === "notes" || openPanel === "transcript") && (
+              <button
+                type="button"
+                onClick={() => void copyPanelContent()}
+                disabled={panelLoading || panelError || !copyableText}
+                className="h-7 w-7 shrink-0 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40"
+                title="Copy"
+                aria-label={openPanel === "notes" ? "Copy notes" : "Copy transcript"}
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           {panelLoading && (
@@ -137,10 +178,41 @@ function MeetingListCard({
 
           {panelError && !panelLoading && (
             <p className="py-4 text-[12px] text-muted-foreground leading-relaxed font-sans">
-              {openPanel === "notes"
-                ? "Notes are not in S3 yet for this meeting."
-                : "Transcript is not in S3 yet for this meeting."}
+              {openPanel === "participants"
+                ? "Could not load participants for this meeting."
+                : openPanel === "notes"
+                  ? "Notes are not in S3 yet for this meeting."
+                  : "Transcript is not in S3 yet for this meeting."}
             </p>
+          )}
+
+          {!panelLoading && !panelError && openPanel === "participants" && (
+            <div className="flex flex-col gap-1.5">
+              {participants.length === 0 ? (
+                <p className="text-[12px] text-muted-foreground leading-relaxed font-sans">
+                  No participants yet — they appear from the transcript or calendar invite list.
+                </p>
+              ) : (
+                participants.map((p) => (
+                  <div
+                    key={`${p.source}-${p.name}`}
+                    className="flex items-center justify-between rounded-md border border-border bg-background px-2.5 py-2 font-sans"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[12px] font-medium text-foreground">{p.name}</span>
+                      <span className="ml-2 text-[11px] text-muted-foreground">
+                        {p.source === "calendar" ? "Calendar invite" : "Spoke in meeting"}
+                      </span>
+                    </div>
+                    {p.source === "transcript" && (
+                      <span className="text-[11px] tabular-nums text-muted-foreground shrink-0">
+                        {p.utterances ?? 0} line{(p.utterances ?? 0) === 1 ? "" : "s"} · {p.words ?? 0} words
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           )}
 
           {!panelLoading && !panelError && openPanel === "notes" && (
