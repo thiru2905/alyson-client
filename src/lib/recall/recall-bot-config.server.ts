@@ -12,12 +12,9 @@ export function isAlysonClientWebhookHost(url: string): boolean {
   );
 }
 
-function looksLikeNotetakerHost(url: string): boolean {
-  const u = url.toLowerCase();
-  if (isAlysonClientWebhookHost(url)) return false;
-  if (u.includes("localhost") || u.includes("127.0.0.1")) return true;
-  if (u.includes("onrender.com") || u.includes("notetaker")) return true;
-  return false;
+function normalizePublicBaseUrl(raw: string): string {
+  const u = raw.replace(/\/$/, "");
+  return u.startsWith("http") ? u : `https://${u}`;
 }
 
 /** Notetaker service base URL (Recall transcript webhooks ultimately land here). */
@@ -30,33 +27,61 @@ export function resolveNotetakerBaseUrl(): string {
   return raw.replace(/\/$/, "");
 }
 
-/** Public URL Recall uses for transcript.data / transcript.partial_data webhooks. */
+/** Direct Notetaker endpoint Recall should POST transcript events to. */
+export function resolveRecallNotetakerTranscriptWebhookUrl(): string {
+  return `${resolveNotetakerBaseUrl()}/webhooks/recall/transcript`;
+}
+
+/**
+ * Public URL Recall uses for transcript.data / transcript.partial_data webhooks.
+ * Prefer Alyson app `/webhooks/recall` (proxies to Notetaker). Fallback: Notetaker `/webhooks/recall/transcript`.
+ * Wrong: `/webhooks/recall` on Render — returns 404 (Recall logs show this failure).
+ */
 export function resolveRecallTranscriptWebhookUrl(): string {
   const explicit = process.env.RECALL_TRANSCRIPT_WEBHOOK_URL?.trim();
   if (explicit) return explicit;
 
-  // PUBLIC_WEBHOOK_BASE_URL may be the Alyson HR app — /webhooks/recall proxies to Notetaker.
-  const publicBase = process.env.PUBLIC_WEBHOOK_BASE_URL?.trim();
-  if (publicBase) return `${publicBase.replace(/\/$/, "")}/webhooks/recall`;
-
-  const notetakerBase = resolveNotetakerBaseUrl();
-  if (looksLikeNotetakerHost(notetakerBase)) {
-    return `${notetakerBase}/webhooks/recall`;
+  const appBase =
+    process.env.ALYSON_APP_BASE_URL?.trim() ||
+    process.env.VERCEL_URL?.trim() ||
+    "";
+  if (appBase) {
+    return `${normalizePublicBaseUrl(appBase)}/webhooks/recall`;
   }
 
-  return "https://api-uic1.onrender.com/webhooks/recall";
+  const publicBase = process.env.PUBLIC_WEBHOOK_BASE_URL?.trim();
+  if (publicBase && isAlysonClientWebhookHost(publicBase)) {
+    return `${normalizePublicBaseUrl(publicBase)}/webhooks/recall`;
+  }
+
+  return resolveRecallNotetakerTranscriptWebhookUrl();
 }
 
 /** Re-apply transcript webhooks on an existing Recall bot (scheduled or in-call). */
 export async function patchRecallBotRecordingConfig(botId: string): Promise<void> {
   const id = String(botId || "").trim();
   if (!id) return;
-  await recallFetch(`/api/v1/bot/${encodeURIComponent(id)}/`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(recallBotRecordingConfig()),
-    timeoutMs: 15_000,
-  });
+  try {
+    await recallFetch(`/api/v1/bot/${encodeURIComponent(id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recallBotRecordingConfig()),
+      timeoutMs: 15_000,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const body = (e as { body?: unknown }).body;
+    const nonField =
+      body &&
+      typeof body === "object" &&
+      Array.isArray((body as { non_field_errors?: unknown }).non_field_errors)
+        ? (body as { non_field_errors: string[] }).non_field_errors.join(" ")
+        : "";
+    if (msg.includes("Cannot update scheduled bot") || nonField.includes("Cannot update scheduled bot")) {
+      return;
+    }
+    throw e;
+  }
 }
 
 /** Default Recall bot settings (no join_at — forbidden in Calendar V1 dashboard template). */

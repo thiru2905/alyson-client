@@ -10,7 +10,7 @@ export const Route = createFileRoute("/webhooks/recall")({
     handlers: {
       POST: async ({ request }) => {
         const rawBody = await request.text();
-        const target = `${notetakerBaseUrl()}/webhooks/recall`;
+        const target = `${notetakerBaseUrl()}/webhooks/recall/transcript`;
         const headers = new Headers();
         const contentType = request.headers.get("content-type");
         if (contentType) headers.set("content-type", contentType);
