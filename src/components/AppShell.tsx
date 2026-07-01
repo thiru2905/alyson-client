@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
   Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send, Link2, Activity, Trophy,
-  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles,
+  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles, List,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -32,6 +32,7 @@ const NEW_BADGE_ROUTES = new Set<string>([
   "/time-dashboard",
   "/alyson-notetaker",
   "/alyson-notetaker/calendar",
+  "/alyson-notetaker/meeting-list",
   "/alyson-notetaker/analytics",
   "/alyson-notetaker/bot-join-report",
   "/alyson-notetaker/unified-meetings",
@@ -65,6 +66,7 @@ const NAV: NavItem[] = [
   { to: "/employee-scoring", label: "Employee Scoring", icon: Trophy, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "Ops", roles: ["super_admin", "ceo", "finance", "hr"] },
   { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops" },
+  { to: "/alyson-notetaker/meeting-list", label: "Meeting List", icon: List, group: "Ops" },
   { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops" },
   { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3, group: "Ops" },
   { to: "/alyson-notetaker/bot-join-report", label: "Bot Join Report", icon: Bot, group: "Ops" },
