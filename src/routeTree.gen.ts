@@ -26,6 +26,7 @@ import { Route as BoardingRouteImport } from './routes/boarding'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as AlysonBrainRouteImport } from './routes/alyson-brain'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as LeaveRouteRouteImport } from './routes/leave/route'
 import { Route as BonusRouteRouteImport } from './routes/bonus/route'
@@ -152,6 +153,11 @@ const AttendanceRoute = AttendanceRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AlysonBrainRoute = AlysonBrainRouteImport.update({
+  id: '/alyson-brain',
+  path: '/alyson-brain',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -389,6 +395,7 @@ export interface FileRoutesByFullPath {
   '/bonus': typeof BonusRouteRouteWithChildren
   '/leave': typeof LeaveRouteRouteWithChildren
   '/admin': typeof AdminRoute
+  '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
@@ -447,6 +454,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
@@ -509,6 +517,7 @@ export interface FileRoutesById {
   '/bonus': typeof BonusRouteRouteWithChildren
   '/leave': typeof LeaveRouteRouteWithChildren
   '/admin': typeof AdminRoute
+  '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
@@ -572,6 +581,7 @@ export interface FileRouteTypes {
     | '/bonus'
     | '/leave'
     | '/admin'
+    | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
@@ -630,6 +640,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
@@ -691,6 +702,7 @@ export interface FileRouteTypes {
     | '/bonus'
     | '/leave'
     | '/admin'
+    | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
@@ -753,6 +765,7 @@ export interface RootRouteChildren {
   BonusRouteRoute: typeof BonusRouteRouteWithChildren
   LeaveRouteRoute: typeof LeaveRouteRouteWithChildren
   AdminRoute: typeof AdminRoute
+  AlysonBrainRoute: typeof AlysonBrainRoute
   AppRoute: typeof AppRoute
   AttendanceRoute: typeof AttendanceRoute
   AuthRoute: typeof AuthRoute
@@ -902,6 +915,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alyson-brain': {
+      id: '/alyson-brain'
+      path: '/alyson-brain'
+      fullPath: '/alyson-brain'
+      preLoaderRoute: typeof AlysonBrainRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -1345,6 +1365,7 @@ const rootRouteChildren: RootRouteChildren = {
   BonusRouteRoute: BonusRouteRouteWithChildren,
   LeaveRouteRoute: LeaveRouteRouteWithChildren,
   AdminRoute: AdminRoute,
+  AlysonBrainRoute: AlysonBrainRoute,
   AppRoute: AppRoute,
   AttendanceRoute: AttendanceRoute,
   AuthRoute: AuthRoute,

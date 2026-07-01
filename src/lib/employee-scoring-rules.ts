@@ -20,9 +20,14 @@ export type EmployeeScoreInput = {
   meetingsCreated: number;
   docsCreated: number;
   chatMessagesSent: number;
+  /** Time Doctor seconds in window, after leave credit when applied upstream. */
   workSeconds: number;
   windowDays: number;
   linkedEmails?: string[];
+  /** Raw Time Doctor seconds before leave credit (when credited). */
+  workSecondsLogged?: number;
+  leaveDays?: number;
+  leaveHoursCredit?: number;
 };
 
 export type EmployeeScoreBreakdown = {
@@ -36,6 +41,8 @@ export type EmployeeScoreBreakdown = {
 export type EmployeeScoreRow = EmployeeScoreInput & {
   rank: number;
   workHours: number;
+  /** Logged TD hours before leave credit (when available). */
+  workHoursLogged?: number;
   hoursPerDay: number;
   percentile: EmployeeScoreBreakdown;
   compositeScore: number;
@@ -85,6 +92,8 @@ export function computeEmployeeScores(
 
   const scored: EmployeeScoreRow[] = inputs.map((row) => {
     const workHours = row.workSeconds / 3600;
+    const workHoursLogged =
+      row.workSecondsLogged != null ? Math.round((row.workSecondsLogged / 3600) * 100) / 100 : undefined;
     const hoursPerDay = row.windowDays > 0 ? workHours / row.windowDays : 0;
     const percentile: EmployeeScoreBreakdown = {
       workHours: percentileRank(hours, workHours),
@@ -97,6 +106,7 @@ export function computeEmployeeScores(
     return {
       ...row,
       workHours: Math.round(workHours * 100) / 100,
+      workHoursLogged,
       hoursPerDay: Math.round(hoursPerDay * 100) / 100,
       percentile,
       compositeScore,
@@ -121,6 +131,7 @@ export const SCORING_RULES_SUMMARY = [
   "One scoring window applies to Google Workspace activity and Time Doctor hours.",
   "Meetings = calendar events scheduled in the window (attended or created), not audit create_event only.",
   "Time Doctor uses calendar dates derived from the same window (start date → end date, inclusive).",
+  "Approved leave workdays credit +7h/day toward work hours (same as Weekly/Monthly Pacing) so composite score is not penalized for time off.",
   "Duplicate directory accounts for the same person (e.g. mohita@revcloud.com + mohita@cintara.ai) are merged before ranking.",
   "Each metric is scored 0–100 as a percentile vs all users in the cohort (fair across scales).",
   `Composite = ${SCORING_WEIGHTS.workHours * 100}% work hours + ${SCORING_WEIGHTS.meetings * 100}% meetings + ${SCORING_WEIGHTS.emails * 100}% emails + ${SCORING_WEIGHTS.chat * 100}% chat + ${SCORING_WEIGHTS.docs * 100}% docs.`,

@@ -588,6 +588,14 @@ function EmployeeScoringPage() {
                         </td>
                         <td align="right" className="font-mono">
                           {r.workHours.toFixed(1)}
+                          {(r.leaveHoursCredit ?? 0) > 0 && (
+                            <span
+                              className="ml-1 text-[10px] text-muted-foreground"
+                              title={`${r.leaveDays ?? 0} leave day(s) · +${r.leaveHoursCredit}h credit`}
+                            >
+                              (+{r.leaveHoursCredit}h)
+                            </span>
+                          )}
                         </td>
                         <td align="right" className="font-mono text-muted-foreground">
                           {r.hoursPerDay.toFixed(2)}

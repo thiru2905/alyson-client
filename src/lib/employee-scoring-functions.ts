@@ -133,7 +133,19 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
       );
     }
 
-    const rows = computeEmployeeScores(inputs);
+    const { loadLeaveContextForScoring, applyLeaveCreditToScoreInputs } = await import(
+      "@/lib/employee-scoring-leave.server"
+    );
+    const leaveCtx = await loadLeaveContextForScoring(tdRange.start, tdRange.end);
+    const creditedInputs = applyLeaveCreditToScoreInputs(inputs, leaveCtx);
+    const leaveCreditedCount = creditedInputs.filter((r) => (r.leaveHoursCredit ?? 0) > 0).length;
+    if (leaveCreditedCount > 0) {
+      warnings.push(
+        `Leave credit (+7h/workday) applied for ${leaveCreditedCount} employee${leaveCreditedCount === 1 ? "" : "s"} with approved leave in range.`,
+      );
+    }
+
+    const rows = computeEmployeeScores(creditedInputs);
 
     const result: EmployeeScoringResponse = {
       range: workspace.range,

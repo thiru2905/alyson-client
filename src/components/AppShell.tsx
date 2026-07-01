@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
   Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send, Link2, Activity, Trophy,
-  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo,
+  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -27,6 +27,7 @@ type NavItem = {
 };
 
 const NEW_BADGE_ROUTES = new Set<string>([
+  "/alyson-brain",
   "/bonus",
   "/time-dashboard",
   "/alyson-notetaker",
@@ -45,6 +46,7 @@ const NEW_BADGE_ROUTES = new Set<string>([
 ]);
 
 const NAV: NavItem[] = [
+  { to: "/alyson-brain", label: "Alyson Brain", icon: Sparkles, group: "Workspace", roles: ["super_admin", "ceo", "hr", "manager"] },
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
   { to: "/team", label: "Team", icon: Users, group: "People" },
   { to: "/boarding", label: "Boarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
