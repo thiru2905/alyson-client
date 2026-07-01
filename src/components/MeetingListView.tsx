@@ -43,7 +43,7 @@ function ParticipantChips({
   }
 
   if (participants.length === 0) {
-    return <p className="text-[12px] text-muted-foreground font-sans">No participants found yet.</p>;
+    return null;
   }
 
   return (
