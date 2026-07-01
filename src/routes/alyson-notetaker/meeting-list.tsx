@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Captions, List } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { MeetingListView } from "@/components/MeetingListView";
-import { listMeetingsFromS3Range, getMeetingParticipantsBatch } from "@/lib/notetaker-s3-calendar-functions";
+import { listMeetingsFromS3Range } from "@/lib/notetaker-s3-calendar-functions";
 import {
   addMonths,
   endOfMonth,
@@ -12,7 +12,6 @@ import {
   monthLabel,
   startOfMonth,
   type NotetakerMeetingRow,
-  type MeetingListParticipant,
 } from "@/lib/notetaker-meeting-ui";
 
 export const Route = createFileRoute("/alyson-notetaker/meeting-list")({
@@ -37,34 +36,12 @@ function MeetingListPage() {
 
   const meetings = (q.data?.meetings ?? []) as NotetakerMeetingRow[];
 
-  const participantsQ = useQuery({
-    queryKey: ["notetaker-meeting-list-participants", range.start, range.end, meetings.map((m) => m.prefix).join("|")],
-    queryFn: () =>
-      getMeetingParticipantsBatch({
-        data: {
-          meetings: meetings.map((m) => ({
-            prefix: m.prefix,
-            transcriptKey: m.transcriptKey,
-            botId: m.botId,
-            hasTranscript: m.hasTranscript,
-          })),
-        },
-      }),
-    enabled: meetings.length > 0 && !q.isLoading,
-    staleTime: 5 * 60_000,
-  });
-
-  const participantsByPrefix = (participantsQ.data?.participantsByPrefix ?? {}) as Record<
-    string,
-    MeetingListParticipant[]
-  >;
-
   return (
     <div className="ops-dense">
       <PageHeader
         eyebrow="Operations"
         title="Meeting list"
-        description="Browse meetings as a list — open participants, notes, and transcripts per meeting."
+        description="Browse meetings as a list — open notes and transcripts per meeting."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -124,11 +101,7 @@ function MeetingListPage() {
             ))}
           </div>
         ) : (
-          <MeetingListView
-            meetings={meetings}
-            participantsByPrefix={participantsByPrefix}
-            participantsLoading={participantsQ.isLoading}
-          />
+          <MeetingListView meetings={meetings} />
         )}
       </div>
     </div>
