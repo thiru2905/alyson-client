@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { FileText, Users, GitBranch } from "lucide-react";
+import { FileText, Users, GitBranch, UserPlus } from "lucide-react";
 import { fetchOverview } from "@/lib/queries";
 import { BOARDING_PDF_TABLES, type BoardingFlow } from "@/lib/boarding-pdf-schema";
 import { BoardingDataTable } from "@/components/BoardingDataTable";

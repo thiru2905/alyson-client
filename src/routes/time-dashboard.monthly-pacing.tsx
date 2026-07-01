@@ -251,7 +251,7 @@ function MonthlyPacingPage() {
   function applyMonth() {
     navigate({
       to: "/time-dashboard/monthly-pacing",
-      search: { month },
+      search: { month, start: undefined, end: undefined },
       replace: true,
     });
   }
@@ -349,6 +349,7 @@ function MonthlyPacingPage() {
           <>
             <Link
               to="/time-dashboard"
+              search={{ start: undefined, end: undefined }}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -356,6 +357,7 @@ function MonthlyPacingPage() {
             </Link>
             <Link
               to="/time-dashboard/pacing"
+              search={{ day: undefined, start: undefined, end: undefined }}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
             >
               Weekly Pacing

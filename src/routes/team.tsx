@@ -107,7 +107,7 @@ function TeamPage() {
                 ? "Your deployment is missing Supabase client env vars. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to your hosting provider and redeploy."
                 : msg
             }
-            actions={
+            action={
               <button
                 onClick={() => refetch()}
                 className="h-8 px-3 rounded-md bg-foreground text-background text-[12px] font-medium"

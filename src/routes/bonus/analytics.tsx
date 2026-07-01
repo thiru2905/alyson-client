@@ -183,7 +183,7 @@ function BonusAnalyticsPage() {
                         tickFormatter={(v) => (typeof v === "number" ? `$${Math.round(v / 1000)}k` : "")}
                       />
                       <Tooltip
-                        formatter={(v: number) => fmtCurrency(v)}
+                        formatter={(v) => fmtCurrency(Number(v ?? 0))}
                         labelFormatter={(l) => String(l)}
                       />
                       <Legend />
@@ -216,7 +216,7 @@ function BonusAnalyticsPage() {
                           <Cell key={i} fill={TEAM_COLORS[i % TEAM_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number) => fmtCurrency(v)} />
+                      <Tooltip formatter={(v) => fmtCurrency(Number(v ?? 0))} />
                       <Legend />
                     </PieChart>
                   </ResponsiveContainer>
@@ -237,7 +237,7 @@ function BonusAnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.25} horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${Math.round(Number(v) / 1000)}k`} />
                       <YAxis type="category" dataKey="team" width={100} tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => fmtCurrency(v)} />
+                      <Tooltip formatter={(v) => fmtCurrency(Number(v ?? 0))} />
                       <Bar dataKey="total" name="Total bonus" fill="#10b981" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -256,7 +256,7 @@ function BonusAnalyticsPage() {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
                       <XAxis dataKey="location" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${Math.round(Number(v) / 1000)}k`} />
-                      <Tooltip formatter={(v: number) => fmtCurrency(v)} />
+                      <Tooltip formatter={(v) => fmtCurrency(Number(v ?? 0))} />
                       <Bar dataKey="total" name="Total bonus" fill="#64748b" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>

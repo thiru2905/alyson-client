@@ -1,22 +1,26 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Captions, ChevronDown, Copy, FileText, Loader2, Users } from "lucide-react";
+import { Captions, CheckSquare, ChevronDown, Copy, FileText, Loader2, Users } from "lucide-react";
 import {
   getMeetingNotesMdFromS3,
   getMeetingParticipantsFromS3,
+  getMeetingTasksFromS3,
   getMeetingTranscriptTextFromS3,
 } from "@/lib/notetaker-s3-calendar-functions";
 import { saveMeetingParticipantsCache } from "@/lib/meeting-list-participants-cache";
+import { getCachedMeetingTasks, saveMeetingTasksCache } from "@/lib/meeting-list-tasks-cache";
+import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import {
   formatMeetingListWhen,
   meetingNotesKey,
+  meetingTasksKey,
   meetingTranscriptKey,
   type MeetingListParticipant,
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
 import { toast } from "sonner";
 
-type PanelKind = "participants" | "notes" | "transcript";
+type PanelKind = "participants" | "notes" | "transcript" | "tasks";
 
 function panelButtonClass(active: boolean) {
   return (
@@ -42,7 +46,9 @@ function MeetingListCard({
 }) {
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
+  const tasksKey = meetingTasksKey(meeting);
   const hasPrefetched = prefetchedParticipants !== undefined;
+  const cachedTasks = getCachedMeetingTasks(meeting.prefix);
 
   const participantsQ = useQuery({
     queryKey: ["meeting-list-participants", meeting.prefix, transcriptKey, meeting.botId],
@@ -65,6 +71,31 @@ function MeetingListCard({
     retry: false,
   });
 
+  const tasksQ = useQuery({
+    queryKey: ["meeting-list-tasks", meeting.prefix, notesKey, transcriptKey, tasksKey],
+    queryFn: async () => {
+      const payload = await getMeetingTasksFromS3({
+        data: {
+          prefix: meeting.prefix,
+          title: meeting.title,
+          day: meeting.day,
+          notesKey,
+          transcriptKey,
+          botId: meeting.botId,
+          hasNotes: meeting.hasNotes,
+          hasTranscript: meeting.hasTranscript,
+        },
+      });
+      saveMeetingTasksCache(meeting.prefix, payload);
+      return payload;
+    },
+    enabled: openPanel === "tasks",
+    placeholderData: cachedTasks ?? undefined,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    retry: false,
+  });
+
   const notesQ = useQuery({
     queryKey: ["meeting-list-notes", notesKey],
     queryFn: () => getMeetingNotesMdFromS3({ data: { notesKey } }),
@@ -82,16 +113,20 @@ function MeetingListCard({
   });
 
   const participants = (participantsQ.data?.participants ?? []) as MeetingListParticipant[];
+  const canExtractTasks = meeting.hasNotes !== false || meeting.hasTranscript !== false;
+  const tasksPayload = tasksQ.data;
 
   const panelLoading =
     (openPanel === "participants" &&
       !hasPrefetched &&
       (participantsBatchLoading || participantsQ.isLoading)) ||
+    (openPanel === "tasks" && tasksQ.isLoading && !tasksPayload && !meeting.hasTasks) ||
     (openPanel === "notes" && notesQ.isLoading) ||
     (openPanel === "transcript" && transcriptQ.isLoading);
 
   const panelError =
     (openPanel === "participants" && participantsQ.isError) ||
+    (openPanel === "tasks" && tasksQ.isError) ||
     (openPanel === "notes" && notesQ.isError) ||
     (openPanel === "transcript" && transcriptQ.isError);
 
@@ -158,6 +193,16 @@ function MeetingListCard({
             Transcript
             <ChevronDown className={"h-3 w-3 transition " + (openPanel === "transcript" ? "rotate-180" : "")} />
           </button>
+          <button
+            type="button"
+            onClick={() => onTogglePanel("tasks")}
+            disabled={!canExtractTasks}
+            className={panelButtonClass(openPanel === "tasks") + (!canExtractTasks ? " opacity-40" : "")}
+          >
+            <CheckSquare className="h-3 w-3" />
+            Tasks
+            <ChevronDown className={"h-3 w-3 transition " + (openPanel === "tasks" ? "rotate-180" : "")} />
+          </button>
         </div>
       </div>
 
@@ -168,6 +213,7 @@ function MeetingListCard({
               {openPanel === "participants" && "Participants"}
               {openPanel === "notes" && "Meeting notes"}
               {openPanel === "transcript" && "Transcript"}
+              {openPanel === "tasks" && "Tasks by participant"}
             </div>
             {(openPanel === "notes" || openPanel === "transcript") && (
               <button
@@ -184,9 +230,13 @@ function MeetingListCard({
           </div>
 
           {panelLoading && (
-            <div className="flex items-center gap-2 py-6 text-[12px] text-muted-foreground font-sans">
+            <div className="flex flex-col items-center gap-2 py-6 text-[12px] text-muted-foreground font-sans">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Loading…
+              {openPanel === "tasks"
+                ? meeting.hasTasks
+                  ? "Loading tasks from S3…"
+                  : "Extracting tasks with DeepSeek and saving to S3…"
+                : "Loading…"}
             </div>
           )}
 
@@ -194,9 +244,13 @@ function MeetingListCard({
             <p className="py-4 text-[12px] text-muted-foreground leading-relaxed font-sans">
               {openPanel === "participants"
                 ? "Could not load participants for this meeting."
-                : openPanel === "notes"
-                  ? "Notes are not in S3 yet for this meeting."
-                  : "Transcript is not in S3 yet for this meeting."}
+                : openPanel === "tasks"
+                  ? tasksQ.error instanceof Error
+                    ? tasksQ.error.message
+                    : "Could not extract tasks for this meeting."
+                  : openPanel === "notes"
+                    ? "Notes are not in S3 yet for this meeting."
+                    : "Transcript is not in S3 yet for this meeting."}
             </p>
           )}
 
@@ -227,6 +281,14 @@ function MeetingListCard({
                 ))
               )}
             </div>
+          )}
+
+          {!panelLoading && !panelError && openPanel === "tasks" && tasksPayload && (
+            <MeetingTasksPanel
+              people={tasksPayload.people}
+              model={tasksPayload.model}
+              fromS3={tasksPayload.fromS3 ?? meeting.hasTasks}
+            />
           )}
 
           {!panelLoading && !panelError && openPanel === "notes" && (

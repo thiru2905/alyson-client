@@ -11,6 +11,8 @@ import {
   parseRangeFromQuestion,
   resolveEmployeesFromNames,
 } from "@/lib/alyson-brain/alyson-brain-parse.server";
+import type { EmployeeCompensationLedger } from "@/lib/bonus-schema";
+import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 
 function normalizeEmail(email: string) {
   return String(email || "").trim().toLowerCase();
@@ -43,9 +45,9 @@ function nameMatches(emp: AlysonBrainResolvedEmployee, ...candidates: Array<stri
 }
 
 function findBonusLedger(
-  employees: Record<string, { officialEmail: string; employeeId: string; employeeName: string }>,
+  employees: Record<string, EmployeeCompensationLedger>,
   emp: AlysonBrainResolvedEmployee,
-) {
+): EmployeeCompensationLedger | undefined {
   return Object.values(employees).find(
     (l) =>
       normalizeEmail(l.officialEmail) === normalizeEmail(emp.email) ||

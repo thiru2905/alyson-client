@@ -2,8 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { CalendarDays, Captions, Copy, DollarSign, FileText, X } from "lucide-react";
-import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
+import { CalendarDays, Captions, CheckSquare, Copy, DollarSign, FileText, X } from "lucide-react";
+import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
+import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -15,14 +16,16 @@ type MeetingRow = {
   startedAt: string | null;
   notesKey: string | null;
   transcriptKey: string | null;
+  tasksKey: string | null;
   hasNotes?: boolean;
   hasTranscript?: boolean;
+  hasTasks?: boolean;
 };
 
 const calendarSearchSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   transcriptKey: z.string().min(1).optional(),
-  open: z.enum(["transcript", "notes"]).optional(),
+  open: z.enum(["transcript", "notes", "tasks"]).optional(),
 });
 
 export const Route = createFileRoute("/alyson-notetaker/calendar")({
@@ -91,6 +94,10 @@ function meetingTranscriptKey(m: MeetingRow): string {
   return m.transcriptKey ?? `alyson-notetaker/transcripts/${m.prefix}/transcript.txt`;
 }
 
+function meetingTasksKey(m: MeetingRow): string {
+  return m.tasksKey ?? `alyson-notetaker/meetingtasks/${m.prefix}/tasks.json`;
+}
+
 function CalendarPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -101,11 +108,15 @@ function CalendarPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [picked, setPicked] = useState<string | null>(null);
   const [viewDoc, setViewDoc] = useState<{
-    kind: "notes" | "transcript";
+    kind: "notes" | "transcript" | "tasks";
     key: string;
     meetingTitle: string;
     botId: string | null;
     prefix: string;
+    day: string;
+    hasNotes?: boolean;
+    hasTranscript?: boolean;
+    hasTasks?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -125,11 +136,26 @@ function CalendarPage() {
       }
     }
 
+    const deepLinkDay = day ?? "";
     if (transcriptKey && (open === "transcript" || open === undefined)) {
-      setViewDoc({ kind: "transcript", key: transcriptKey, meetingTitle: "Meeting transcript", botId: null, prefix: "" });
+      setViewDoc({
+        kind: "transcript",
+        key: transcriptKey,
+        meetingTitle: "Meeting transcript",
+        botId: null,
+        prefix: "",
+        day: deepLinkDay,
+      });
       toast.message("Opening transcript…");
     } else if (transcriptKey && open === "notes") {
-      setViewDoc({ kind: "notes", key: transcriptKey, meetingTitle: "Meeting notes", botId: null, prefix: "" });
+      setViewDoc({
+        kind: "notes",
+        key: transcriptKey,
+        meetingTitle: "Meeting notes",
+        botId: null,
+        prefix: "",
+        day: deepLinkDay,
+      });
       toast.message("Opening notes…");
     }
 
@@ -182,13 +208,22 @@ function CalendarPage() {
     setViewDoc(null);
   }
 
-  function openMeetingDoc(kind: "notes" | "transcript", m: MeetingRow) {
+  function openMeetingDoc(kind: "notes" | "transcript" | "tasks", m: MeetingRow) {
     setViewDoc({
       kind,
-      key: kind === "notes" ? meetingNotesKey(m) : meetingTranscriptKey(m),
+      key:
+        kind === "notes"
+          ? meetingNotesKey(m)
+          : kind === "transcript"
+            ? meetingTranscriptKey(m)
+            : meetingTasksKey(m),
       meetingTitle: m.title,
       botId: m.botId,
       prefix: m.prefix,
+      day: m.day,
+      hasNotes: m.hasNotes,
+      hasTranscript: m.hasTranscript,
+      hasTasks: m.hasTasks,
     });
   }
 
@@ -248,11 +283,36 @@ function CalendarPage() {
         const r = await getMeetingNotesMdFromS3({ data: { notesKey: viewDoc.key } });
         return { text: r.notesMd };
       }
-      const r = await getMeetingTranscriptTextFromS3({ data: { transcriptKey: viewDoc.key } });
-      return { text: r.transcriptText };
+      if (viewDoc.kind === "transcript") {
+        const r = await getMeetingTranscriptTextFromS3({ data: { transcriptKey: viewDoc.key } });
+        return { text: r.transcriptText };
+      }
+      return { text: "" };
     },
-    enabled: Boolean(viewDoc?.key),
+    enabled: Boolean(viewDoc?.key) && viewDoc?.kind !== "tasks",
     staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+  const tasksQ = useQuery({
+    queryKey: ["notetaker-s3-tasks", viewDoc?.prefix, viewDoc?.key],
+    queryFn: async () => {
+      if (!viewDoc || viewDoc.kind !== "tasks") return null;
+      return getMeetingTasksFromS3({
+        data: {
+          prefix: viewDoc.prefix,
+          title: viewDoc.meetingTitle,
+          day: viewDoc.day,
+          notesKey: `alyson-notetaker/meetingnotes/${viewDoc.prefix}/notes.md`,
+          transcriptKey: `alyson-notetaker/transcripts/${viewDoc.prefix}/transcript.txt`,
+          botId: viewDoc.botId,
+          hasNotes: viewDoc.hasNotes,
+          hasTranscript: viewDoc.hasTranscript,
+        },
+      });
+    },
+    enabled: Boolean(viewDoc?.key) && viewDoc?.kind === "tasks",
+    staleTime: 30 * 60_000,
     retry: false,
   });
 
@@ -305,7 +365,7 @@ function CalendarPage() {
       <PageHeader
         eyebrow="Operations"
         title="Meeting calendar"
-        description="Browse meeting notes (from S3) by date."
+        description="Browse meeting notes, transcripts, and per-person tasks (from S3) by date."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -458,7 +518,7 @@ function CalendarPage() {
 
           {!picked && (
             <p className="text-center text-[11px] text-muted-foreground py-0.5">
-              Select a date — meetings list below, notes/transcripts open in a popup
+              Select a date — meetings list below; open notes, transcripts, or tasks in a popup
             </p>
           )}
         </div>
@@ -524,9 +584,12 @@ function CalendarPage() {
                   pickedMeetings.map((m) => {
                     const notesKey = meetingNotesKey(m);
                     const transcriptKey = meetingTranscriptKey(m);
+                    const tasksKey = meetingTasksKey(m);
                     const notesOpen = viewDoc?.kind === "notes" && viewDoc.key === notesKey;
                     const transcriptOpen = viewDoc?.kind === "transcript" && viewDoc.key === transcriptKey;
-                    const rowActive = notesOpen || transcriptOpen;
+                    const tasksOpen = viewDoc?.kind === "tasks" && viewDoc.key === tasksKey;
+                    const rowActive = notesOpen || transcriptOpen || tasksOpen;
+                    const canTasks = m.hasNotes !== false || m.hasTranscript !== false;
                     return (
                       <div
                         key={m.prefix}
@@ -542,9 +605,12 @@ function CalendarPage() {
                             {m.hasNotes === false && m.hasTranscript !== false && (
                               <span className="ml-1 text-amber-600 dark:text-amber-400">· no notes</span>
                             )}
+                            {m.hasTasks && (
+                              <span className="ml-1 text-muted-foreground">· tasks</span>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex flex-wrap items-center justify-end gap-1 shrink-0 max-w-[min(100%,280px)] sm:max-w-none">
                           <button
                             onClick={() => openMeetingDoc("notes", m)}
                             className={
@@ -568,6 +634,20 @@ function CalendarPage() {
                           >
                             <Captions className="h-3 w-3" />
                             Transcript
+                          </button>
+                          <button
+                            onClick={() => openMeetingDoc("tasks", m)}
+                            disabled={!canTasks}
+                            className={
+                              "h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 " +
+                              (tasksOpen
+                                ? "bg-foreground text-background"
+                                : "border border-border bg-background hover:bg-muted") +
+                              (!canTasks ? " opacity-40" : "")
+                            }
+                          >
+                            <CheckSquare className="h-3 w-3" />
+                            Tasks
                           </button>
                         </div>
                       </div>
@@ -608,31 +688,37 @@ function CalendarPage() {
             <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center gap-2 shrink-0">
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
-                  {viewDoc.kind === "notes" ? "Meeting notes" : "Transcript"}
+                  {viewDoc.kind === "notes"
+                    ? "Meeting notes"
+                    : viewDoc.kind === "transcript"
+                      ? "Transcript"
+                      : "Tasks by participant"}
                 </div>
                 <div id="calendar-doc-title" className="font-medium text-[14px] truncate">
                   {viewDoc.meetingTitle}
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-2 shrink-0">
-                <button
-                  onClick={async () => {
-                    const text = notesQ.data?.text ?? "";
-                    if (!text.trim()) return toast.error("Nothing to copy");
-                    try {
-                      await navigator.clipboard.writeText(text);
-                      toast.success(viewDoc.kind === "notes" ? "Notes copied" : "Transcript copied");
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "Failed to copy");
-                    }
-                  }}
-                  disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
-                  className="h-8 w-8 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                  title="Copy"
-                  aria-label="Copy"
-                >
-                  <Copy className="h-4 w-4" />
-                </button>
+                {viewDoc.kind !== "tasks" && (
+                  <button
+                    onClick={async () => {
+                      const text = notesQ.data?.text ?? "";
+                      if (!text.trim()) return toast.error("Nothing to copy");
+                      try {
+                        await navigator.clipboard.writeText(text);
+                        toast.success(viewDoc.kind === "notes" ? "Notes copied" : "Transcript copied");
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Failed to copy");
+                      }
+                    }}
+                    disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
+                    className="h-8 w-8 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
+                    title="Copy"
+                    aria-label="Copy"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
+                )}
                 <button
                   onClick={closeMeetingDoc}
                   className="h-8 px-3 rounded-md border border-border bg-background text-xs hover:bg-muted inline-flex items-center gap-1"
@@ -643,6 +729,34 @@ function CalendarPage() {
               </div>
             </div>
             <div className="p-4 overflow-y-auto flex-1 min-h-0">
+              {viewDoc.kind === "tasks" ? (
+                <>
+                  {(tasksQ.isLoading || tasksQ.isFetching) && !tasksQ.data && (
+                    <div className="space-y-2 animate-pulse">
+                      <div className="h-3 bg-muted rounded w-full" />
+                      <div className="h-3 bg-muted rounded w-5/6" />
+                      <p className="text-sm text-muted-foreground pt-2">
+                        {viewDoc.hasTasks
+                          ? "Loading tasks from S3…"
+                          : "Extracting tasks with DeepSeek and saving to S3…"}
+                      </p>
+                    </div>
+                  )}
+                  {tasksQ.isError && (
+                    <p className="text-sm text-muted-foreground">
+                      {tasksQ.error instanceof Error ? tasksQ.error.message : "Could not load tasks."}
+                    </p>
+                  )}
+                  {tasksQ.data && (
+                    <MeetingTasksPanel
+                      people={tasksQ.data.people}
+                      model={tasksQ.data.model}
+                      fromS3={tasksQ.data.fromS3 ?? viewDoc.hasTasks}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
               {(notesQ.isLoading || generateNotesM.isPending) && (
                 <div className="space-y-2 animate-pulse">
                   <div className="h-3 bg-muted rounded w-full" />
@@ -691,6 +805,8 @@ function CalendarPage() {
                     </button>
                   )}
                 </div>
+              )}
+                </>
               )}
             </div>
           </div>

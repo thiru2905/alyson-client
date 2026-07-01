@@ -4,16 +4,19 @@ import type { ReactNode } from "react";
 export function Field({
   label,
   hint,
+  required,
   children,
 }: {
   label: string;
   hint?: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className="block space-y-1">
       <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">
         {label}
+        {required ? <span className="text-destructive ml-0.5">*</span> : null}
       </div>
       {children}
       {hint && <div className="text-[11px] text-muted-foreground">{hint}</div>}

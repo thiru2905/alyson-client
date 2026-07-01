@@ -29,6 +29,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import type { TooltipContentProps } from "recharts";
 import { getNotetakerAnalyticsInsights, getNotetakerAnalyticsReport } from "@/lib/notetaker-analytics-functions";
 import { listMeetingsFromS3Range } from "@/lib/notetaker-s3-calendar-functions";
 import { dateMatchesSearchQuery, textMatchesSearchQuery } from "@/lib/fuzzy-text-search";
@@ -961,7 +962,7 @@ function ParticipationPieTooltip({
   totalUtterances,
 }: {
   active?: boolean;
-  payload?: Array<{ name?: string; value?: number; payload?: { name?: string; value?: number } }>;
+  payload?: TooltipContentProps<number, string>["payload"];
   totalUtterances: number;
 }) {
   if (!active || !payload?.length) return null;

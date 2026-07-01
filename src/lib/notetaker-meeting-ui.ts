@@ -6,8 +6,10 @@ export type NotetakerMeetingRow = {
   startedAt: string | null;
   notesKey: string | null;
   transcriptKey: string | null;
+  tasksKey: string | null;
   hasNotes?: boolean;
   hasTranscript?: boolean;
+  hasTasks?: boolean;
 };
 
 export type MeetingListParticipant = {
@@ -17,12 +19,31 @@ export type MeetingListParticipant = {
   words?: number;
 };
 
+export type MeetingListTask = {
+  title: string;
+  dueHint: string | null;
+  priority: "low" | "medium" | "high";
+  status: "open" | "done" | "unclear";
+  sourceQuote: string | null;
+};
+
+export type MeetingListPersonTasks = {
+  personKey: string;
+  name: string;
+  email: string | null;
+  tasks: MeetingListTask[];
+};
+
 export function meetingNotesKey(m: NotetakerMeetingRow): string {
   return m.notesKey ?? `alyson-notetaker/meetingnotes/${m.prefix}/notes.md`;
 }
 
 export function meetingTranscriptKey(m: NotetakerMeetingRow): string {
   return m.transcriptKey ?? `alyson-notetaker/transcripts/${m.prefix}/transcript.txt`;
+}
+
+export function meetingTasksKey(m: NotetakerMeetingRow): string {
+  return m.tasksKey ?? `alyson-notetaker/meetingtasks/${m.prefix}/tasks.json`;
 }
 
 export function formatMeetingDate(startedAt: string | null, day: string) {

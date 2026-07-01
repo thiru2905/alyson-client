@@ -188,14 +188,14 @@ export function downloadWorkspaceActivityPdf(args: {
       if (data.section !== "body") return;
       const row = rowsWithRank[data.row.index];
       if (!row || row.rank <= 0) return;
-      applyMedalRowStyle(data, row.rank);
+      applyMedalRowStyle(data as Parameters<typeof applyMedalRowStyle>[0], row.rank);
     },
     didDrawCell: (data) => {
       if (data.section !== "body" || data.column.index !== 0) return;
       const row = rowsWithRank[data.row.index];
       if (!row) return;
       const tier = medalTierForRank(row.rank);
-      if (tier) drawCuteMedalInCell(doc, data, tier);
+      if (tier) drawCuteMedalInCell(doc, data as Parameters<typeof drawCuteMedalInCell>[1], tier);
     },
   });
 

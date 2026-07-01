@@ -44,7 +44,7 @@ async function ensureBucketExists(bucket: string) {
       ? new CreateBucketCommand({ Bucket: bucket })
       : new CreateBucketCommand({
           Bucket: bucket,
-          CreateBucketConfiguration: { LocationConstraint: region },
+          CreateBucketConfiguration: { LocationConstraint: region as never },
         });
 
   await client.send(cmd);

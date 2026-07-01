@@ -25,7 +25,7 @@ async function runCron(request: Request) {
   try {
     const result = await runRecallCalendarAutoSyncCron();
     console.info("[cron/recall-calendar-sync]", JSON.stringify(result));
-    return Response.json({ ok: result.ok, ...result });
+    return Response.json(result);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Recall calendar sync cron failed";
     console.error("[cron/recall-calendar-sync]", message);

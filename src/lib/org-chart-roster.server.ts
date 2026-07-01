@@ -12,20 +12,20 @@ import { parseOnboardingCsv } from "@/lib/onboarding-csv";
 let cachedLookup: OrgChartRosterLookup | null = null;
 
 function onboardingRowsToRosterEntries(): OrgChartRosterEntry[] {
-  return parseOnboardingCsv(BUNDLED_ONBOARDING_ROSTER_CSV)
-    .map((row) => {
-      const email = canonicalOfficialEmail(String(row["Official Email"] ?? ""));
-      if (!email) return null;
-      return {
-        name: String(row.Name ?? "").trim() || email.split("@")[0] || email,
-        email,
-        personalEmail: String(row["Personal Email"] ?? "").trim() || undefined,
-        location: String(row.Location ?? "").trim(),
-        team: String(row.Team ?? "").trim(),
-        managerLabel: String(row.Manager ?? "").trim(),
-      } satisfies OrgChartRosterEntry;
-    })
-    .filter((e): e is OrgChartRosterEntry => e != null);
+  const entries: OrgChartRosterEntry[] = [];
+  for (const row of parseOnboardingCsv(BUNDLED_ONBOARDING_ROSTER_CSV)) {
+    const email = canonicalOfficialEmail(String(row["Official Email"] ?? ""));
+    if (!email) continue;
+    entries.push({
+      name: String(row.Name ?? "").trim() || email.split("@")[0] || email,
+      email,
+      personalEmail: String(row["Personal Email"] ?? "").trim() || undefined,
+      location: String(row.Location ?? "").trim(),
+      team: String(row.Team ?? "").trim(),
+      managerLabel: String(row.Manager ?? "").trim(),
+    });
+  }
+  return entries;
 }
 
 export function getOrgChartRosterLookup(): OrgChartRosterLookup {

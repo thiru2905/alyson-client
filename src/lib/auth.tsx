@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { ClerkProvider, useAuth as useClerkAuth, useClerk, useUser as useClerkUser } from "@clerk/clerk-react";
-import { useNavigate } from "@tanstack/react-router";
 
 export type AppRole = "super_admin" | "ceo" | "finance" | "hr" | "manager" | "employee";
 
@@ -163,18 +162,13 @@ function AuthInner({ children }: { children: ReactNode }) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
   const publishableKey = import.meta.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY as string | undefined;
   if (!publishableKey) {
     throw new Error("Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY. Add it to .env and restart the dev server.");
   }
 
   return (
-    <ClerkProvider
-      publishableKey={publishableKey}
-      // Prevent full-page navigations during auth flows
-      navigate={(to) => navigate({ to: to as any })}
-    >
+    <ClerkProvider publishableKey={publishableKey}>
       <AuthInner>{children}</AuthInner>
     </ClerkProvider>
   );

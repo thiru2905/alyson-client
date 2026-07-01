@@ -162,7 +162,9 @@ async function countCalendarMeetingsForUser(email: string, startTime: string, en
   return count;
 }
 
-async function listAllUsers(directoryService: ReturnType<typeof google.admin>) {
+async function listAllUsers(
+  directoryService: Awaited<ReturnType<typeof buildDirectoryAndReportsClients>>["directory"],
+) {
   const users: string[] = [];
   let pageToken: string | undefined;
   do {
@@ -233,11 +235,15 @@ async function countAppEvents(args: {
     });
 
     for (const item of resp.data.items ?? []) {
-      const actorEmail = String(item.actor?.email || "").trim().toLowerCase();
+      const activity = item as {
+        actor?: { email?: string };
+        events?: Array<{ name?: string; parameters?: unknown[] }>;
+      };
+      const actorEmail = String(activity.actor?.email || "").trim().toLowerCase();
       if (!actorEmail) continue;
-      const fullMeta = mergeActivityEventsMeta(item);
+      const fullMeta = mergeActivityEventsMeta(activity);
       let counted = false;
-      for (const event of item.events ?? []) {
+      for (const event of activity.events ?? []) {
         if (String(event.name || "") !== args.eventName) continue;
         if (args.includeEvent && !args.includeEvent(event, fullMeta)) continue;
         if (counted) continue;

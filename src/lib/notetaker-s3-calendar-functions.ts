@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getNotesMdFromS3, getTranscriptTextFromS3, listMeetingsFromS3, auditNotesCoverageFromS3 } from "@/lib/notetaker-s3-calendar.server";
 import { resolveMeetingParticipants, buildCalendarAttendeesByBotId } from "@/lib/notetaker-meeting-participants.server";
+import { resolveMeetingListTasks } from "@/lib/notetaker-meeting-list-tasks.server";
 import { ensureMeetingNotesInS3, ensureMeetingNotesByPrefix, backfillAllMissingNotesFromS3 } from "@/lib/notetaker-auto-persist.server";
 
 const RangeInput = z.object({
@@ -86,6 +87,43 @@ export const getMeetingParticipantsBatch = createServerFn({ method: "POST" })
       }),
     );
     return { participantsByPrefix: Object.fromEntries(entries) };
+  });
+
+const MeetingTasksInput = z.object({
+  prefix: z.string().min(1),
+  title: z.string().min(1),
+  day: z.string().min(1),
+  notesKey: z.string().min(1).nullable().optional(),
+  transcriptKey: z.string().min(1).nullable().optional(),
+  botId: z.string().min(1).nullable().optional(),
+  hasNotes: z.boolean().optional(),
+  hasTranscript: z.boolean().optional(),
+  forceRefresh: z.boolean().optional(),
+});
+
+/** Per-participant tasks from notes + transcript (DeepSeek). */
+export const getMeetingTasksFromS3 = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => MeetingTasksInput.parse(data))
+  .handler(async ({ data }) => {
+    const notesKey =
+      data.notesKey ??
+      `alyson-notetaker/meetingnotes/${data.prefix}/notes.md`;
+    const transcriptKey =
+      data.transcriptKey ??
+      `alyson-notetaker/transcripts/${data.prefix}/transcript.txt`;
+
+    const payload = await resolveMeetingListTasks({
+      prefix: data.prefix,
+      title: data.title,
+      day: data.day,
+      notesKey,
+      transcriptKey,
+      botId: data.botId,
+      hasNotes: data.hasNotes,
+      hasTranscript: data.hasTranscript,
+      forceRefresh: data.forceRefresh,
+    });
+    return payload;
   });
 
 const EnsureNotesInput = z

@@ -119,21 +119,20 @@ function secondsBetween(startIso: string | null, endIso: string | null): number 
 
 function normalizeStatusChanges(raw: unknown): RecallBotStatusChange[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((row) => {
-      const o = row as { code?: string; created_at?: string; sub_code?: string; message?: string };
-      const code = String(o?.code || "").trim();
-      const createdAt = String(o?.created_at || "").trim();
-      if (!code || !createdAt) return null;
-      return {
-        code,
-        createdAt,
-        subCode: o?.sub_code ?? null,
-        message: o?.message ?? null,
-      };
-    })
-    .filter((row): row is RecallBotStatusChange => Boolean(row))
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const changes: RecallBotStatusChange[] = [];
+  for (const row of raw) {
+    const o = row as { code?: string; created_at?: string; sub_code?: string; message?: string };
+    const code = String(o?.code || "").trim();
+    const createdAt = String(o?.created_at || "").trim();
+    if (!code || !createdAt) continue;
+    changes.push({
+      code,
+      createdAt,
+      subCode: o?.sub_code ?? null,
+      message: o?.message ?? null,
+    });
+  }
+  return changes.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
 export function parseRecallBotLifecycle(botId: string, bot: unknown): RecallBotLifecycle {

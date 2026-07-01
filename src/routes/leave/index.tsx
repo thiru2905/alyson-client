@@ -169,11 +169,15 @@ function LeaveEmployeesPage() {
           <div className="font-medium text-[13px]">Active employee leave ledger</div>
           <div className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
             Employee list and emails come from{" "}
-            <Link to="/time-dashboard" className="text-foreground underline underline-offset-2">
+            <Link to="/time-dashboard" search={{ start: undefined, end: undefined }} className="text-foreground underline underline-offset-2">
               Time Dashboard
             </Link>{" "}
             (Time Doctor — @cintara.ai / @revcloud.com). Only employees marked <strong>Active</strong> in{" "}
-            <Link to="/time-dashboard/pacing" className="text-foreground underline underline-offset-2">
+            <Link
+              to="/time-dashboard/pacing"
+              search={{ day: undefined, start: undefined, end: undefined }}
+              className="text-foreground underline underline-offset-2"
+            >
               Weekly Pacing
             </Link>{" "}
             are shown. Lifetime leave limit: <strong>{LIFETIME_LEAVE_DAYS_LIMIT} days</strong> per employee.

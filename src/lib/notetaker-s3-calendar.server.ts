@@ -1,4 +1,4 @@
-import { GetObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
 import { isGenericMeetingTitle } from "@/lib/notetaker-session-title.server";
 
@@ -47,9 +47,11 @@ export type S3Meeting = {
   title: string;
   notesKey: string | null;
   transcriptKey: string | null;
+  tasksKey: string | null;
   startedAt: string | null;
   hasNotes: boolean;
   hasTranscript: boolean;
+  hasTasks: boolean;
 };
 
 type BotIndexDoc = {
@@ -188,13 +190,15 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
 
   const notesBase = "alyson-notetaker/meetingnotes/";
   const transcriptBase = "alyson-notetaker/transcripts/";
+  const tasksBase = "alyson-notetaker/meetingtasks/";
 
-  const [notesPrefixes, transcriptPrefixes] = await Promise.all([
+  const [notesPrefixes, transcriptPrefixes, tasksPrefixes] = await Promise.all([
     listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md", { minSize: 1 }),
     listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt", { minSize: 1 }),
+    listMeetingAssetPrefixes(client, bucket, tasksBase, "tasks.json", { minSize: 1 }),
   ]);
 
-  const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes])).filter((p) => {
+  const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes])).filter((p) => {
     const parts = p.split("_");
     const date = parts.length >= 2 ? parts[parts.length - 2] : "";
     return date && date >= start && date <= end;
@@ -221,8 +225,10 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
       startedAt: parsed.startedAt,
       notesKey: `${notesBase}${p}/notes.md`,
       transcriptKey: `${transcriptBase}${p}/transcript.txt`,
+      tasksKey: `${tasksBase}${p}/tasks.json`,
       hasNotes: notesPrefixes.has(p),
       hasTranscript: transcriptPrefixes.has(p),
+      hasTasks: tasksPrefixes.has(p),
     });
   }
 
@@ -301,5 +307,40 @@ export async function getTranscriptTextFromS3({ transcriptKey }: { transcriptKey
   const body = r.Body;
   if (!body) throw new Error("Transcript not found");
   return await streamToString(body);
+}
+
+export async function getTasksJsonFromS3({ tasksKey }: { tasksKey: string }): Promise<string | null> {
+  const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
+  const client = s3();
+  try {
+    const r = await client.send(new GetObjectCommand({ Bucket: bucket, Key: tasksKey }));
+    const body = r.Body;
+    if (!body) return null;
+    return await streamToString(body);
+  } catch {
+    return null;
+  }
+}
+
+export async function putTasksJsonToS3({
+  tasksKey,
+  body,
+  metadata,
+}: {
+  tasksKey: string;
+  body: string;
+  metadata?: Record<string, string>;
+}) {
+  const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
+  const client = s3();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: tasksKey,
+      Body: body,
+      ContentType: "application/json; charset=utf-8",
+      Metadata: metadata,
+    }),
+  );
 }
 

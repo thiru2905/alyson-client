@@ -456,7 +456,7 @@ function BotJoinReportPage() {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                       <XAxis dataKey="day" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                      <Tooltip formatter={(v: number) => `${v}%`} />
+                      <Tooltip formatter={(v) => `${Number(v ?? 0)}%`} />
                       <Legend />
                       <Line
                         type="monotone"
@@ -491,7 +491,7 @@ function BotJoinReportPage() {
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                       <XAxis dataKey="day" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}m`} />
-                      <Tooltip formatter={(v: number | null) => (v != null ? `${v}m` : "—")} />
+                      <Tooltip formatter={(v) => (v != null ? `${Number(v)}m` : "—")} />
                       <Legend />
                       <Line
                         type="monotone"

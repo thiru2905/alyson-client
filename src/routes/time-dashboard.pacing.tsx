@@ -277,7 +277,7 @@ function WeeklyPacingPage() {
   function applyWeek() {
     navigate({
       to: "/time-dashboard/pacing",
-      search: { day: day !== defaultDay ? day : undefined },
+      search: { day: day !== defaultDay ? day : undefined, start: undefined, end: undefined },
     });
   }
 
@@ -401,6 +401,7 @@ function WeeklyPacingPage() {
             </Link>
             <Link
               to="/time-dashboard/monthly-pacing"
+              search={{ month: undefined, start: undefined, end: undefined }}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
             >
               Monthly Pacing

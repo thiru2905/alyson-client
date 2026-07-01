@@ -17,7 +17,9 @@ export const listPersistedMeetings = createServerFn({ method: "GET" })
     const startIso = `${data.start}T00:00:00.000Z`;
     const endIso = `${data.end}T23:59:59.999Z`;
 
-    const { data: rows, error } = await supabaseAdmin
+    const { data: rows, error } = await (
+      supabaseAdmin as unknown as { from: (table: string) => ReturnType<typeof supabaseAdmin.from> }
+    )
       .from("meeting_sessions")
       .select("id, bot_id, title, started_at, ended_at, finalized_at")
       .gte("ended_at", startIso)

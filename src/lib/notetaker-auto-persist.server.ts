@@ -156,11 +156,17 @@ async function maybeGenerateNotesAfterCheckpoint(
   if (!endedStatus(session.status)) return;
   if (!(await notesAbsentFromS3(existingIndex))) return;
   try {
-    await autoPersistEndedMeetingToS3({
+    const result = await autoPersistEndedMeetingToS3({
       session: await withResolvedMeetingTitle(session),
       lines,
       forceNotes: true,
     });
+    if (result.persisted && result.notesMd?.trim()) {
+      const { maybeGenerateMeetingTasksWhenReady } = await import(
+        "@/lib/notetaker-meeting-list-tasks.server"
+      );
+      void maybeGenerateMeetingTasksWhenReady(session.botId);
+    }
   } catch {
     // best-effort notes after transcript is in S3
   }
@@ -357,6 +363,10 @@ export async function autoPersistEndedMeetingToS3(args: {
 
   if (!result.skippedDuplicate && (result.wroteTranscript || result.wroteNotes)) {
     invalidateNotetakerCalendarS3Cache();
+    const { maybeGenerateMeetingTasksWhenReady } = await import(
+      "@/lib/notetaker-meeting-list-tasks.server"
+    );
+    void maybeGenerateMeetingTasksWhenReady(botId);
   }
 
   return {
@@ -437,12 +447,22 @@ export async function ensureMeetingNotesInS3(botId: string): Promise<{
   const idx = await loadBotIndexDoc(id).catch(() => null);
   if (result.notesMd?.trim()) {
     invalidateNotetakerCalendarS3Cache();
+    const { maybeGenerateMeetingTasksWhenReady } = await import(
+      "@/lib/notetaker-meeting-list-tasks.server"
+    );
+    void maybeGenerateMeetingTasksWhenReady(id);
     return { ok: true, notesKey: idx?.notesKey ?? null, notesMd: result.notesMd };
   }
 
   if (existingIndex?.prefix) {
     const fallback = await ensureMeetingNotesByPrefix(existingIndex.prefix, id);
     if (fallback.ok) {
+      if (fallback.notesMd?.trim()) {
+        const { maybeGenerateMeetingTasksWhenReady } = await import(
+          "@/lib/notetaker-meeting-list-tasks.server"
+        );
+        void maybeGenerateMeetingTasksWhenReady(id);
+      }
       return { ok: true, notesKey: fallback.notesKey ?? null, notesMd: fallback.notesMd ?? null };
     }
     return { ok: false, skipped: fallback.skipped || "notes_generation_failed" };

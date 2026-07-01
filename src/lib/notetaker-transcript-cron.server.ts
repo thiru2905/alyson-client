@@ -186,7 +186,13 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
         }
         if (result.persisted) {
           written += 1;
-          if (result.notesMd?.trim()) notesWritten += 1;
+          if (result.notesMd?.trim()) {
+            notesWritten += 1;
+            const { maybeGenerateMeetingTasksWhenReady } = await import(
+              "@/lib/notetaker-meeting-list-tasks.server"
+            );
+            void maybeGenerateMeetingTasksWhenReady(botId);
+          }
         } else if (result.skipped === "unchanged") {
           skippedUnchanged += 1;
         }

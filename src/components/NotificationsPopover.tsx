@@ -29,7 +29,7 @@ export function NotificationsPopover() {
     queryFn: async () => {
       const { data: rows, error } = await supabase
         .from("leave_requests")
-        .select("id, created_at, days, employees(full_name), leave_types(name)")
+        .select("id, created_at, days, employees!leave_requests_employee_id_fkey(full_name), leave_types(name)")
         .eq("status", "pending")
         .order("created_at", { ascending: false })
         .limit(20);

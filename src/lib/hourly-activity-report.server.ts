@@ -3,7 +3,7 @@ import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import type { HourlyActivityResponse } from "@/lib/hourly-activity-types";
+import type { HourlyActivityResponse, HourlyActivityRow } from "@/lib/hourly-activity-types";
 import { listReportActivities } from "@/lib/google-reports-activities";
 import { isGoogleDocsCreateEvent, isOutboundSmtpDelivery } from "@/lib/workspace-activity-content.server";
 import {

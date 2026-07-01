@@ -308,7 +308,7 @@ function CostTrackingContent({
               <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
               <XAxis dataKey="day" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
-              <Tooltip formatter={(v: number) => usd(v)} />
+              <Tooltip formatter={(v) => usd(Number(v ?? 0))} />
               <Legend />
               <Bar dataKey="botCost" stackId="cost" fill="var(--chart-1)" name="Bot" radius={[0, 0, 0, 0]} />
               <Bar dataKey="transcriptCost" stackId="cost" fill="var(--chart-2)" name="Transcription" radius={[3, 3, 0, 0]} />

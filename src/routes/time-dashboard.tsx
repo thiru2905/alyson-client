@@ -370,7 +370,7 @@ function TimeDashboardPage() {
                 </label>
                 <Link
                   to="/time-dashboard/pacing"
-                  search={{ start: appliedStart, end: appliedEnd }}
+                  search={{ start: appliedStart, end: appliedEnd, day: undefined }}
                   className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
                   title="Current week pacing — employees under 35h with hours remaining"
                 >
@@ -379,6 +379,7 @@ function TimeDashboardPage() {
                 </Link>
                 <Link
                   to="/time-dashboard/monthly-pacing"
+                  search={{ month: undefined, start: undefined, end: undefined }}
                   className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
                   title="Month-to-date pacing — workdays in month × 7h target"
                 >

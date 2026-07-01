@@ -11,7 +11,7 @@ type TableCellHook = {
   section: string;
   column: { index: number };
   row: { index: number };
-  cell: { x: number; y: number; width: number; height: number; styles: { fillColor?: number | number[] } };
+  cell: { x: number; y: number; width: number; height: number; styles: { fillColor?: number | number[] | string | false } };
 };
 
 /** Draw a small medal (circle + ribbon) centered in an autotable cell. */

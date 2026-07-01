@@ -71,7 +71,7 @@ export async function persistSession({
   const existing = await getPersistedSession(session.botId);
 
   const sorted = [...lines].sort((a, b) => new Date(a.received_at).getTime() - new Date(b.received_at).getTime());
-  if (existing?.transcript?.lineCount >= sorted.length && sorted.length > 0) {
+  if ((existing?.transcript?.lineCount ?? 0) >= sorted.length && sorted.length > 0) {
     return existing;
   }
   const transcriptText = sorted

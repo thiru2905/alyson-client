@@ -80,7 +80,7 @@ async function ensureBucketExists(bucket: string) {
   const cmd =
     region === "us-east-1"
       ? new CreateBucketCommand({ Bucket: bucket })
-      : new CreateBucketCommand({ Bucket: bucket, CreateBucketConfiguration: { LocationConstraint: region } });
+      : new CreateBucketCommand({ Bucket: bucket, CreateBucketConfiguration: { LocationConstraint: region as never } });
   await client.send(cmd);
 }
 
