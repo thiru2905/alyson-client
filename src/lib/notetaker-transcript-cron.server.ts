@@ -20,6 +20,7 @@ import {
 import { listAllUnifiedScheduledBotSessions } from "@/lib/unifiedMeetingsService";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 import { runRecallMediaCleanup, type RecallMediaCleanupResult } from "@/lib/notetaker-recall-media-cleanup.server";
+import { activateDueScheduledBotSessions } from "@/lib/notetaker-scheduled-bot-activation.server";
 
 function normalizeSessionPayload(res: unknown, botId: string): NotetakerSessionPayload | null {
   if (!res || typeof res !== "object") return null;
@@ -52,6 +53,7 @@ export type NotetakerTranscriptCronResult = {
   errors: number;
   warnings: string[];
   recallMediaCleanup?: RecallMediaCleanupResult;
+  scheduledBotActivation?: Awaited<ReturnType<typeof activateDueScheduledBotSessions>>;
 };
 
 async function collectBotIds(): Promise<{ botIds: Set<string>; warnings: string[] }> {
@@ -115,7 +117,16 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     };
   }
 
-  const { botIds, warnings } = await collectBotIds();
+  const warnings: string[] = [];
+  let scheduledBotActivation: Awaited<ReturnType<typeof activateDueScheduledBotSessions>> | undefined;
+  try {
+    scheduledBotActivation = await activateDueScheduledBotSessions();
+  } catch (e) {
+    warnings.push(`scheduled_bot_activation: ${String(e)}`);
+  }
+
+  const { botIds, warnings: collectWarnings } = await collectBotIds();
+  warnings.push(...collectWarnings);
   let written = 0;
   let notesWritten = 0;
   let skippedUnchanged = 0;
@@ -230,5 +241,6 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     errors,
     warnings: warnings.slice(0, 12),
     recallMediaCleanup,
+    scheduledBotActivation,
   };
 }

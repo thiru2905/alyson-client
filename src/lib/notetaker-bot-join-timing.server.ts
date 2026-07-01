@@ -8,6 +8,9 @@ export const LATE_GRACE_SECONDS = 2 * 60;
 /** Matches resolvePlannedCalendarJoinAt MIN_SCHEDULE_AHEAD_MS — Recall honors join_at only when this far ahead. */
 export const DEFERRED_BOT_JOIN_MIN_AHEAD_MS = 90 * 1000;
 
+/** Wake Notetaker session this close to join_at (after Recall deferred schedule). */
+export const NOTETAKER_ACTIVATION_BEFORE_JOIN_MS = 60 * 1000;
+
 /** True when join_at is far enough ahead that Recall should create the bot (Notetaker may join immediately). */
 export function isDeferredBotJoin(
   botJoinAt: string,
@@ -15,6 +18,16 @@ export function isDeferredBotJoin(
 ): boolean {
   const joinMs = new Date(botJoinAt).getTime();
   return Number.isFinite(joinMs) && joinMs > Date.now() + minAheadMs;
+}
+
+/** True when Notetaker session wake is safe — within ~1 min of Recall join_at (transcripts without hours-early lobby). */
+export function isNotetakerSessionActivationDue(
+  botJoinAt: string,
+  leadMs: number = NOTETAKER_ACTIVATION_BEFORE_JOIN_MS,
+): boolean {
+  const joinMs = new Date(botJoinAt).getTime();
+  if (!Number.isFinite(joinMs)) return false;
+  return Date.now() >= joinMs - leadMs;
 }
 
 function secondsBetween(startIso: string, endIso: string): number | null {

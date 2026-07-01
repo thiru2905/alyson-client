@@ -39,6 +39,8 @@ export type UnifiedScheduledStateEntry = {
   joinedAt?: string;
   endedAt?: string;
   lastError?: string;
+  /** Set when Notetaker session is wired shortly before join_at (deferred Recall bots). */
+  notetakerActivatedAt?: string;
 };
 
 export type UnifiedScheduledState = {

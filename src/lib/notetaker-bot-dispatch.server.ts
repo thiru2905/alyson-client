@@ -15,6 +15,8 @@ export type BotSessionLinkArgs = {
   meetingUrl: string;
   botJoinAt: string;
   metadata?: Record<string, unknown>;
+  /** When true, session wake runs even for future join_at (use only near join time). */
+  allowSessionWake?: boolean;
 };
 
 function notetakerBaseUrl(): string {
@@ -105,7 +107,7 @@ export async function linkBotToNotetakerSession(args: BotSessionLinkArgs): Promi
     console.warn(`[notetaker-dispatch] register-bot unreachable for ${botId}:`, e);
   }
 
-  if (!registered && !isDeferredBotJoin(args.botJoinAt)) {
+  if (!registered && (args.allowSessionWake || !isDeferredBotJoin(args.botJoinAt))) {
     try {
       const res = await notetakerGet(`/api/session/${encodeURIComponent(botId)}`);
       if (!res.ok) {
