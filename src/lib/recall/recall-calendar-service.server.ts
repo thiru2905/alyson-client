@@ -27,6 +27,7 @@ import {
   getRecallCalendarAllowlist,
   isRecallCalendarEmailAllowed,
 } from "@/lib/recall/recall-calendar-allowlist.server";
+import { autoSyncRecallCalendarIfPending } from "@/lib/recall/recall-calendar-sync-cron.server";
 
 export async function getRecallCalendarStatus() {
   const state = await readRecallCalendarState();
@@ -185,7 +186,7 @@ export async function syncRecallCalendarNow(
 
 export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhookPayload) {
   if (payload.event === "calendar.sync_events") {
-    const { calendar_id, last_updated_ts } = payload.data;
+    const { calendar_id } = payload.data;
     const ownerEmail = await resolveRecallCalendarOwnerEmail(calendar_id);
     if (!isRecallCalendarEmailAllowed(ownerEmail)) {
       return {
@@ -195,16 +196,28 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
         allowlist: getRecallCalendarAllowlist(),
       };
     }
-    // Auto-schedule bots for new upcoming meetings when calendar events change.
-    return syncRecallCalendarEvents({
+    // Auto-schedule bots for new upcoming meetings when calendar events change (server-side Sync now).
+    const auto = await autoSyncRecallCalendarIfPending({
       calendarId: calendar_id,
-      updatedAtGte: last_updated_ts,
       ownerEmail,
-      scheduleAll: true,
-      verifyExistingBots: true,
-      maxNewBots: MAX_NEW_BOTS_PER_SYNC,
-      refreshBotConfig: false,
     });
+    if (auto.ran) {
+      return {
+        action: "auto_sync_pending",
+        calendarId: calendar_id,
+        ownerEmail,
+        pendingBefore: auto.pendingBefore,
+        scheduled: auto.scheduled,
+        skipped: auto.skipped,
+        errors: auto.errors,
+      };
+    }
+    return {
+      action: "no_pending",
+      calendarId: calendar_id,
+      ownerEmail,
+      reason: auto.reason ?? "No pending meetings",
+    };
   }
 
   if (payload.event === "calendar.update") {

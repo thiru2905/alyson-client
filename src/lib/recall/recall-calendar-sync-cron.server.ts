@@ -28,7 +28,83 @@ export type RecallCalendarSyncCronResult = {
   }>;
 };
 
-/** Automated Sync now for allowlisted connected calendars (pending meetings only). */
+/** Automated Sync now for one allowlisted calendar when pending > 0 (same as UI Sync now). */
+export async function autoSyncRecallCalendarIfPending(args: {
+  calendarId: string;
+  ownerEmail: string;
+}): Promise<{
+  ran: boolean;
+  pendingBefore: number;
+  scheduled: number;
+  skipped: number;
+  errors: string[];
+  reason?: string;
+}> {
+  const calendarId = String(args.calendarId || "").trim();
+  const ownerEmail = String(args.ownerEmail || "").trim();
+  if (!calendarId) {
+    return { ran: false, pendingBefore: 0, scheduled: 0, skipped: 0, errors: [], reason: "Missing calendar id" };
+  }
+  if (!isRecallCalendarEmailAllowed(ownerEmail)) {
+    return {
+      ran: false,
+      pendingBefore: 0,
+      scheduled: 0,
+      skipped: 0,
+      errors: [],
+      reason: `Auto-schedule disabled for ${ownerEmail || "unknown"}`,
+    };
+  }
+
+  try {
+    await getRecallCalendar(calendarId);
+  } catch {
+    return {
+      ran: false,
+      pendingBefore: 0,
+      scheduled: 0,
+      skipped: 0,
+      errors: [],
+      reason: "Calendar not found in Recall",
+    };
+  }
+
+  let pendingBefore = 0;
+  try {
+    pendingBefore = (await previewRecallCalendarPending(calendarId)).pendingCount;
+  } catch {
+    // Non-fatal — still attempt sync when preview fails.
+  }
+
+  if (pendingBefore === 0) {
+    return {
+      ran: false,
+      pendingBefore: 0,
+      scheduled: 0,
+      skipped: 0,
+      errors: [],
+      reason: "No pending meetings",
+    };
+  }
+
+  const sync = await syncRecallCalendarEvents({
+    calendarId,
+    ownerEmail,
+    scheduleAll: true,
+    verifyExistingBots: false,
+    maxNewBots: MAX_NEW_BOTS_PER_SYNC,
+  });
+
+  return {
+    ran: true,
+    pendingBefore,
+    scheduled: sync.scheduled,
+    skipped: sync.skipped,
+    errors: sync.errors,
+  };
+}
+
+/** Automated Sync now for all allowlisted connected calendars (pending meetings only). */
 export async function runRecallCalendarAutoSyncCron(): Promise<RecallCalendarSyncCronResult> {
   const state = await readRecallCalendarState();
   const connections = getConnectedRecallCalendars(state).filter((c) =>
@@ -45,64 +121,38 @@ export async function runRecallCalendarAutoSyncCron(): Promise<RecallCalendarSyn
   };
 
   for (const conn of connections) {
-    try {
-      await getRecallCalendar(conn.recallCalendarId);
-    } catch {
-      result.calendars.push({
-        email: conn.email,
-        calendarId: conn.recallCalendarId,
-        pendingBefore: 0,
-        scheduled: 0,
-        skipped: 0,
-        errors: [],
-        skippedRun: true,
-        reason: "Calendar not found in Recall",
-      });
-      continue;
-    }
-
-    let pendingBefore = 0;
-    try {
-      pendingBefore = (await previewRecallCalendarPending(conn.recallCalendarId)).pendingCount;
-    } catch {
-      // Non-fatal — still attempt sync.
-    }
-
-    if (pendingBefore === 0) {
-      result.calendars.push({
-        email: conn.email,
-        calendarId: conn.recallCalendarId,
-        pendingBefore: 0,
-        scheduled: 0,
-        skipped: 0,
-        errors: [],
-        skippedRun: true,
-        reason: "No pending meetings",
-      });
-      continue;
-    }
-
-    const sync = await syncRecallCalendarEvents({
+    const run = await autoSyncRecallCalendarIfPending({
       calendarId: conn.recallCalendarId,
       ownerEmail: conn.email,
-      scheduleAll: true,
-      verifyExistingBots: false,
-      maxNewBots: MAX_NEW_BOTS_PER_SYNC,
     });
 
+    if (!run.ran) {
+      result.calendars.push({
+        email: conn.email,
+        calendarId: conn.recallCalendarId,
+        pendingBefore: run.pendingBefore,
+        scheduled: 0,
+        skipped: 0,
+        errors: [],
+        skippedRun: true,
+        reason: run.reason,
+      });
+      continue;
+    }
+
     result.calendarsProcessed += 1;
-    result.totalScheduled += sync.scheduled;
-    result.totalSkipped += sync.skipped;
-    result.totalErrors += sync.errors.length;
-    if (sync.errors.length) result.ok = false;
+    result.totalScheduled += run.scheduled;
+    result.totalSkipped += run.skipped;
+    result.totalErrors += run.errors.length;
+    if (run.errors.length) result.ok = false;
 
     result.calendars.push({
       email: conn.email,
       calendarId: conn.recallCalendarId,
-      pendingBefore,
-      scheduled: sync.scheduled,
-      skipped: sync.skipped,
-      errors: sync.errors,
+      pendingBefore: run.pendingBefore,
+      scheduled: run.scheduled,
+      skipped: run.skipped,
+      errors: run.errors,
     });
   }
 

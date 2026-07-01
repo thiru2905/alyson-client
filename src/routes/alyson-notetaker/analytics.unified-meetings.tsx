@@ -222,7 +222,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="Connected calendars auto-sync when new meetings need bots (upcoming − scheduled > 0). Bots join ~2 min before each meeting."
+        description="Connected calendars auto-sync on the server when pending > 0 (cron every 5 min + Recall webhooks). No page visit required."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -510,7 +510,7 @@ function RecallCalendarConnectionRow({
               {upcomingCount} upcoming · {scheduledInAppCount} scheduled in app · {serverPending} pending
               {needsAutoSync && RECALL_CALENDAR_AUTO_SYNC ? (
                 <span className="text-foreground">
-                  {busy ? " — auto-syncing…" : " — auto-sync when this page is open"}
+                  {busy ? " — syncing…" : " — also syncs via server cron (every 5 min)"}
                 </span>
               ) : null}
             </div>
