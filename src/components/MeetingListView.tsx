@@ -6,6 +6,7 @@ import {
   getMeetingParticipantsFromS3,
   getMeetingTranscriptTextFromS3,
 } from "@/lib/notetaker-s3-calendar-functions";
+import { saveMeetingParticipantsCache } from "@/lib/meeting-list-participants-cache";
 import {
   formatMeetingListWhen,
   meetingNotesKey,
@@ -28,28 +29,39 @@ function panelButtonClass(active: boolean) {
 
 function MeetingListCard({
   meeting,
+  prefetchedParticipants,
+  participantsBatchLoading,
   openPanel,
   onTogglePanel,
 }: {
   meeting: NotetakerMeetingRow;
+  prefetchedParticipants: MeetingListParticipant[] | undefined;
+  participantsBatchLoading: boolean;
   openPanel: PanelKind | null;
   onTogglePanel: (kind: PanelKind) => void;
 }) {
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
+  const hasPrefetched = prefetchedParticipants !== undefined;
 
   const participantsQ = useQuery({
     queryKey: ["meeting-list-participants", meeting.prefix, transcriptKey, meeting.botId],
-    queryFn: () =>
-      getMeetingParticipantsFromS3({
+    queryFn: async () => {
+      const result = await getMeetingParticipantsFromS3({
         data: {
           transcriptKey,
           botId: meeting.botId,
           hasTranscript: meeting.hasTranscript,
         },
-      }),
-    enabled: openPanel === "participants",
-    staleTime: 10 * 60_000,
+      });
+      saveMeetingParticipantsCache(meeting.prefix, result.participants as MeetingListParticipant[]);
+      return result;
+    },
+    enabled:
+      openPanel === "participants" && !hasPrefetched && !participantsBatchLoading,
+    initialData: hasPrefetched ? { participants: prefetchedParticipants } : undefined,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
     retry: false,
   });
 
@@ -72,7 +84,9 @@ function MeetingListCard({
   const participants = (participantsQ.data?.participants ?? []) as MeetingListParticipant[];
 
   const panelLoading =
-    (openPanel === "participants" && participantsQ.isLoading) ||
+    (openPanel === "participants" &&
+      !hasPrefetched &&
+      (participantsBatchLoading || participantsQ.isLoading)) ||
     (openPanel === "notes" && notesQ.isLoading) ||
     (openPanel === "transcript" && transcriptQ.isLoading);
 
@@ -244,7 +258,15 @@ function MeetingListCard({
   );
 }
 
-export function MeetingListView({ meetings }: { meetings: NotetakerMeetingRow[] }) {
+export function MeetingListView({
+  meetings,
+  participantsByPrefix,
+  participantsBatchLoading = false,
+}: {
+  meetings: NotetakerMeetingRow[];
+  participantsByPrefix: Record<string, MeetingListParticipant[]>;
+  participantsBatchLoading?: boolean;
+}) {
   const [openByPrefix, setOpenByPrefix] = useState<Record<string, PanelKind | null>>({});
 
   function togglePanel(prefix: string, kind: PanelKind) {
@@ -268,6 +290,8 @@ export function MeetingListView({ meetings }: { meetings: NotetakerMeetingRow[] 
         <MeetingListCard
           key={m.prefix}
           meeting={m}
+          prefetchedParticipants={participantsByPrefix[m.prefix]}
+          participantsBatchLoading={participantsBatchLoading}
           openPanel={openByPrefix[m.prefix] ?? null}
           onTogglePanel={(kind) => togglePanel(m.prefix, kind)}
         />

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getNotesMdFromS3, getTranscriptTextFromS3, listMeetingsFromS3, auditNotesCoverageFromS3 } from "@/lib/notetaker-s3-calendar.server";
-import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
+import { resolveMeetingParticipants, buildCalendarAttendeesByBotId } from "@/lib/notetaker-meeting-participants.server";
 import { ensureMeetingNotesInS3, ensureMeetingNotesByPrefix, backfillAllMissingNotesFromS3 } from "@/lib/notetaker-auto-persist.server";
 
 const RangeInput = z.object({
@@ -54,6 +54,38 @@ export const getMeetingParticipantsFromS3 = createServerFn({ method: "POST" })
       hasTranscript: data.hasTranscript,
     });
     return { participants };
+  });
+
+const ParticipantsBatchInput = z.object({
+  meetings: z
+    .array(
+      z.object({
+        prefix: z.string().min(1),
+        transcriptKey: z.string().min(1).nullable().optional(),
+        botId: z.string().min(1).nullable().optional(),
+        hasTranscript: z.boolean().optional(),
+      }),
+    )
+    .max(120),
+});
+
+/** Batch participants for Meeting List — one calendar scan, parallel S3 reads. */
+export const getMeetingParticipantsBatch = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => ParticipantsBatchInput.parse(data))
+  .handler(async ({ data }) => {
+    const calendarByBot = await buildCalendarAttendeesByBotId();
+    const entries = await Promise.all(
+      data.meetings.map(async (meeting) => {
+        const participants = await resolveMeetingParticipants({
+          transcriptKey: meeting.transcriptKey,
+          botId: meeting.botId,
+          hasTranscript: meeting.hasTranscript,
+          calendarByBot,
+        });
+        return [meeting.prefix, participants] as const;
+      }),
+    );
+    return { participantsByPrefix: Object.fromEntries(entries) };
   });
 
 const EnsureNotesInput = z

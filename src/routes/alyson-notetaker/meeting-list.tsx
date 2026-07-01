@@ -4,13 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Captions, List } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { MeetingListView } from "@/components/MeetingListView";
-import { listMeetingsFromS3Range } from "@/lib/notetaker-s3-calendar-functions";
+import { listMeetingsFromS3Range, getMeetingParticipantsBatch } from "@/lib/notetaker-s3-calendar-functions";
+import {
+  loadCachedParticipantsForPrefixes,
+  saveMeetingParticipantsCacheBatch,
+} from "@/lib/meeting-list-participants-cache";
 import {
   addMonths,
   endOfMonth,
   isoDay,
   monthLabel,
   startOfMonth,
+  type MeetingListParticipant,
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
 
@@ -35,6 +40,37 @@ function MeetingListPage() {
   });
 
   const meetings = (q.data?.meetings ?? []) as NotetakerMeetingRow[];
+
+  const meetingFingerPrint = meetings.map((m) => m.prefix).join("|");
+
+  const participantsQ = useQuery({
+    queryKey: ["notetaker-meeting-list-participants", range.start, range.end, meetingFingerPrint],
+    queryFn: async () => {
+      const result = await getMeetingParticipantsBatch({
+        data: {
+          meetings: meetings.map((m) => ({
+            prefix: m.prefix,
+            transcriptKey: m.transcriptKey,
+            botId: m.botId,
+            hasTranscript: m.hasTranscript,
+          })),
+        },
+      });
+      saveMeetingParticipantsCacheBatch(
+        result.participantsByPrefix as Record<string, MeetingListParticipant[]>,
+      );
+      return result.participantsByPrefix as Record<string, MeetingListParticipant[]>;
+    },
+    enabled: meetings.length > 0 && !q.isLoading,
+    staleTime: 30 * 60_000,
+    gcTime: 60 * 60_000,
+    placeholderData: () => {
+      const cached = loadCachedParticipantsForPrefixes(meetings.map((m) => m.prefix));
+      return Object.keys(cached).length > 0 ? cached : undefined;
+    },
+  });
+
+  const participantsByPrefix = participantsQ.data ?? {};
 
   return (
     <div className="ops-dense">
@@ -101,7 +137,11 @@ function MeetingListPage() {
             ))}
           </div>
         ) : (
-          <MeetingListView meetings={meetings} />
+          <MeetingListView
+            meetings={meetings}
+            participantsByPrefix={participantsByPrefix}
+            participantsBatchLoading={participantsQ.isFetching}
+          />
         )}
       </div>
     </div>
