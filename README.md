@@ -2,11 +2,28 @@
 
 # Alyson HR Client
 
-**TanStack Start · React · Clerk · Supabase · S3**
+**TanStack Start · React 19 · Vite · Clerk · Supabase · S3**
 
-Web app for team directory, org chart, HR ops, and meeting notetaker.
+Full-stack HR operations platform: people directory, payroll & bonus, leave & attendance, workspace analytics, AI insights, and meeting notetaker.
 
 </div>
+
+---
+
+## What this app is
+
+Alyson HR (`alyson-client`) is a **colocated full-stack web app** — React UI and server logic live in one repo, deployed as a single Vercel/Nitro app. It is **not** Next.js.
+
+| Layer | Technology |
+|-------|------------|
+| UI | React 19, TanStack Router, TanStack Query, Tailwind, Radix |
+| Server | TanStack Start `createServerFn`, Nitro (Vercel preset) |
+| Auth | Clerk (`publicMetadata.roles`) |
+| Transactional HR | Supabase (Postgres) |
+| Ledgers & notetaker artifacts | AWS S3 |
+| Integrations | Google Workspace DWD, Time Doctor, Recall.ai, Groq/DeepSeek, Resend |
+
+**Product positioning:** vertical **HR + ops cockpit** with an AI layer (Alyson Brain) and meeting intelligence (Notetaker) — not a horizontal enterprise search tool like Glean.
 
 ---
 
@@ -14,238 +31,248 @@ Web app for team directory, org chart, HR ops, and meeting notetaker.
 
 ```bash
 npm install
-npm run dev          # UI on http://localhost:3000
-npm run dev:ops      # UI + notetaker base URL pointed at localhost:3003
+cp .env.example .env   # or copy from team vault
+npm run dev            # http://localhost:3001
+npm run dev:ops        # same + notetaker URLs → localhost:3003
 ```
 
-Copy `.env` from your team vault. See [Environment variables](#environment-variables) below.
+| Script | Port | Notes |
+|--------|------|-------|
+| `npm run dev` | **3001** | Default local UI |
+| `npm run dev:ops` | 3001 | Sets `ALYSON_NOTETAKER_BASE_URL` / `VITE_ALYSON_NOTETAKER_BASE_URL` to `3003` |
+| `npm run preview` | 3000 | Production build preview |
 
-### Related docs
-
-| Doc | Topic |
-|-----|--------|
-| [orgchart.md](./orgchart.md) | Org chart UI, S3 bucket layout, audit logs |
-| [boarding.md](./boarding.md) | Onboarding / offboarding workflow spec |
-| [notetaker-architecture.md](./notetaker-architecture.md) | Notetaker + Recall flow, endpoints, file map |
+The **notetaker backend** is a separate process (default `localhost:3003`). `dev:ops` only wires URLs; it does not start that service.
 
 ---
 
-## Alyson Notetaker — Create Bot flow
+## Architecture
 
-> **Full architecture doc:** [notetaker-architecture.md](./notetaker-architecture.md) (endpoints, webhooks, SSE, folder/file map, billing).
+```text
+Browser (React)
+    │
+    ├─► TanStack server functions (createServerFn)  →  *.server.ts
+    ├─► HTTP /api/* routes                         →  crons, webhooks, analytics REST
+    ├─► Supabase client                            →  workflows, payroll, documents, …
+    └─► External APIs                              →  Time Doctor, Recall, Google, Groq
 
-The **Create** button on `/alyson-notetaker` does **not** call Recall.ai from the browser. The UI talks to this app’s server, which proxies to a **separate notetaker service** (default `http://localhost:3003`). That service holds `RECALL_API_KEY` and joins the meeting.
-
-### Architecture (3 layers)
-
-```mermaid
-sequenceDiagram
-  participant Browser as Browser (Alyson UI)
-  participant SSR as TanStack server (alyson-client)
-  participant NT as Notetaker API (port 3003)
-  participant Recall as Recall.ai
-
-  Browser->>SSR: createNotetakerRecallBot(...)
-  SSR->>NT: POST /api/create-bot
-  NT->>Recall: Create bot (Recall API)
-  Recall-->>NT: botId
-  NT-->>SSR: { botId, ... }
-  SSR-->>Browser: botId
-
-  Note over Browser,NT: Live transcript (direct from browser)
-  Browser->>NT: GET /session/{botId}/events (SSE)
-  NT-->>Browser: transcript lines
-
-  Note over Browser,SSR: Session poll (every 10s)
-  Browser->>SSR: getNotetakerSession({ botId })
-  SSR->>NT: GET /api/session/{botId}
-  NT-->>SSR: session + lines
-  SSR-->>Browser: session + lines
+S3 (alyson-hr-orgchart / AWS_S3_BUCKET)
+    ├─ HR overview, org chart, onboarding, bonus, leave ledgers
+    └─ alyson-notetaker/ transcripts, notes, tasks, bot-index, unified-scheduled
 ```
 
-### 1) What you click in the UI
+---
 
-| Item | Location |
-|------|----------|
-| Page | `/alyson-notetaker` |
-| Form | `CreateBotForm` in `src/routes/alyson-notetaker/index.tsx` |
-| Server fn | `createNotetakerRecallBot` in `src/lib/alyson-notetaker-functions.ts` |
+## Modules & routes
 
-On **Create**, the form sends:
+Full per-module docs: **[docs/ALYSON_HR_MODULES_INDEX.md](./docs/ALYSON_HR_MODULES_INDEX.md)** (28 module guides).
 
-- `meeting_url` — Zoom / Meet / Teams link  
-- `bot_name` — display name in the call  
-- `title` — optional session label  
-- `avatar_jpeg_b64` — optional JPEG (base64, no `data:` prefix) built from `/images/alyson-mini.svg` for the bot’s video tile  
+### Workspace
 
-### 2) Browser → this app (TanStack server function)
+| Module | Route |
+|--------|-------|
+| Alyson Brain | `/alyson-brain` |
+| Dashboard | `/app` |
 
-The browser calls **`createNotetakerRecallBot({ data: {...} })`**. That is a TanStack Start **server function** (RPC on the same origin as the app, e.g. `http://localhost:3000` in dev). It is **not** exposed as `POST /api/create-bot` on the Vite app itself.
+### People
 
-### 3) This app → notetaker service (real HTTP)
+| Module | Route |
+|--------|-------|
+| Team | `/team` |
+| Boarding | `/boarding` |
+| Employee Onboarding | `/employee-onboarding` |
+| Time Dashboard | `/time-dashboard` |
+| Performance | `/performance` |
+| Leave | `/leave` |
+| Attendance | `/attendance` |
 
-The server handler validates input, then:
+### Money
 
-```http
-POST {ALYSON_NOTETAKER_BASE_URL}/api/create-bot
-Content-Type: application/json
-```
+| Module | Route |
+|--------|-------|
+| Payroll | `/payroll` |
+| Bonus | `/bonus` |
+| Equity | `/equity` |
 
-**Base URL** (first match wins):
+### Ops
 
-| Env var | Purpose |
-|---------|---------|
-| `ALYSON_NOTETAKER_BASE_URL` | Server-side proxy target |
-| `VITE_ALYSON_NOTETAKER_BASE_URL` | Client SSE + build-time |
-| `TEST_BOTV2_BASE_URL` / `VITE_TEST_BOTV2_BASE_URL` | Legacy aliases |
-| *(default)* | `http://localhost:3003` |
+| Module | Route |
+|--------|-------|
+| Workflows | `/workflows` |
+| Documents | `/documents` |
+| Handover Docs | `/handover-documentation` |
+| Workspace Activity | `/workspace-activity` |
+| Employee Scoring | `/employee-scoring` |
+| Reports | `/reports` |
 
-**Example request body:**
+### Alyson Notetaker (Ops)
 
-```json
-{
-  "meeting_url": "https://meet.google.com/xxx-xxxx-xxx",
-  "bot_name": "Notetaker",
-  "title": "Live meeting",
-  "automatic_video_output": {
-    "in_call_recording": { "kind": "jpeg", "b64_data": "<base64...>" },
-    "in_call_not_recording": { "kind": "jpeg", "b64_data": "<base64...>" }
-  }
-}
-```
+| Module | Route |
+|--------|-------|
+| Live Notetaker | `/alyson-notetaker` |
+| Meeting List | `/alyson-notetaker/meeting-list` |
+| Meeting Calendar | `/alyson-notetaker/calendar` |
+| Analytics | `/alyson-notetaker/analytics` |
+| Bot Join Report | `/alyson-notetaker/bot-join-report` |
+| Unified Meetings | `/alyson-notetaker/unified-meetings` |
+| Tasks | `/alyson-notetaker/tasks` |
+| Recall Cost Tracking | `/alyson-notetaker/cost-tracking` |
 
-**Example response** (used by the UI):
+### Admin
 
-```json
-{
-  "botId": "<recall-bot-id>"
-}
-```
+| Module | Route |
+|--------|-------|
+| Admin | `/admin` |
+| Help | `/help` |
+| Auth | `/auth` |
 
-The notetaker service (separate repo/process) calls **Recall.ai** and joins `meeting_url`. Webhooks from Recall hit the notetaker server at `PUBLIC_WEBHOOK_BASE_URL`, not this client.
+Nav role gates are defined in `src/components/AppShell.tsx`.
 
-### 4) After the bot is created
+---
 
-| Step | Caller | Endpoint / mechanism |
-|------|--------|----------------------|
-| Refresh session list | Browser → server fn | `listNotetakerSessions()` → `GET /api/sessions` |
-| Select session | UI | `setPicked(botId)` |
-| **Live transcript** | **Browser → notetaker directly** | `EventSource` → `GET {base}/session/{botId}/events` (SSE) |
-| Session + stored lines | Browser → server fn (poll ~10s) | `getNotetakerSession` → `GET /api/session/{botId}` |
-| Generate notes | Browser → server fn | `POST /api/session/{botId}/notes` |
-| Persist to S3 | Browser → server fn | `finalizeAndPersistNotetakerSession` → `alyson-notetaker/...` in S3 |
+## Alyson Notetaker (summary)
 
-**SSE URL** (browser, from `SessionPanel`):
+> **Deep dives:** [docs/ALYSON_NOTETAKER_MODULE.md](./docs/ALYSON_NOTETAKER_MODULE.md) · [docs/ALYSON_NOTETAKER_S3_READ_WRITE.md](./docs/ALYSON_NOTETAKER_S3_READ_WRITE.md) · [notetaker-architecture.md](./notetaker-architecture.md)
 
-```
-GET {VITE_ALYSON_NOTETAKER_BASE_URL}/session/{botId}/events
-```
+The **Create** button on `/alyson-notetaker` does **not** call Recall from the browser. Flow:
 
-Use the **same port** for create-bot and SSE (e.g. `npm run dev:ops` sets both to `3003`). If `VITE_ALYSON_NOTETAKER_BASE_URL` is unset, the UI may default SSE to `3002` while the server uses `3003`.
+1. Browser → TanStack server fn `createNotetakerRecallBot`
+2. Server → notetaker service `POST /api/create-bot`
+3. Notetaker → Recall.ai (join meeting)
+4. Browser → notetaker SSE `GET /session/{botId}/events` for live transcript
+5. On end → persist to S3 (`transcripts/`, `meetingnotes/`, `meetingtasks/`, `bot-index/`)
 
-### 5) Notetaker API surface (proxied by this repo)
+Supported meeting URLs: **Google Meet, Zoom, Teams** (via Recall).
 
-Defined in `src/lib/alyson-notetaker-functions.ts` via `upstream()`:
+### Notetaker env
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/api/create-bot` | Create Recall bot, join meeting |
-| `GET` | `/api/sessions` | List bot sessions |
-| `GET` | `/api/session/:botId` | Session metadata + transcript lines |
-| `GET` | `/session/:botId/events` | Live transcript (SSE; browser only) |
-| `POST` | `/api/session/:botId/notes` | Generate meeting notes |
+| Variable | Purpose |
+|----------|---------|
+| `ALYSON_NOTETAKER_BASE_URL` | Server proxy to notetaker API |
+| `VITE_ALYSON_NOTETAKER_BASE_URL` | Browser SSE + client |
+| `RECALL_API_KEY`, `RECALL_BASE_URL` | Used by server-side Recall paths |
+| `AWS_S3_BUCKET` / `S3_BUCKET` | Persist transcripts & notes |
 
-### 6) Persistence
-
-| When | Where |
-|------|--------|
-| During meeting | Notetaker service (in-memory / its store) |
-| Meeting ended | `getNotetakerSession` may auto-persist → `.alyson/notetaker-db` (local) |
-| Manual **Persist** | S3: `alyson-notetaker/transcripts/`, `meetingnotes/`, session index |
-
-### 7) Quick test (notetaker server must be running)
+### Quick curl (notetaker must be running on :3003)
 
 ```bash
 curl -X POST http://localhost:3003/api/create-bot \
   -H "Content-Type: application/json" \
-  -d '{"meeting_url":"YOUR_MEETING_URL","bot_name":"Notetaker","title":"Test"}'
+  -d '{"meeting_url":"YOUR_MEETING_URL","bot_name":"Alyson Notetaker","title":"Test"}'
 ```
 
-### 8) Notetaker server configuration
+---
 
-The UI shows a warning if Recall is not configured on the **notetaker** process:
+## Unified Meetings & bot scheduling
 
-- `RECALL_API_KEY`
-- `PUBLIC_WEBHOOK_BASE_URL`
-- Optional Groq keys for notes generation
+> **Doc:** [docs/UNIFIED_MEETINGS_MODULE.md](./docs/UNIFIED_MEETINGS_MODULE.md)
 
-Run the notetaker backend alongside this client (`npm run dev:ops` only wires the URL; it does not start the notetaker process).
+**Route:** `/alyson-notetaker/unified-meetings`
+
+Shows company calendar meetings (next 24h) via **Google Workspace Domain-Wide Delegation**, with Recall Calendar V2 for auto-join.
+
+### Scheduling options
+
+| Method | Description |
+|--------|-------------|
+| **Schedule** (per row) | `POST /api/analytics/unified-meetings/:meetingId/schedule` |
+| **Unschedule** (per row) | `DELETE /api/analytics/unified-meetings/:meetingId/unschedule` — cancels Recall bot + removes S3 scheduled state |
+| **Sync now** | Recall Calendar bulk sync for connected calendar |
+| **Connect Google Calendar** | OAuth via `/api/recall/calendar/connect` |
+
+Bots join **~2 minutes before** meeting start. Company-wide bulk `schedule-bots` cron returns **410 Gone** (disabled).
+
+### Google DWD prerequisites
+
+- Service account: `GOOGLE_DWD_SERVICE_ACCOUNT_JSON` (deploy) or `GOOGLE_APPLICATION_CREDENTIALS` (local file)
+- Admin scopes: `admin.directory.user.readonly`, `calendar.events.readonly`
+- `GOOGLE_WORKSPACE_DOMAIN`, `GOOGLE_WORKSPACE_ADMIN_SUBJECT_EMAIL`
+
+### Unified Meetings API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/analytics/unified-meetings` | List meetings (cached scan) |
+| `POST` | `/api/analytics/unified-meetings/refresh` | Force cache refresh |
+| `POST` | `/api/analytics/unified-meetings/:meetingId/schedule` | Schedule one meeting |
+| `DELETE` | `/api/analytics/unified-meetings/:meetingId/unschedule` | Cancel scheduled bot |
+| `GET\|POST` | `/api/analytics/unified-meetings/schedule-bots` | **410 disabled** |
+
+### Bot Join Report
+
+Tracks whether bots joined calendar meetings for a report user (default `alysonclient@cintara.ai`). See [docs/BOT_JOIN_REPORT_MODULE.md](./docs/BOT_JOIN_REPORT_MODULE.md).
+
+---
+
+## HTTP API routes (cron & webhooks)
+
+| Path | Purpose |
+|------|---------|
+| `/api/cron/daily-reports` | Daily stakeholder email ZIP |
+| `/api/cron/notetaker-transcripts` | Transcript checkpoint cron |
+| `/api/cron/recall-calendar-sync` | Recall calendar sync |
+| `/api/cron/scheduled-bot-activation` | Activate due scheduled bots |
+| `/api/cron/time-doctor-token` | Time Doctor token refresh |
+| `/api/recall/calendar/*` | Recall Calendar OAuth + status |
+| `/api/recall/webhooks/calendar` | Recall calendar webhooks |
+| `/api/analytics/workspace-activity` | Workspace activity REST (optional) |
+| `/api/analytics/employee-scoring` | Employee scoring REST (optional) |
+
+Server functions (`createServerFn`) are the primary API for UI modules; `/api/*` is for crons, webhooks, and external consumers.
 
 ---
 
 ## Environment variables
 
-| Variable | Used for |
-|----------|----------|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk auth (browser) |
+Copy from team vault. Grouped overview:
+
+### Auth & database
+
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk (browser) |
+| `CLERK_SECRET_KEY` | Clerk (server) |
 | `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase client |
-| `ALYSON_NOTETAKER_BASE_URL` / `VITE_ALYSON_NOTETAKER_BASE_URL` | Notetaker proxy + SSE |
-| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 (org chart, HR overview, notetaker) |
-| `ALYSON_HR_ORGCHART_S3_BUCKET` | Org chart bucket (default `alyson-hr-orgchart`) |
-| `ALYSON_HR_S3_BUCKET` / `ALYSON_HR_S3_KEY` | Team overview snapshot |
-| `VITE_HR_OVERVIEW_SOURCE` | Optional: `s3` or `supabase` for team directory |
-| `RESEND_API_KEY` | Daily stakeholder report emails |
-| `DAILY_REPORT_RECIPIENTS` | Comma-separated stakeholder inboxes |
-| `DAILY_REPORT_CRON_SECRET` | Bearer token for `/api/cron/daily-reports` |
-| `RESEND_FROM_EMAIL` | Verified sender (e.g. `Alyson HR <reports@yourdomain.com>`) |
 
-See **[docs/DAILY_STAKEHOLDER_REPORTS.md](./docs/DAILY_STAKEHOLDER_REPORTS.md)** (daily ZIP to stakeholders) and **[docs/VERCEL_PRODUCTION.md](./docs/VERCEL_PRODUCTION.md)** (deploy checklist for [alyson-client.vercel.app](https://alyson-client.vercel.app)).
+### AWS S3
 
----
+| Variable | Purpose |
+|----------|---------|
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | S3 credentials |
+| `AWS_S3_BUCKET` / `S3_BUCKET` | Notetaker + general artifacts |
+| `ALYSON_HR_ORGCHART_S3_BUCKET` | Org chart, onboarding, bonus, leave (default `alyson-hr-orgchart`) |
+| `ALYSON_HR_S3_BUCKET` / `ALYSON_HR_S3_KEY` | Team HR overview snapshot |
+| `VITE_HR_OVERVIEW_SOURCE` | `s3` or `supabase` for team directory |
+| `UNIFIED_SCHEDULED_STATE_SOURCE` | `s3` / `file` / `auto` for bot schedule index |
 
-## Unified Meetings Setup
+### Notetaker & Recall
 
-Unified Meetings is available at `Alyson Notetaker -> Unified Meetings` and shows company meetings in the next 24 hours using Google Workspace Domain-Wide Delegation (DWD).
+| Variable | Purpose |
+|----------|---------|
+| `ALYSON_NOTETAKER_BASE_URL` / `VITE_ALYSON_NOTETAKER_BASE_URL` | Notetaker service |
+| `RECALL_API_KEY`, `RECALL_BASE_URL`, `RECALL_REGION` | Recall.ai |
+| `BOT_NAME` | Bot display name in calls |
+| `PUBLIC_WEBHOOK_BASE_URL` | Recall webhooks (notetaker service) |
 
-### DWD prerequisites
+### Google Workspace
 
-- Service account credentials are configured either via `GOOGLE_DWD_SERVICE_ACCOUNT_JSON` (recommended for deployment) or local file path `GOOGLE_APPLICATION_CREDENTIALS` (local dev)
-- Domain-wide delegation is enabled for the service account client id
-- Required scopes approved in Google Admin:
-  - `https://www.googleapis.com/auth/admin.directory.user.readonly`
-  - `https://www.googleapis.com/auth/calendar.events.readonly`
+| Variable | Purpose |
+|----------|---------|
+| `GOOGLE_DWD_SERVICE_ACCOUNT_JSON` | Service account JSON (deploy) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Local JSON path |
+| `GOOGLE_WORKSPACE_DOMAIN` | e.g. `cintara.ai` |
+| `GOOGLE_WORKSPACE_ADMIN_SUBJECT_EMAIL` | Impersonation subject |
 
-### Required env vars
+### Time Doctor, email, AI
 
-```env
-GOOGLE_APPLICATION_CREDENTIALS=D:\google-calendar\alyson-dwd.json
-GOOGLE_DWD_SERVICE_ACCOUNT_JSON=
-GOOGLE_WORKSPACE_DOMAIN=cintara.ai
-GOOGLE_WORKSPACE_ADMIN_SUBJECT_EMAIL=thirumalai@cintara.ai
-GOOGLE_DWD_SERVICE_ACCOUNT_EMAIL=alyson-calendar-sync@tempdata-494013.iam.gserviceaccount.com
-GOOGLE_DWD_SERVICE_ACCOUNT_CLIENT_ID=116466681296516011628
-GOOGLE_PROJECT_ID=tempdata-494013
-RECALL_API_KEY=
-RECALL_REGION=ap-northeast-1
-RECALL_BASE_URL=https://ap-northeast-1.recall.ai
-BOT_NAME=Alyson Notetaker
-```
+| Variable | Purpose |
+|----------|---------|
+| `TIME_DOCTOR_*` | OAuth + API (see [docs/TIME_DOCTOR_OAUTH.md](./docs/TIME_DOCTOR_OAUTH.md)) |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Daily reports |
+| `DAILY_REPORT_RECIPIENTS`, `DAILY_REPORT_CRON_SECRET` | Stakeholder emails |
+| `GROQ_API_KEY` / DeepSeek keys | Notes, tasks, Alyson Brain insights |
 
-### Run and use
-
-1. Start app: `npm run dev`
-2. Open `Alyson Notetaker -> Unified Meetings`
-3. Dashboard auto-refreshes every 60 seconds (manual Refresh is also available)
-4. **No Vercel cron / bulk schedule** — company-wide auto-schedule is disabled
-5. Alyson join time is `startTime - 2 minutes`
-6. Use per-row **Schedule Alyson** on Unified Meetings for each meeting you want
-
-### API endpoints
-
-- `GET /api/analytics/unified-meetings`
-- `POST /api/analytics/unified-meetings/refresh`
-- `POST /api/analytics/unified-meetings/:meetingId/schedule` (per meeting)
-- `GET|POST /api/analytics/unified-meetings/schedule-bots` → **410 disabled** (was cron + bulk)
+Deploy checklist: **[docs/VERCEL_PRODUCTION.md](./docs/VERCEL_PRODUCTION.md)**
 
 ---
 
@@ -253,8 +280,59 @@ BOT_NAME=Alyson Notetaker
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Vite dev server (port 3000) |
-| `npm run dev:ops` | Dev + notetaker URLs → `localhost:3003` |
+| `npm run dev` | Dev server on port **3001** |
+| `npm run dev:ops` | Dev + notetaker at `localhost:3003` |
+| `npm run build` | Production build |
 | `npm run seed:revcloud` | Seed RevCloud roster to HR overview S3 |
-| `npm run inspect:orgchart` | Print org-chart S3 state (terminations, additions, logs) |
+| `npm run inspect:orgchart` | Print org-chart S3 state |
+| `npm run export:org-roster` | Export org roster sheet |
+| `npm run audit:notetaker-notes` | Audit S3 notes coverage |
+| `npm run backfill:notetaker-notes` | Backfill missing meeting notes |
+| `npm run cron:notetaker-transcripts` | Run transcript cron locally |
 
+### Diagnostics
+
+```bash
+# Check if a bot joined a specific meeting URL or ID
+npx dotenv-cli -e .env -- npx tsx scripts/check-meeting-bot.ts "4154126965" 60
+
+# Single-bot transcript / lifecycle diagnose
+npx dotenv-cli -e .env -- npx tsx scripts/diagnose-bot-transcripts.ts <botId>
+```
+
+---
+
+## Documentation index
+
+| Doc | Topic |
+|-----|--------|
+| **[docs/ALYSON_HR_MODULES_INDEX.md](./docs/ALYSON_HR_MODULES_INDEX.md)** | **Master index — all 28 modules** |
+| [docs/ALYSON_NOTETAKER_S3_READ_WRITE.md](./docs/ALYSON_NOTETAKER_S3_READ_WRITE.md) | S3 read/write contract for notetaker |
+| [docs/ALYSON_MEETING_MANAGER.md](./docs/ALYSON_MEETING_MANAGER.md) | Meeting manager architecture |
+| [docs/ALYSON_BOT_SCHEDULING_BLOCKERS.md](./docs/ALYSON_BOT_SCHEDULING_BLOCKERS.md) | Bot scheduling edge cases |
+| [docs/DAILY_STAKEHOLDER_REPORTS.md](./docs/DAILY_STAKEHOLDER_REPORTS.md) | Daily email reports |
+| [docs/TIME_DOCTOR_OAUTH.md](./docs/TIME_DOCTOR_OAUTH.md) | Time Doctor OAuth |
+| [docs/VERCEL_PRODUCTION.md](./docs/VERCEL_PRODUCTION.md) | Production deployment |
+| [notetaker-architecture.md](./notetaker-architecture.md) | Notetaker + Recall flow |
+| [orgchart.md](./orgchart.md) | Org chart UI & S3 layout |
+| [boarding.md](./boarding.md) | Boarding workflow spec |
+
+---
+
+## Repo layout (high level)
+
+```text
+src/
+  routes/           # TanStack file routes (pages + /api/*)
+  lib/              # Server functions, *.server.ts business logic
+  components/       # UI (AppShell, drawers, charts, …)
+  pages/            # Some page shells (e.g. Dashboard)
+docs/               # Module & technical documentation
+scripts/            # Seeds, audits, diagnostics, crons
+```
+
+---
+
+## Production
+
+Deployed via Vercel (Nitro preset). Production URL and env checklist: [docs/VERCEL_PRODUCTION.md](./docs/VERCEL_PRODUCTION.md).
