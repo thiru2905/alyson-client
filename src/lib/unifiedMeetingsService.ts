@@ -2,13 +2,19 @@ import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { dispatchBotWithLiveTranscripts, ensureBotTranscriptPipeline } from "@/lib/notetaker-bot-dispatch.server";
+import {
+  cancelScheduledRecallBot,
+  dispatchBotWithLiveTranscripts,
+  ensureBotTranscriptPipeline,
+} from "@/lib/notetaker-bot-dispatch.server";
 import {
   abortMeetingBotReservation,
   commitMeetingBotReservation,
+  isReservingBotId,
   meetingInstanceDedupeKey,
   resolveOrReserveMeetingBot,
 } from "@/lib/meeting-bot-reserve.server";
+import { removeBotFromRecallCalendarEvent } from "@/lib/recall/recall-calendar-v2.server";
 import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { unifiedScheduledStatusForUi } from "@/lib/unified-scheduled-lifecycle.server";
@@ -800,6 +806,83 @@ export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSumm
   return out;
 }
 
+const UNSCHEDULE_BLOCKED_STATUSES = new Set<StateEntry["status"]>(["joining", "in_call", "done"]);
+
+function findScheduledEntryForMeeting(
+  scheduled: StateEntry[],
+  args: { email: string; googleEventId: string; meetingUrl?: string | null; startTime?: string },
+): StateEntry | undefined {
+  const email = args.email.toLowerCase();
+  const byEvent = scheduled.find(
+    (row) =>
+      row.googleEventId === args.googleEventId &&
+      String(row.calendarUserEmail || "").trim().toLowerCase() === email,
+  );
+  if (byEvent) return byEvent;
+
+  const meetingUrl = sanitizeUrl(args.meetingUrl);
+  const startTime = String(args.startTime || "").trim();
+  if (!meetingUrl || !startTime) return undefined;
+
+  const key = dedupeKey(meetingUrl, startTime);
+  const legacyKey = dedupeKeyLegacy(meetingUrl, startTime, args.email);
+  return scheduled.find((row) => row.dedupeKey === key || row.dedupeKey === legacyKey);
+}
+
+export async function unscheduleUnifiedMeetingById(
+  meetingId: string,
+): Promise<{ ok: boolean; message: string; botId?: string }> {
+  const decoded = decodeMeetingId(meetingId);
+  if (!decoded) return { ok: false, message: "Invalid meeting id" };
+
+  const event = await getCalendarEventForUser(decoded.email, decoded.googleEventId);
+  const meetingUrl = event ? getMeetingUrl(event) : null;
+  const startTime = event ? String(event?.start?.dateTime || "") : "";
+
+  const state = await readState();
+  const entry = findScheduledEntryForMeeting(state.scheduled, {
+    email: decoded.email,
+    googleEventId: decoded.googleEventId,
+    meetingUrl,
+    startTime,
+  });
+  if (!entry) return { ok: false, message: "No bot scheduled for this meeting" };
+
+  if (UNSCHEDULE_BLOCKED_STATUSES.has(entry.status)) {
+    return { ok: false, message: `Cannot unschedule — bot is already ${entry.status.replace("_", " ")}` };
+  }
+
+  const botId = String(entry.recallBotId || "").trim();
+  const dedupeKeys = new Set([entry.dedupeKey]);
+
+  if (botId && !isReservingBotId(botId)) {
+    await cancelScheduledRecallBot(botId);
+  }
+
+  if (entry.recallCalendarEventId) {
+    try {
+      await removeBotFromRecallCalendarEvent(entry.recallCalendarEventId);
+    } catch {
+      // Calendar row may already be cleared.
+    }
+  }
+
+  const removeRows = (rows: StateEntry[]) =>
+    rows.filter((row) => !dedupeKeys.has(row.dedupeKey) && row.recallBotId !== botId);
+
+  if (unifiedScheduledStateUsesS3()) {
+    await mutateUnifiedScheduledStateInS3((s) => ({
+      state: { ...s, scheduled: removeRows(s.scheduled) },
+      value: true,
+    }));
+  } else {
+    await writeState({ scheduled: removeRows(state.scheduled) });
+  }
+
+  cache = null;
+  return { ok: true, message: "Bot unscheduled and removed from Recall", botId: botId || undefined };
+}
+
 export async function scheduleUnifiedMeetingById(
   meetingId: string,
   options?: { forceRedispatch?: boolean },
@@ -810,7 +893,7 @@ export async function scheduleUnifiedMeetingById(
   const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
   const event = await getCalendarEventForUser(decoded.email, decoded.googleEventId);
   if (!event) return { ok: false, message: "Meeting not found in calendar" };
-  const meeting = normalizeMeetingEvent(decoded.email, event, stateByKey);
+  const meeting = normalizeMeetingEvent(decoded.email, event, stateByKey, { allowInProgress: true });
 
   if (meeting.status === "cancelled") return { ok: false, message: "Cannot schedule cancelled meeting" };
   if (!meeting.meetingUrl) return { ok: false, message: "Cannot schedule: no meeting URL" };

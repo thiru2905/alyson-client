@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CalendarDays, Link2, RefreshCw, Unplug } from "lucide-react";
+import { CalendarDays, Link2, RefreshCw, Unplug, Bot, CalendarPlus, CalendarX } from "lucide-react";
 
 /** Auto-trigger Sync now on Unified Meetings when upcoming − scheduled > 0. Set VITE_RECALL_CALENDAR_AUTO_SYNC=false to disable. */
 const RECALL_CALENDAR_AUTO_SYNC =
@@ -9,8 +9,6 @@ const RECALL_CALENDAR_AUTO_SYNC =
 
 const AUTO_SYNC_COOLDOWN_MS = 90_000;
 
-/** Temporarily disabled — bots enter waiting room early and transcripts are unreliable. Use Sync now. */
-const SMART_SCHEDULE_ENABLED = false;
 import { PageHeader } from "@/components/AppShell";
 import { toast } from "sonner";
 
@@ -79,6 +77,7 @@ export function UnifiedMeetingsPage() {
   const [email, setEmail] = useState("");
   const [hasMeetLink, setHasMeetLink] = useState("");
   const [bulkScheduledByCalendar, setBulkScheduledByCalendar] = useState<Record<string, string[]>>({});
+  const [actingMeetingId, setActingMeetingId] = useState<string | null>(null);
 
   const queryString = useMemo(() => {
     const p = new URLSearchParams();
@@ -198,6 +197,52 @@ export function UnifiedMeetingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const scheduleMeetingM = useMutation({
+    mutationFn: async (meetingId: string) => {
+      const res = await fetch(
+        `/api/analytics/unified-meetings/${encodeURIComponent(meetingId)}/schedule`,
+        { method: "POST" },
+      );
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        throw new Error(String(json?.message || json?.error || "Failed to schedule bot"));
+      }
+      return json as { ok: boolean; message: string; botId?: string };
+    },
+    onMutate: (meetingId) => setActingMeetingId(meetingId),
+    onSettled: () => setActingMeetingId(null),
+    onSuccess: (json) => {
+      toast.success(json.message || "Bot scheduled");
+      void q.refetch();
+      void calendarQ.refetch();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const unscheduleMeetingM = useMutation({
+    mutationFn: async (meetingId: string) => {
+      const res = await fetch(
+        `/api/analytics/unified-meetings/${encodeURIComponent(meetingId)}/unschedule`,
+        { method: "DELETE" },
+      );
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        throw new Error(String(json?.message || json?.error || "Failed to unschedule bot"));
+      }
+      return json as { ok: boolean; message: string; botId?: string };
+    },
+    onMutate: (meetingId) => setActingMeetingId(meetingId),
+    onSettled: () => setActingMeetingId(null),
+    onSuccess: (json) => {
+      toast.success(json.message || "Bot unscheduled");
+      void q.refetch();
+      void calendarQ.refetch();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const meetingActionBusy = scheduleMeetingM.isPending || unscheduleMeetingM.isPending;
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("calendarConnected") === "1") {
@@ -280,7 +325,7 @@ export function UnifiedMeetingsPage() {
         {!q.isLoading && !q.isError && (
           <div className="surface-card overflow-hidden">
             <div className="max-h-[72vh] overflow-auto">
-              <table className="ops-table w-full min-w-[900px]">
+              <table className="ops-table w-full min-w-[1100px]">
                 <thead className="sticky top-0 z-[1] bg-background">
                   <tr className="shadow-[inset_0_-1px_0_var(--border)]">
                     <th align="left">Start Time</th>
@@ -290,10 +335,22 @@ export function UnifiedMeetingsPage() {
                     <th align="left">Organizer</th>
                     <th align="left">Meeting Platform</th>
                     <th align="left">Meeting URL</th>
+                    <th align="left">Bot</th>
+                    <th align="left">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {meetings.map((m) => (
+                  {meetings.map((m) => {
+                    const rowBusy = actingMeetingId === m.id && meetingActionBusy;
+                    const meetingEnded = isMeetingOver(m.startTime, m.endTime);
+                    const canSchedule =
+                      Boolean(m.meetingUrl) &&
+                      m.status !== "cancelled" &&
+                      !m.botScheduled &&
+                      !meetingEnded;
+                    const canUnschedule = m.botScheduled && !meetingEnded;
+
+                    return (
                       <tr key={m.id} className="hover:bg-muted/30">
                         <td>{fmt(m.startTime)}</td>
                         <td>{fmt(m.endTime)}</td>
@@ -316,8 +373,45 @@ export function UnifiedMeetingsPage() {
                             <span className="text-muted-foreground">No meeting link</span>
                           )}
                         </td>
+                        <td>
+                          <BotStatusBadge meeting={m} />
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1.5">
+                            {canSchedule ? (
+                              <button
+                                type="button"
+                                disabled={rowBusy}
+                                onClick={() => scheduleMeetingM.mutate(m.id)}
+                                className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] font-medium inline-flex items-center gap-1"
+                                title="Schedule Alyson bot (~2 min before start)"
+                              >
+                                <CalendarPlus className="h-3 w-3" />
+                                {rowBusy ? "…" : "Schedule"}
+                              </button>
+                            ) : null}
+                            {canUnschedule ? (
+                              <button
+                                type="button"
+                                disabled={rowBusy}
+                                onClick={() => unscheduleMeetingM.mutate(m.id)}
+                                className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] font-medium inline-flex items-center gap-1 text-destructive"
+                                title="Cancel scheduled bot and remove from Recall"
+                              >
+                                <CalendarX className="h-3 w-3" />
+                                {rowBusy ? "…" : "Unschedule"}
+                              </button>
+                            ) : null}
+                            {!canSchedule && !canUnschedule ? (
+                              <span className="text-[10.5px] text-muted-foreground">
+                                {m.skipReason || (meetingEnded ? "Ended" : "—")}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -326,6 +420,27 @@ export function UnifiedMeetingsPage() {
       </div>
     </div>
   );
+}
+
+function BotStatusBadge({ meeting }: { meeting: UnifiedMeeting }) {
+  if (meeting.botScheduled) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10.5px] text-emerald-700 dark:text-emerald-300">
+        <Bot className="h-3 w-3" />
+        Scheduled
+      </span>
+    );
+  }
+  if (meeting.botStatus === "pending" && meeting.shouldBotJoin) {
+    return <span className="text-[10.5px] text-amber-700 dark:text-amber-300">Pending</span>;
+  }
+  if (meeting.botStatus === "failed") {
+    return <span className="text-[10.5px] text-destructive">Failed</span>;
+  }
+  if (!meeting.shouldBotJoin) {
+    return <span className="text-[10.5px] text-muted-foreground">N/A</span>;
+  }
+  return <span className="text-[10.5px] text-muted-foreground">Not scheduled</span>;
 }
 
 function fmt(v: string): string {
@@ -389,12 +504,8 @@ function RecallCalendarPanel({
             Connect Google Calendar once for{" "}
             <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>.{" "}
             <span className="text-foreground font-medium">Sync now</span> reserves bots for all pending upcoming
-            meetings. Each bot joins ~2 min before start.
-            {!SMART_SCHEDULE_ENABLED ? (
-              <span className="block mt-1 text-amber-700 dark:text-amber-300">
-                Smart schedule (pick specific meetings) is temporarily disabled.
-              </span>
-            ) : null}
+            meetings. Each bot joins ~2 min before start. Use <span className="text-foreground font-medium">Schedule</span>{" "}
+            / <span className="text-foreground font-medium">Unschedule</span> on individual rows in the table below.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
