@@ -2,10 +2,15 @@ import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { fetchRecallBotLifecycles } from "@/lib/recall/recall-bot-status.server";
+import {
+  fetchRecallBotLifecycles,
+  listRecallBotsInJoinRange,
+  parseRecallBotLifecycle,
+} from "@/lib/recall/recall-bot-status.server";
+import { isReservingBotId } from "@/lib/meeting-bot-reserve.server";
 import { eventTitleFromRaw, listAllRecallCalendarEvents } from "@/lib/recall/recall-calendar-v2.server";
 import { buildNotetakerSessionsList } from "@/lib/notetaker-sessions-list.server";
-import { getMeetingUrl, listAllUnifiedScheduledBotSessions } from "@/lib/unifiedMeetingsService";
+import { getMeetingUrl } from "@/lib/unifiedMeetingsService";
 import {
   readUnifiedScheduledStateFromS3,
   unifiedScheduledStateUsesS3,
@@ -305,6 +310,44 @@ function dedupeKeysForMeeting(meetingUrl: string, startTime: string): string[] {
   return [...new Set([meetingDedupeKey(meetingUrl, startTime), meetingDedupeKeyRaw(meetingUrl, startTime)])];
 }
 
+function buildEligibleKeySet(meetings: CalendarMeetingRef[]): Set<string> {
+  const keys = new Set<string>();
+  for (const meeting of meetings) {
+    for (const key of dedupeKeysForMeeting(meeting.meetingUrl, meeting.startTime)) {
+      keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/** Match bot rows to report calendar meetings by URL + start (not calendarUserEmail). */
+function candidateMatchesEligibleMeeting(
+  meetingUrl: string | null | undefined,
+  scheduledStart: string | null | undefined,
+  eligibleMeetings: CalendarMeetingRef[],
+  eligibleKeys: Set<string>,
+): boolean {
+  const url = String(meetingUrl || "").trim();
+  const start = String(scheduledStart || "").trim();
+  if (!url || !start) return false;
+
+  for (const key of dedupeKeysForMeeting(url, start)) {
+    if (eligibleKeys.has(key)) return true;
+  }
+
+  const startMs = Date.parse(start);
+  if (!Number.isFinite(startMs)) return false;
+  for (const meeting of eligibleMeetings) {
+    if (meeting.meetingUrl !== url) continue;
+    const meetingMs = Date.parse(meeting.startTime);
+    if (!Number.isFinite(meetingMs)) continue;
+    const delta = startMs - meetingMs;
+    // Exact start match, or bot join_at ~2m early (up to 30m before / 15m after scheduled start).
+    if (Math.abs(delta) <= 60_000 || (delta >= -30 * 60_000 && delta <= 15 * 60_000)) return true;
+  }
+  return false;
+}
+
 function resolveBotCalendarEmail(
   botId: string,
   stateByBot: Map<string, UnifiedScheduledStateEntry>,
@@ -328,16 +371,31 @@ async function collectBotCandidates(
   end: string,
   windowHours?: number,
   floorMs?: number,
+  eligibleMeetings: CalendarMeetingRef[] = [],
 ): Promise<{ candidates: BotCandidate[]; diagnostics: BotJoinReportDiagnostics }> {
   const normalizedEmail = calendarEmail.trim().toLowerCase();
   const allowedEmails = new Set([normalizedEmail]);
   const warnings: string[] = [];
+  const scopeByEligibleMeetings = eligibleMeetings.length > 0;
+  const eligibleKeys = buildEligibleKeySet(eligibleMeetings);
+
+  const matchesReportScope = (
+    meetingUrl: string | null | undefined,
+    scheduledStart: string | null | undefined,
+    botId: string,
+    stateByBot: Map<string, UnifiedScheduledStateEntry>,
+  ): boolean => {
+    if (scopeByEligibleMeetings) {
+      return candidateMatchesEligibleMeeting(meetingUrl, scheduledStart, eligibleMeetings, eligibleKeys);
+    }
+    return botBelongsToAccount(botId, allowedEmails, stateByBot);
+  };
 
   let recallCalendarIds = new Set<string>();
   try {
     const calState = await readRecallCalendarState();
     for (const conn of calState.connections) {
-      if (allowedEmails.has(conn.email.trim().toLowerCase())) {
+      if (scopeByEligibleMeetings || allowedEmails.has(conn.email.trim().toLowerCase())) {
         recallCalendarIds.add(conn.recallCalendarId);
       }
     }
@@ -352,9 +410,11 @@ async function collectBotCandidates(
   let botsFromRecallCalendar = 0;
 
   let stateByBot = new Map<string, UnifiedScheduledStateEntry>();
+  let scheduledRows: UnifiedScheduledStateEntry[] = [];
   try {
     const state = await readScheduledState();
-    stateByBot = new Map(state.scheduled.map((row) => [String(row.recallBotId), row]));
+    scheduledRows = state.scheduled;
+    stateByBot = new Map(scheduledRows.map((row) => [String(row.recallBotId), row]));
   } catch (e) {
     warnings.push(`Unified schedule state: ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -377,17 +437,20 @@ async function collectBotCandidates(
     const { sessions } = await buildNotetakerSessionsList();
     for (const s of sessions) {
       const botId = String(s.botId || "").trim();
-      if (!botId || !botBelongsToAccount(botId, allowedEmails, stateByBot)) continue;
+      if (!botId) continue;
       const row = stateByBot.get(botId);
-      const anchor = String(row?.startTime || row?.botJoinAt || row?.scheduledAt || s.createdAt || "").trim();
+      const meetingUrl = row?.meetingUrl || s.meetingUrl || null;
+      const scheduledStart = row?.startTime || row?.botJoinAt || row?.scheduledAt || s.createdAt || null;
+      const anchor = String(scheduledStart || "").trim();
       if (anchor && !inReportWindow(anchor, start, end, windowHours, floorMs)) continue;
-      const rowEmail = resolveBotCalendarEmail(botId, stateByBot)!;
+      if (!matchesReportScope(meetingUrl, scheduledStart, botId, stateByBot)) continue;
+      const rowEmail = resolveBotCalendarEmail(botId, stateByBot) || normalizedEmail;
       addCandidate(
         {
           botId,
           title: String(row?.title || s.title || "Meeting").trim() || "Meeting",
-          meetingUrl: row?.meetingUrl || s.meetingUrl || null,
-          scheduledStart: row?.startTime || anchor || null,
+          meetingUrl,
+          scheduledStart: scheduledStart || null,
           calendarUserEmail: rowEmail,
           source: "notetaker_session",
         },
@@ -399,40 +462,36 @@ async function collectBotCandidates(
   }
 
   try {
-    const unifiedSessions = await listAllUnifiedScheduledBotSessions();
-
-    for (const s of unifiedSessions) {
-      const botId = String(s.botId || "").trim();
-      if (!botId) continue;
-      const row = stateByBot.get(botId);
-      const anchor = row?.startTime || row?.botJoinAt || row?.scheduledAt || s.createdAt;
+    for (const row of scheduledRows) {
+      const botId = String(row.recallBotId || "").trim();
+      if (!botId || isReservingBotId(botId)) continue;
+      const meetingUrl = row.meetingUrl || null;
+      const scheduledStart = row.startTime || row.botJoinAt || row.scheduledAt || null;
+      const anchor = String(scheduledStart || "").trim();
       if (anchor && !inReportWindow(anchor, start, end, windowHours, floorMs)) continue;
+      if (!matchesReportScope(meetingUrl, scheduledStart, botId, stateByBot)) continue;
 
-      const rowEmail = String(row?.calendarUserEmail || "").trim().toLowerCase();
-      if (!rowEmail || !allowedEmails.has(rowEmail)) continue;
-
-      const meetingUrl = row?.meetingUrl || s.meetingUrl || null;
-      const scheduledStart = row?.startTime || anchor || null;
+      const rowEmail = String(row.calendarUserEmail || "").trim().toLowerCase() || normalizedEmail;
       addCandidate(
         {
           botId,
-          title: String(row?.title || s.title || "Meeting").trim() || "Meeting",
+          title: String(row.title || "Meeting").trim() || "Meeting",
           meetingUrl,
           scheduledStart,
           calendarUserEmail: rowEmail,
-          googleEventId: row?.googleEventId,
+          googleEventId: row.googleEventId,
           dedupeKey:
             meetingUrl && scheduledStart ? meetingDedupeKey(meetingUrl, scheduledStart) : undefined,
           source: "unified_scheduled",
-          creationSource: row?.creationSource || s.creationSource,
-          scheduledAt: row?.scheduledAt,
-          botJoinAt: row?.botJoinAt,
+          creationSource: row.creationSource,
+          scheduledAt: row.scheduledAt,
+          botJoinAt: row.botJoinAt,
         },
         "botsFromUnifiedState",
       );
     }
   } catch (e) {
-    warnings.push(`Unified schedule state: ${e instanceof Error ? e.message : String(e)}`);
+    warnings.push(`Unified schedule rows: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   if (recallCalendarIds.size > 0 && recallConfigured()) {
@@ -448,6 +507,7 @@ async function collectBotCandidates(
           const botId = String(event.bots?.[0]?.bot_id || "").trim();
           if (!botId) continue;
           const meetingUrl = String(event.meeting_url || "").trim() || null;
+          if (!matchesReportScope(meetingUrl, event.start_time, botId, stateByBot)) continue;
           addCandidate(
             {
               botId,
@@ -472,21 +532,24 @@ async function collectBotCandidates(
     const docs = await listAllBotIndexDocs();
     for (const doc of docs) {
       const botId = String(doc.botId || "").trim();
-      if (!botId || !botBelongsToAccount(botId, allowedEmails, stateByBot)) continue;
+      if (!botId) continue;
       const row = stateByBot.get(botId);
-      const anchor = String(row?.startTime || row?.botJoinAt || doc.finalizedAt || doc.cronFinalizedAt || "").trim();
+      const meetingUrl = row?.meetingUrl || null;
+      const scheduledStart = row?.startTime || row?.botJoinAt || null;
+      const anchor = String(scheduledStart || row?.scheduledAt || doc.finalizedAt || doc.cronFinalizedAt || "").trim();
       const prefixDay = String(doc.prefix || "").split("_").slice(-2, -1)[0];
       const day = eventDay(anchor) || (/^\d{4}-\d{2}-\d{2}$/.test(prefixDay) ? prefixDay : null);
       const anchorIso = anchor || (day ? `${day}T12:00:00.000Z` : null);
       if (!inReportWindow(anchorIso, start, end, windowHours, floorMs)) continue;
-      const rowEmail = resolveBotCalendarEmail(botId, stateByBot)!;
+      if (!matchesReportScope(meetingUrl, scheduledStart || anchorIso, botId, stateByBot)) continue;
+      const rowEmail = resolveBotCalendarEmail(botId, stateByBot) || normalizedEmail;
 
       addCandidate(
         {
           botId,
           title: String(row?.title || doc.title || "Meeting").trim() || "Meeting",
-          meetingUrl: row?.meetingUrl || null,
-          scheduledStart: row?.startTime || anchor || null,
+          meetingUrl,
+          scheduledStart: scheduledStart || anchor || null,
           calendarUserEmail: rowEmail,
           source: "s3_index",
         },
@@ -497,14 +560,52 @@ async function collectBotCandidates(
     warnings.push(`S3 bot index: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  if (scopeByEligibleMeetings && recallConfigured()) {
+    const joinAtAfter = floorMs
+      ? new Date(floorMs).toISOString()
+      : `${start}T00:00:00.000Z`;
+    const joinAtBefore = new Date().toISOString();
+    try {
+      const listed = await listRecallBotsInJoinRange({ joinAtAfter, joinAtBefore });
+      for (const bot of listed) {
+        const lifecycle = parseRecallBotLifecycle("", bot);
+        const botId = String(lifecycle.botId || "").trim();
+        if (!botId || byBotId.has(botId)) continue;
+        const meetingUrl = lifecycle.meetingUrl || null;
+        const scheduledStart = lifecycle.joinAt || null;
+        if (!matchesReportScope(meetingUrl, scheduledStart, botId, stateByBot)) continue;
+        addCandidate(
+          {
+            botId,
+            title: lifecycle.botName || "Meeting",
+            meetingUrl,
+            scheduledStart,
+            calendarUserEmail: resolveBotCalendarEmail(botId, stateByBot) || normalizedEmail,
+            source: "unknown",
+            botJoinAt: lifecycle.joinAt,
+          },
+          "botsFromRecallCalendar",
+        );
+      }
+    } catch (e) {
+      warnings.push(`Recall list bots: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   const candidates = [...byBotId.values()].sort(
     (a, b) => Date.parse(b.scheduledStart || b.botJoinAt || "") - Date.parse(a.scheduledStart || a.botJoinAt || ""),
   );
 
   if (candidates.length === 0) {
-    warnings.push(
-      "No bots found in this date range. Schedule meetings from Unified Meetings, or widen the period (Last 60 days).",
-    );
+    if (scopeByEligibleMeetings) {
+      warnings.push(
+        `No bots matched ${eligibleMeetings.length} eligible meeting(s) on ${normalizedEmail}'s calendar in this period.`,
+      );
+    } else {
+      warnings.push(
+        "No bots found in this date range. Schedule meetings from Unified Meetings, or widen the period (Last 60 days).",
+      );
+    }
   }
 
   return {
@@ -568,9 +669,13 @@ function findBotForMeeting(
 
   const startMs = Date.parse(meeting.startTime);
   return rows.find((r) => {
-    if (!r.meetingUrl || r.meetingUrl !== meeting.meetingUrl || !r.scheduledStart) return false;
-    const delta = Math.abs(Date.parse(r.scheduledStart) - startMs);
-    return delta <= 60_000;
+    if (!r.meetingUrl || r.meetingUrl !== meeting.meetingUrl) return false;
+    const candidateStart = r.scheduledStart || r.meetingStartAt || r.botJoinAt;
+    if (!candidateStart) return false;
+    const candidateMs = Date.parse(candidateStart);
+    if (!Number.isFinite(candidateMs)) return false;
+    const delta = candidateMs - startMs;
+    return Math.abs(delta) <= 60_000 || (delta >= -30 * 60_000 && delta <= 15 * 60_000);
   });
 }
 
@@ -591,14 +696,6 @@ export async function buildBotJoinReport(args: {
       return hit.report;
     }
   }
-
-  const { candidates, diagnostics } = await collectBotCandidates(
-    calendarEmail,
-    args.start,
-    args.end,
-    windowHours,
-    rolling?.floorMs,
-  );
 
   let calendarAvailable = false;
   let calendarError: string | undefined;
@@ -621,6 +718,15 @@ export async function buildBotJoinReport(args: {
   } else {
     calendarError = "Google DWD credentials not configured";
   }
+
+  const { candidates, diagnostics } = await collectBotCandidates(
+    calendarEmail,
+    args.start,
+    args.end,
+    windowHours,
+    rolling?.floorMs,
+    calendarAvailable ? eligibleMeetings : [],
+  );
 
   const recallOk = recallConfigured();
   const joinAtAfter = rolling?.windowStart ?? `${args.start}T00:00:00.000Z`;
@@ -729,9 +835,18 @@ export async function buildBotJoinReport(args: {
     (a, b) => Date.parse(b.scheduledStart || "") - Date.parse(a.scheduledStart || ""),
   );
 
-  const accountRows = rows.filter(
-    (r) => r.calendarUserEmail.trim().toLowerCase() === calendarEmail,
-  );
+  const eligibleKeys = calendarAvailable ? buildEligibleKeySet(eligibleMeetings) : null;
+  const scopedRows = calendarAvailable
+    ? rows.filter((r) =>
+        candidateMatchesEligibleMeeting(
+          r.meetingUrl,
+          r.meetingStartAt || r.scheduledStart,
+          eligibleMeetings,
+          eligibleKeys!,
+        ),
+      )
+    : rows.filter((r) => r.calendarUserEmail.trim().toLowerCase() === calendarEmail);
+  const accountRows = scopedRows;
   const joinedFromBots = accountRows.filter((r) => r.joinedMeeting);
 
   const meetingsJoined = calendarAvailable ? joinedMeetings.length : joinedFromBots.length;
@@ -804,7 +919,7 @@ export async function buildBotJoinReport(args: {
     joinedMeetings,
     missedMeetings,
     daily,
-    rows,
+    rows: scopedRows,
   };
 
   reportCache.set(cacheKey, { at: Date.now(), report });
