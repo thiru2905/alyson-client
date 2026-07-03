@@ -1,7 +1,13 @@
 import { recallFetch } from "@/lib/recall/recall-client.server";
 
-/** Delete Recall-side media 1 day after S3 persist (inside Recall's 7-day free retention). */
-export const RECALL_MEDIA_DELETE_AFTER_MS = 24 * 60 * 60 * 1000;
+/** Delete Recall-side media as soon as S3 has a transcript (stops retention billing). */
+export const RECALL_MEDIA_DELETE_AFTER_MS = 0;
+
+function recallMediaDeleteEnabled(): boolean {
+  return String(process.env.RECALL_DELETE_MEDIA_AFTER_S3 ?? "true").trim().toLowerCase() !== "false";
+}
+
+export { recallMediaDeleteEnabled };
 
 /**
  * Permanently delete all recording media Recall stores for a bot.

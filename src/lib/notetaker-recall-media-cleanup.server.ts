@@ -1,6 +1,7 @@
 import {
   deleteRecallBotMedia,
   RECALL_MEDIA_DELETE_AFTER_MS,
+  recallMediaDeleteEnabled,
 } from "@/lib/recall/recall-delete-media.server";
 import { patchBotIndexRecallMediaDeleted } from "@/lib/notetaker-persistence.server";
 import { getTranscriptTextFromS3 } from "@/lib/notetaker-s3-calendar.server";
@@ -33,10 +34,26 @@ function persistAnchorIso(doc: {
 }
 
 /**
- * Delete Recall-side bot media once our S3 copy is at least 1 day old.
+ * Delete Recall-side bot media once our S3 copy exists (immediate by default).
  * Safe to run on a schedule — skips bots still in-call or missing S3 transcripts.
  */
 export async function runRecallMediaCleanup(): Promise<RecallMediaCleanupResult> {
+  if (!recallMediaDeleteEnabled()) {
+    return {
+      enabled: false,
+      deleteAfterHours: 0,
+      scanned: 0,
+      eligible: 0,
+      deleted: 0,
+      skippedTooRecent: 0,
+      skippedAlreadyDeleted: 0,
+      skippedNoTranscript: 0,
+      skippedInProgress: 0,
+      errors: 0,
+      warnings: ["RECALL_DELETE_MEDIA_AFTER_S3=false — Recall retention cleanup disabled"],
+    };
+  }
+
   const deleteAfterHours = RECALL_MEDIA_DELETE_AFTER_MS / (60 * 60 * 1000);
   const now = Date.now();
   const cutoff = now - RECALL_MEDIA_DELETE_AFTER_MS;
@@ -140,4 +157,35 @@ export async function runRecallMediaCleanup(): Promise<RecallMediaCleanupResult>
     errors,
     warnings: warnings.slice(0, 12),
   };
+}
+
+/** After S3 persist — drop Recall recording media so retention hours stop accruing. */
+export async function deleteRecallMediaAfterS3Persist(args: {
+  botId: string;
+  transcriptKey: string;
+  existingRecallMediaDeletedAt?: string;
+}): Promise<{ deleted: boolean; skipped?: string }> {
+  if (!recallMediaDeleteEnabled()) return { deleted: false, skipped: "disabled" };
+  if (args.existingRecallMediaDeletedAt) return { deleted: false, skipped: "already_deleted" };
+
+  const botId = String(args.botId || "").trim();
+  if (!botId) return { deleted: false, skipped: "missing_bot_id" };
+
+  try {
+    const transcriptText = (await getTranscriptTextFromS3({ transcriptKey: args.transcriptKey })).trim();
+    if (!transcriptText) return { deleted: false, skipped: "empty_transcript" };
+  } catch {
+    return { deleted: false, skipped: "no_s3_transcript" };
+  }
+
+  try {
+    const result = await deleteRecallBotMedia(botId);
+    if (result.ok || result.skipped === "bot_not_found") {
+      await patchBotIndexRecallMediaDeleted(botId, { deletedAt: new Date().toISOString() });
+      return { deleted: true, skipped: result.skipped };
+    }
+    return { deleted: false, skipped: result.skipped || "delete_failed" };
+  } catch (e) {
+    return { deleted: false, skipped: e instanceof Error ? e.message : String(e) };
+  }
 }

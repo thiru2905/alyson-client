@@ -57,6 +57,14 @@ export function resolveRecallTranscriptWebhookUrl(): string {
   return resolveRecallNotetakerTranscriptWebhookUrl();
 }
 
+/** Hours Recall keeps recording media (min 1). Alyson copies to S3 — keep this low. */
+export function recallRecordingRetentionHours(): number {
+  const raw = process.env.RECALL_RECORDING_RETENTION_HOURS?.trim();
+  const n = raw ? Number(raw) : 1;
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(Math.round(n), 168);
+}
+
 /** Re-apply transcript webhooks on an existing Recall bot (scheduled or in-call). */
 export async function patchRecallBotRecordingConfig(botId: string): Promise<void> {
   const id = String(botId || "").trim();
@@ -88,9 +96,15 @@ export async function patchRecallBotRecordingConfig(botId: string): Promise<void
 export function recallBotRecordingConfig() {
   const transcriptWebhookUrl = resolveRecallTranscriptWebhookUrl();
   const language = process.env.TRANSCRIPT_LANGUAGE?.trim() || "en";
+  const retentionHours = recallRecordingRetentionHours();
 
   return {
     recording_config: {
+      /** Short TTL on Recall — we persist to S3; avoids "Recording Retention Usage" after 7d free window. */
+      retention: {
+        type: "timed",
+        hours: retentionHours,
+      },
       transcript: {
         provider: {
           recallai_streaming: {

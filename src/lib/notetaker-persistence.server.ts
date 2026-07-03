@@ -251,6 +251,7 @@ export async function persistMeetingToS3({
           cronStablePasses: existingIndex?.cronStablePasses,
           cronFinalized: existingIndex?.cronFinalized,
           cronFinalizedAt: existingIndex?.cronFinalizedAt,
+          recallMediaDeletedAt: existingIndex?.recallMediaDeletedAt,
         },
         null,
         2,
@@ -259,6 +260,17 @@ export async function persistMeetingToS3({
       Metadata: { kind: "alyson-notetaker-bot-index", botid: String(session.botId) },
     }),
   );
+
+  if (transcriptText.trim()) {
+    const { deleteRecallMediaAfterS3Persist } = await import("@/lib/notetaker-recall-media-cleanup.server");
+    void deleteRecallMediaAfterS3Persist({
+      botId: session.botId,
+      transcriptKey,
+      existingRecallMediaDeletedAt: existingIndex?.recallMediaDeletedAt,
+    }).catch(() => {
+      // cron cleanup retries; persist must not fail on Recall delete
+    });
+  }
 
   return {
     botId: session.botId,
