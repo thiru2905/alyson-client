@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { resolvePlannedCalendarJoinAt } from "@/lib/unifiedMeetingsService";
+import { buildDatedMeetingTitle } from "@/lib/notetaker-meeting-title.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import {
   readUnifiedScheduledStateFromS3,
@@ -112,7 +113,8 @@ export async function processRecallCalendarEvent(
   }
 
   const hadRecallCalendarBot = Boolean(event.bots?.length);
-  const title = eventTitleFromRaw(event);
+  const baseTitle = eventTitleFromRaw(event);
+  const title = buildDatedMeetingTitle(baseTitle, event.start_time);
   const meetingUrl = String(event.meeting_url);
   const dedupe = unifiedScheduleDedupeKey(meetingUrl, event.start_time);
 
@@ -128,7 +130,7 @@ export async function processRecallCalendarEvent(
     const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
       meetingUrl,
       botJoinAt: joinAt,
-      title,
+      title: baseTitle,
       joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
       metadata: {
         source: "recall_calendar_v2",
@@ -143,7 +145,8 @@ export async function processRecallCalendarEvent(
     });
     await registerScheduledBotInSessionsCatalog({
       botId,
-      title,
+      title: baseTitle,
+      meetingStartAt: event.start_time,
       meetingUrl,
       createdAt: new Date().toISOString(),
       status: "scheduled",
@@ -179,13 +182,14 @@ export async function processRecallCalendarEvent(
   if (reservation.kind === "existing") {
     await ensureBotTranscriptPipeline({
       botId: reservation.botId,
-      title,
+      title: baseTitle,
       meetingUrl,
       botJoinAt: joinAt,
       metadata: {
         source: "recall_calendar_v2",
         recall_calendar_event_id: event.id,
         recall_calendar_id: event.calendar_id,
+        meeting_start_time: event.start_time,
       },
     });
     return {
@@ -199,7 +203,7 @@ export async function processRecallCalendarEvent(
     const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
       meetingUrl,
       botJoinAt: joinAt,
-      title,
+      title: baseTitle,
       joinOffsetMinutes: Math.round(BOT_JOIN_OFFSET_MS / 60_000),
       metadata: {
         source: "recall_calendar_v2",
@@ -239,7 +243,8 @@ export async function processRecallCalendarEvent(
 
     await registerScheduledBotInSessionsCatalog({
       botId,
-      title,
+      title: baseTitle,
+      meetingStartAt: event.start_time,
       meetingUrl,
       createdAt: new Date().toISOString(),
       status: "scheduled",

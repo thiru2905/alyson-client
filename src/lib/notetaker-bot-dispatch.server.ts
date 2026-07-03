@@ -5,6 +5,10 @@ import {
   resolveRecallTranscriptWebhookUrl,
 } from "@/lib/recall/recall-bot-config.server";
 import { recallFetch } from "@/lib/recall/recall-client.server";
+import {
+  buildDatedMeetingTitle,
+  resolveMeetingStartFromMetadata,
+} from "@/lib/notetaker-meeting-title.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 
 export type BotDispatchSource = "notetaker_managed" | "direct_recall_fallback";
@@ -68,6 +72,11 @@ async function notetakerGet(path: string, timeoutMs = 12_000): Promise<Response>
   }
 }
 
+function resolveDisplayTitle(title: string, metadata?: Record<string, unknown>): string {
+  const meetingStartAt = resolveMeetingStartFromMetadata(metadata);
+  return meetingStartAt ? buildDatedMeetingTitle(title, meetingStartAt) : title;
+}
+
 /**
  * After Recall-direct bot creation, register the session in Notetaker and ensure transcript webhooks.
  * Tries register-bot (adopt existing Recall id), then session wake-up.
@@ -75,6 +84,9 @@ async function notetakerGet(path: string, timeoutMs = 12_000): Promise<Response>
 export async function linkBotToNotetakerSession(args: BotSessionLinkArgs): Promise<void> {
   const botId = String(args.botId || "").trim();
   if (!botId) return;
+
+  const displayTitle = resolveDisplayTitle(args.title, args.metadata);
+  const meetingStartAt = resolveMeetingStartFromMetadata(args.metadata);
 
   try {
     await patchRecallBotRecordingConfig(botId);
@@ -85,7 +97,7 @@ export async function linkBotToNotetakerSession(args: BotSessionLinkArgs): Promi
   const registerPayload = {
     bot_id: botId,
     botId,
-    title: args.title,
+    title: displayTitle,
     meeting_url: args.meetingUrl,
     join_at: args.botJoinAt,
     metadata: {
@@ -122,6 +134,7 @@ export async function linkBotToNotetakerSession(args: BotSessionLinkArgs): Promi
   await registerScheduledBotInSessionsCatalog({
     botId,
     title: args.title,
+    meetingStartAt,
     meetingUrl: args.meetingUrl,
     createdAt: new Date().toISOString(),
     status: "scheduled",
@@ -243,16 +256,20 @@ export async function dispatchBotWithLiveTranscripts(args: {
   preferScheduledJoin?: boolean;
 }): Promise<{ botId: string; creationSource: BotDispatchSource }> {
   const botName = process.env.BOT_NAME?.trim() || "Alyson Notetaker";
+  const displayTitle = resolveDisplayTitle(args.title, args.metadata);
+  const meetingStartAt = resolveMeetingStartFromMetadata(args.metadata);
   const metadata = {
     ...args.metadata,
     bot_join_offset_minutes: args.joinOffsetMinutes ?? 2,
     scheduled_join_at: args.botJoinAt,
     transcript_webhook_url: resolveRecallTranscriptWebhookUrl(),
+    ...(meetingStartAt ? { meeting_start_time: meetingStartAt } : {}),
+    summary: displayTitle,
   };
 
   const sessionLink: BotSessionLinkArgs = {
     botId: "",
-    title: args.title,
+    title: displayTitle,
     meetingUrl: args.meetingUrl,
     botJoinAt: args.botJoinAt,
     metadata,
@@ -273,13 +290,14 @@ export async function dispatchBotWithLiveTranscripts(args: {
     const { botId } = await createViaNotetaker({
       meetingUrl: args.meetingUrl,
       botJoinAt: args.botJoinAt,
-      title: args.title,
+      title: displayTitle,
       botName,
       metadata,
     });
     await registerScheduledBotInSessionsCatalog({
       botId,
       title: args.title,
+      meetingStartAt,
       meetingUrl: args.meetingUrl,
       createdAt: new Date().toISOString(),
       status: "scheduled",

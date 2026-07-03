@@ -16,6 +16,7 @@ import {
 } from "@/lib/meeting-bot-reserve.server";
 import { removeBotFromRecallCalendarEvent } from "@/lib/recall/recall-calendar-v2.server";
 import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
+import { buildDatedMeetingTitle } from "@/lib/notetaker-meeting-title.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { unifiedScheduledStatusForUi } from "@/lib/unified-scheduled-lifecycle.server";
 import {
@@ -105,21 +106,6 @@ function env(name: string): string {
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function formatDateDDMMYYYY(isoLike: string): string {
-  const d = new Date(isoLike);
-  if (!Number.isFinite(d.getTime())) return "";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = String(d.getFullYear());
-  return `${dd}${mm}${yyyy}`;
-}
-
-function buildUnifiedTitle(title: string, startTime: string): string {
-  const datePrefix = formatDateDDMMYYYY(startTime);
-  const cleanTitle = String(title || "Meeting").trim() || "Meeting";
-  return datePrefix ? `${datePrefix} ${cleanTitle}` : cleanTitle;
 }
 
 function encodeMeetingId(calendarUserEmail: string, googleEventId: string): string {
@@ -416,7 +402,7 @@ export async function listAllUnifiedScheduledBotSessions(): Promise<UnifiedSched
     seen.add(botId);
     out.push({
       botId,
-      title: String(row.title || "Unified meeting"),
+      title: buildDatedMeetingTitle(String(row.title || "Unified meeting"), row.startTime),
       meetingUrl: row.meetingUrl ? String(row.meetingUrl) : undefined,
       createdAt: String(row.scheduledAt || row.startTime || new Date().toISOString()),
       status: unifiedScheduledStatusForUi(row),
@@ -591,18 +577,20 @@ async function dispatchBotForMeeting(
   joinAt: string,
   joinOffsetMinutes?: number,
 ): Promise<{ botId: string; creationSource: StateEntry["creationSource"] }> {
+  const displayTitle = buildDatedMeetingTitle(meeting.title, meeting.startTime);
   const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
     meetingUrl: meeting.meetingUrl!,
     botJoinAt: joinAt,
-    title: meeting.title,
+    title: displayTitle,
     joinOffsetMinutes,
     metadata: {
       source: "unified_meetings",
       google_event_id: meeting.googleEventId,
       ical_uid: meeting.iCalUID,
       calendar_user: meeting.calendarUserEmail,
-      summary: meeting.title,
+      summary: displayTitle,
       meeting_url: meeting.meetingUrl,
+      meeting_start_time: meeting.startTime,
     },
   });
   return { botId, creationSource };
@@ -625,7 +613,7 @@ async function scheduleMeetingInternal(
 
   const key = dedupeKey(meeting.meetingUrl, meeting.startTime);
   const legacyKey = dedupeKeyLegacy(meeting.meetingUrl, meeting.startTime, meeting.calendarUserEmail);
-  const catalogTitle = buildUnifiedTitle(meeting.title, meeting.startTime);
+  const catalogTitle = buildDatedMeetingTitle(meeting.title, meeting.startTime);
 
   const state = await readState();
   const existingIdx = state.scheduled.findIndex(
@@ -681,7 +669,11 @@ async function scheduleMeetingInternal(
           title: catalogTitle,
           meetingUrl: meeting.meetingUrl!,
           botJoinAt: reservation.entry.botJoinAt || joinAt,
-          metadata: { source: "unified_meetings", google_event_id: meeting.googleEventId },
+          metadata: {
+            source: "unified_meetings",
+            google_event_id: meeting.googleEventId,
+            meeting_start_time: meeting.startTime,
+          },
         });
         return { scheduled: false, error: "Already scheduled (dedupe). Bot id is stored in S3 state." };
       }
@@ -701,7 +693,8 @@ async function scheduleMeetingInternal(
       });
       await registerScheduledBotInSessionsCatalog({
         botId,
-        title: catalogTitle,
+        title: meeting.title,
+        meetingStartAt: meeting.startTime,
         meetingUrl: meeting.meetingUrl,
         createdAt: nowIso(),
         status: "scheduled",
@@ -723,10 +716,14 @@ async function scheduleMeetingInternal(
     if (existing.recallBotId) {
       await ensureBotTranscriptPipeline({
         botId: existing.recallBotId,
-        title: buildUnifiedTitle(meeting.title, meeting.startTime),
+        title: catalogTitle,
         meetingUrl: meeting.meetingUrl!,
         botJoinAt: existing.botJoinAt || joinAt,
-        metadata: { source: "unified_meetings", google_event_id: meeting.googleEventId },
+        metadata: {
+          source: "unified_meetings",
+          google_event_id: meeting.googleEventId,
+          meeting_start_time: meeting.startTime,
+        },
       });
     }
     return { scheduled: false, error: "Already scheduled (dedupe). Bot id is stored in S3 state." };
@@ -739,7 +736,7 @@ async function scheduleMeetingInternal(
       googleEventId: meeting.googleEventId,
       iCalUID: meeting.iCalUID,
       calendarUserEmail: meeting.calendarUserEmail,
-      title: buildUnifiedTitle(meeting.title, meeting.startTime),
+      title: catalogTitle,
       meetingUrl: meeting.meetingUrl,
       startTime: meeting.startTime,
       endTime: meeting.endTime,
@@ -759,10 +756,10 @@ async function scheduleMeetingInternal(
     }
     await writeState(state);
 
-    const catalogTitle = buildUnifiedTitle(meeting.title, meeting.startTime);
     await registerScheduledBotInSessionsCatalog({
       botId,
-      title: catalogTitle,
+      title: meeting.title,
+      meetingStartAt: meeting.startTime,
       meetingUrl: meeting.meetingUrl,
       createdAt: nowIso(),
       status: "scheduled",
