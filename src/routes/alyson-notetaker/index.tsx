@@ -519,7 +519,10 @@ function SessionPanel({
   const [emailPreview, setEmailPreview] = useState<Awaited<ReturnType<typeof previewMeetingNotesEmailFn>> | null>(null);
   const [emailRecipients, setEmailRecipients] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
+  const [addingRecipient, setAddingRecipient] = useState(false);
   const [editDraft, setEditDraft] = useState({ name: "", email: "" });
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailHeading, setEmailHeading] = useState("");
   const [notesEmailSent, setNotesEmailSent] = useState(false);
 
   const notesEmailSentStorageKey = (id: string) => `alyson-notes-email-sent:${id}`;
@@ -685,6 +688,8 @@ function SessionPanel({
       }),
     onSuccess: (preview) => {
       setEmailPreview(preview);
+      setEmailSubject(preview.subject);
+      setEmailHeading(preview.heading);
       setEmailRecipients(
         preview.recipients.map((r, i) => ({
           id: `recipient-${i}-${r.email}`,
@@ -693,6 +698,7 @@ function SessionPanel({
         })),
       );
       setEditingRecipientId(null);
+      setAddingRecipient(false);
       setEditDraft({ name: "", email: "" });
       setEmailOpen(true);
     },
@@ -709,6 +715,8 @@ function SessionPanel({
           botId: botId!,
           notesMd: notes.trim() || undefined,
           title: session?.title || fallbackTitle || undefined,
+          subject: emailSubject.trim(),
+          heading: emailHeading.trim(),
           recipients,
         },
       });
@@ -726,7 +734,10 @@ function SessionPanel({
       setEmailOpen(false);
       setEmailPreview(null);
       setEmailRecipients([]);
+      setEmailSubject("");
+      setEmailHeading("");
       setEditingRecipientId(null);
+      setAddingRecipient(false);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to send email"),
   });
@@ -734,9 +745,15 @@ function SessionPanel({
   const validEmailRecipients = emailRecipients.filter(
     (r) => r.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email.trim()),
   );
+  const editDraftValid =
+    editDraft.name.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editDraft.email.trim());
+  const emailFormBusy = editingRecipientId !== null || addingRecipient;
   const canSendEmail =
     Boolean(emailPreview?.configured) &&
     validEmailRecipients.length > 0 &&
+    emailSubject.trim().length > 0 &&
+    emailHeading.trim().length > 0 &&
+    !emailFormBusy &&
     !emailPreview?.warnings.some((w) => w.includes("Notes are empty") || w.includes("No meeting notes"));
 
   if (!botId || deferLoad) {
@@ -999,7 +1016,10 @@ function SessionPanel({
                   setEmailOpen(false);
                   setEmailPreview(null);
                   setEmailRecipients([]);
+                  setEmailSubject("");
+                  setEmailHeading("");
                   setEditingRecipientId(null);
+                  setAddingRecipient(false);
                 }}
                 className="h-8 w-8 grid place-items-center rounded-md hover:bg-muted text-muted-foreground"
                 aria-label="Close"
@@ -1008,15 +1028,102 @@ function SessionPanel({
               </button>
             </div>
 
-            <div className="mt-3 rounded-md border border-border bg-muted/20 p-3 text-[12px]">
-              <div className="font-medium text-[11px] uppercase tracking-wide text-muted-foreground">Subject</div>
-              <div className="mt-1">{emailPreview.subject}</div>
+            <div className="mt-3 space-y-3">
+              <label className="block text-[12px]">
+                <span className="font-medium text-[11px] uppercase tracking-wide text-muted-foreground">Subject</span>
+                <input
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  disabled={emailSendM.isPending}
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-background px-2.5 text-[12px]"
+                  placeholder="Email subject line"
+                />
+              </label>
+              <label className="block text-[12px]">
+                <span className="font-medium text-[11px] uppercase tracking-wide text-muted-foreground">Heading</span>
+                <input
+                  value={emailHeading}
+                  onChange={(e) => setEmailHeading(e.target.value)}
+                  disabled={emailSendM.isPending}
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-background px-2.5 text-[12px]"
+                  placeholder="Title shown at the top of the email"
+                />
+              </label>
             </div>
 
             <div className="mt-3">
-              <div className="text-[12px] font-medium">
-                Recipients ({validEmailRecipients.length})
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12px] font-medium">
+                  Recipients ({validEmailRecipients.length})
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingRecipient(true);
+                    setEditingRecipientId(null);
+                    setEditDraft({ name: "", email: "" });
+                  }}
+                  disabled={emailSendM.isPending || addingRecipient || editingRecipientId !== null}
+                  className="h-7 px-2 rounded-md border border-border text-[11px] hover:bg-muted disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                </button>
               </div>
+              {addingRecipient && (
+                <div className="mt-2 rounded-md border border-dashed border-border px-2.5 py-2 space-y-2">
+                  <input
+                    value={editDraft.name}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="Name"
+                    className="w-full h-8 rounded-md border border-border bg-background px-2 text-[12px]"
+                    autoFocus
+                  />
+                  <input
+                    value={editDraft.email}
+                    onChange={(e) => setEditDraft((d) => ({ ...d, email: e.target.value }))}
+                    placeholder="email@example.com"
+                    className="w-full h-8 rounded-md border border-border bg-background px-2 text-[12px] font-mono"
+                  />
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddingRecipient(false);
+                        setEditDraft({ name: "", email: "" });
+                      }}
+                      className="h-7 px-2 rounded-md border border-border text-[11px] hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!editDraftValid}
+                      onClick={() => {
+                        const email = editDraft.email.trim().toLowerCase();
+                        if (emailRecipients.some((r) => r.email.trim().toLowerCase() === email)) {
+                          toast.error("That email is already in the list");
+                          return;
+                        }
+                        setEmailRecipients((rows) => [
+                          ...rows,
+                          {
+                            id: `recipient-manual-${Date.now()}`,
+                            name: editDraft.name.trim(),
+                            email,
+                          },
+                        ]);
+                        setAddingRecipient(false);
+                        setEditDraft({ name: "", email: "" });
+                      }}
+                      className="h-7 px-2 rounded-md bg-foreground text-background text-[11px] hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1"
+                    >
+                      <Check className="h-3 w-3" />
+                      Add recipient
+                    </button>
+                  </div>
+                </div>
+              )}
               {emailRecipients.length ? (
                 <ul className="mt-2 space-y-1.5 text-[12px]">
                   {emailRecipients.map((r) => {
@@ -1090,6 +1197,7 @@ function SessionPanel({
                               type="button"
                               onClick={() => {
                                 setEditingRecipientId(r.id);
+                                setAddingRecipient(false);
                                 setEditDraft({ name: r.name, email: r.email });
                               }}
                               disabled={emailSendM.isPending}
@@ -1099,6 +1207,22 @@ function SessionPanel({
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailRecipients((rows) => rows.filter((row) => row.id !== r.id));
+                                if (editingRecipientId === r.id) {
+                                  setEditingRecipientId(null);
+                                  setEditDraft({ name: "", email: "" });
+                                }
+                              }}
+                              disabled={emailSendM.isPending}
+                              className="shrink-0 h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-destructive hover:bg-muted/40 disabled:opacity-50"
+                              title="Remove recipient"
+                              aria-label={`Remove ${r.name}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           </div>
                         )}
                       </li>
@@ -1107,7 +1231,7 @@ function SessionPanel({
                 </ul>
               ) : (
                 <div className="mt-2 text-[12px] text-muted-foreground">
-                  No @cintara.ai emails could be matched from meeting participants.
+                  No participants matched yet — use Add to include recipients.
                 </div>
               )}
             </div>
@@ -1134,7 +1258,10 @@ function SessionPanel({
                   setEmailOpen(false);
                   setEmailPreview(null);
                   setEmailRecipients([]);
+                  setEmailSubject("");
+                  setEmailHeading("");
                   setEditingRecipientId(null);
+                  setAddingRecipient(false);
                 }}
                 className="h-9 px-3 rounded-md border border-border text-[12px] hover:bg-muted"
               >
@@ -1142,7 +1269,7 @@ function SessionPanel({
               </button>
               <button
                 type="button"
-                disabled={!canSendEmail || emailSendM.isPending || editingRecipientId !== null || notesEmailSent}
+                disabled={!canSendEmail || emailSendM.isPending || notesEmailSent}
                 onClick={() => emailSendM.mutate()}
                 className="h-9 px-3 rounded-md bg-foreground text-background text-[12px] hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
               >

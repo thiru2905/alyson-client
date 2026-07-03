@@ -25,13 +25,15 @@ const CINTARA_DOMAIN = "cintara.ai";
 export type MeetingNotesEmailRecipient = {
   name: string;
   email: string;
-  source: "calendar" | "transcript" | "roster";
+  source: "calendar" | "transcript" | "roster" | "manual";
 };
 
 export type MeetingNotesEmailPreview = {
   configured: boolean;
   fromAddress: string;
   subject: string;
+  /** Email body H1 heading (defaults to meeting title). */
+  heading: string;
   recipients: MeetingNotesEmailRecipient[];
   unmapped: Array<{ name: string; source: "calendar" | "transcript" }>;
   warnings: string[];
@@ -201,6 +203,7 @@ export async function previewMeetingNotesEmail(args: {
     configured: sesConfigured(),
     fromAddress: getSesFromAddress(),
     subject,
+    heading: title,
     recipients,
     unmapped,
     warnings: allWarnings,
@@ -208,10 +211,22 @@ export async function previewMeetingNotesEmail(args: {
   };
 }
 
+function normalizeRecipientEmail(email: string): string {
+  const trimmed = String(email || "").trim().toLowerCase();
+  if (!trimmed) return "";
+  const domain = trimmed.split("@")[1] || "";
+  if (domain === CINTARA_DOMAIN || domain === "revcloud.com") {
+    return canonicalOfficialEmail(trimmed);
+  }
+  return trimmed;
+}
+
 export async function sendMeetingNotesEmail(args: {
   botId: string;
   notesMd?: string;
   title?: string;
+  subject?: string;
+  heading?: string;
   recipients?: Array<{ name: string; email: string }>;
 }): Promise<MeetingNotesEmailSendResult> {
   if (!sesConfigured()) {
@@ -221,8 +236,8 @@ export async function sendMeetingNotesEmail(args: {
   const overrideRecipients = (args.recipients ?? [])
     .map((r) => ({
       name: String(r.name || "").trim(),
-      email: canonicalOfficialEmail(String(r.email || "").trim()),
-      source: "roster" as const,
+      email: normalizeRecipientEmail(r.email),
+      source: "manual" as const,
     }))
     .filter((r) => r.name && r.email);
 
@@ -247,17 +262,20 @@ export async function sendMeetingNotesEmail(args: {
 
   const indexDoc = await loadBotIndexDoc(args.botId).catch(() => null);
   const { notesMd, title: loadedTitle } = await loadNotesMarkdown(args.botId, args.notesMd);
-  const title = String(args.title || loadedTitle || "Meeting").trim() || "Meeting";
-  const subject = buildEmailSubject(title, indexDoc?.finalizedAt || null);
+  const defaultTitle = String(args.title || loadedTitle || "Meeting").trim() || "Meeting";
+  const heading = String(args.heading || defaultTitle).trim() || defaultTitle;
+  const subject =
+    String(args.subject || "").trim() ||
+    buildEmailSubject(defaultTitle, indexDoc?.finalizedAt || null);
   const bodyHtml = markdownToEmailHtml(notesMd);
   const html = wrapMeetingNotesEmailHtml({
-    title,
+    title: heading,
     meetingDateLabel: meetingDateLabel(indexDoc?.finalizedAt || null),
     bodyHtml,
     appUrl: process.env.ALYSON_APP_BASE_URL?.trim() || process.env.VITE_ALYSON_APP_BASE_URL?.trim(),
   });
   const text = [
-    `Meeting notes — ${title}`,
+    heading,
     "",
     markdownToPlainEmailText(notesMd),
     "",

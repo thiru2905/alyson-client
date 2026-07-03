@@ -6,6 +6,8 @@ const BotNotesInput = z.object({
   botId: z.string().min(1),
   notesMd: z.string().optional(),
   title: z.string().optional(),
+  subject: z.string().optional(),
+  heading: z.string().optional(),
   recipients: z
     .array(
       z.object({
