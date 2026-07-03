@@ -9,13 +9,17 @@ import {
 } from "@/lib/alyson-notetaker-functions";
 import { getNotetakerSession, loadNotetakerSessionArchive } from "@/lib/notetaker-get-session-functions";
 import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-functions";
-import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X, Bot } from "lucide-react";
+import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X, Bot, Pencil, Check } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { finalizeAndPersistNotetakerSession } from "@/lib/notetaker-persistence-functions";
 import { syncNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3-functions";
 import { deleteNotetakerSessionFromS3 } from "@/lib/notetaker-delete-functions";
 import { generateSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
+import {
+  previewMeetingNotesEmailFn,
+  sendMeetingNotesEmailFn,
+} from "@/lib/notetaker-meeting-notes-email-functions";
 
 export const Route = createFileRoute("/alyson-notetaker/")({
   component: AlysonNotetakerPage,
@@ -511,6 +515,11 @@ function SessionPanel({
   ]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailPreview, setEmailPreview] = useState<Awaited<ReturnType<typeof previewMeetingNotesEmailFn>> | null>(null);
+  const [emailRecipients, setEmailRecipients] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ name: "", email: "" });
 
   const mergedLines = useMemo(() => {
     const fetched = q.data?.lines ?? [];
@@ -645,6 +654,63 @@ function SessionPanel({
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to persist meeting"),
   });
+
+  const emailPreviewM = useMutation({
+    mutationFn: async () =>
+      previewMeetingNotesEmailFn({
+        data: {
+          botId: botId!,
+          notesMd: notes.trim() || undefined,
+          title: session?.title || fallbackTitle || undefined,
+        },
+      }),
+    onSuccess: (preview) => {
+      setEmailPreview(preview);
+      setEmailRecipients(
+        preview.recipients.map((r, i) => ({
+          id: `recipient-${i}-${r.email}`,
+          name: r.name,
+          email: r.email,
+        })),
+      );
+      setEditingRecipientId(null);
+      setEditDraft({ name: "", email: "" });
+      setEmailOpen(true);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not prepare email"),
+  });
+
+  const emailSendM = useMutation({
+    mutationFn: async () => {
+      const recipients = emailRecipients
+        .map((r) => ({ name: r.name.trim(), email: r.email.trim().toLowerCase() }))
+        .filter((r) => r.name && r.email);
+      return sendMeetingNotesEmailFn({
+        data: {
+          botId: botId!,
+          notesMd: notes.trim() || undefined,
+          title: session?.title || fallbackTitle || undefined,
+          recipients,
+        },
+      });
+    },
+    onSuccess: (res) => {
+      toast.success(`Notes emailed to ${res.recipients.length} participant${res.recipients.length === 1 ? "" : "s"}`);
+      setEmailOpen(false);
+      setEmailPreview(null);
+      setEmailRecipients([]);
+      setEditingRecipientId(null);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to send email"),
+  });
+
+  const validEmailRecipients = emailRecipients.filter(
+    (r) => r.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email.trim()),
+  );
+  const canSendEmail =
+    Boolean(emailPreview?.configured) &&
+    validEmailRecipients.length > 0 &&
+    !emailPreview?.warnings.some((w) => w.includes("Notes are empty") || w.includes("No meeting notes"));
 
   if (!botId || deferLoad) {
     return (
@@ -851,24 +917,14 @@ function SessionPanel({
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  if (!plainNotes.trim()) return;
-                  const title = session?.title ? `Meeting notes — ${session.title}` : "Meeting notes";
-                  try {
-                    if ("share" in navigator && typeof navigator.share === "function") {
-                      await navigator.share({ title, text: plainNotes });
-                      return;
-                    }
-                  } catch {
-                    // fall through to mailto
-                  }
-                  const url = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(plainNotes)}`;
-                  window.open(url, "_blank", "noopener,noreferrer");
+                onClick={() => {
+                  if (!plainNotes.trim() || !botId || emailPreviewM.isPending) return;
+                  emailPreviewM.mutate();
                 }}
-                disabled={!plainNotes.trim()}
+                disabled={!plainNotes.trim() || !botId || emailPreviewM.isPending || emailSendM.isPending}
                 className="h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                title="Send notes"
-                aria-label="Send notes"
+                title="Email formatted notes to meeting participants"
+                aria-label="Email notes to participants"
               >
                 <Send className="h-3.5 w-3.5" />
               </button>
@@ -888,6 +944,178 @@ function SessionPanel({
           </div>
         </div>
       </div>
+
+      {emailOpen && emailPreview && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 px-4">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-background shadow-xl p-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium text-[14px]">Email meeting notes</div>
+                <div className="mt-1 text-[12px] text-muted-foreground">
+                  Formatted email via AWS SES from {emailPreview.fromAddress}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (emailSendM.isPending) return;
+                  setEmailOpen(false);
+                  setEmailPreview(null);
+                  setEmailRecipients([]);
+                  setEditingRecipientId(null);
+                }}
+                className="h-8 w-8 grid place-items-center rounded-md hover:bg-muted text-muted-foreground"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-md border border-border bg-muted/20 p-3 text-[12px]">
+              <div className="font-medium text-[11px] uppercase tracking-wide text-muted-foreground">Subject</div>
+              <div className="mt-1">{emailPreview.subject}</div>
+            </div>
+
+            <div className="mt-3">
+              <div className="text-[12px] font-medium">
+                Recipients ({validEmailRecipients.length})
+              </div>
+              {emailRecipients.length ? (
+                <ul className="mt-2 space-y-1.5 text-[12px]">
+                  {emailRecipients.map((r) => {
+                    const editing = editingRecipientId === r.id;
+                    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email.trim());
+                    return (
+                      <li key={r.id} className="rounded-md border border-border px-2.5 py-1.5">
+                        {editing ? (
+                          <div className="space-y-2">
+                            <input
+                              value={editDraft.name}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                              placeholder="Name"
+                              className="w-full h-8 rounded-md border border-border bg-background px-2 text-[12px]"
+                              autoFocus
+                            />
+                            <input
+                              value={editDraft.email}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, email: e.target.value }))}
+                              placeholder="email@cintara.ai"
+                              className="w-full h-8 rounded-md border border-border bg-background px-2 text-[12px] font-mono"
+                            />
+                            <div className="flex justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRecipientId(null);
+                                  setEditDraft({ name: "", email: "" });
+                                }}
+                                className="h-7 px-2 rounded-md border border-border text-[11px] hover:bg-muted"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                disabled={
+                                  !editDraft.name.trim() ||
+                                  !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editDraft.email.trim())
+                                }
+                                onClick={() => {
+                                  setEmailRecipients((rows) =>
+                                    rows.map((row) =>
+                                      row.id === r.id
+                                        ? {
+                                            ...row,
+                                            name: editDraft.name.trim(),
+                                            email: editDraft.email.trim().toLowerCase(),
+                                          }
+                                        : row,
+                                    ),
+                                  );
+                                  setEditingRecipientId(null);
+                                  setEditDraft({ name: "", email: "" });
+                                }}
+                                className="h-7 px-2 rounded-md bg-foreground text-background text-[11px] hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1"
+                              >
+                                <Check className="h-3 w-3" />
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium">{r.name}</div>
+                              <div className={`truncate font-mono text-[11px] ${emailValid ? "text-muted-foreground" : "text-destructive"}`}>
+                                {r.email}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRecipientId(r.id);
+                                setEditDraft({ name: r.name, email: r.email });
+                              }}
+                              disabled={emailSendM.isPending}
+                              className="shrink-0 h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
+                              title="Edit recipient"
+                              aria-label={`Edit ${r.name}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="mt-2 text-[12px] text-muted-foreground">
+                  No @cintara.ai emails could be matched from meeting participants.
+                </div>
+              )}
+            </div>
+
+            {emailPreview.unmapped.length > 0 && (
+              <div className="mt-3 text-[11px] text-amber-700 dark:text-amber-400">
+                Not mapped: {emailPreview.unmapped.map((u) => u.name).join(", ")}
+              </div>
+            )}
+
+            {emailPreview.warnings.length > 0 && (
+              <div className="mt-3 text-[11px] text-muted-foreground space-y-1">
+                {emailPreview.warnings.map((w) => (
+                  <div key={w}>{w}</div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (emailSendM.isPending) return;
+                  setEmailOpen(false);
+                  setEmailPreview(null);
+                  setEmailRecipients([]);
+                  setEditingRecipientId(null);
+                }}
+                className="h-9 px-3 rounded-md border border-border text-[12px] hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!canSendEmail || emailSendM.isPending || editingRecipientId !== null}
+                onClick={() => emailSendM.mutate()}
+                className="h-9 px-3 rounded-md bg-foreground text-background text-[12px] hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                <Send className="h-3.5 w-3.5" />
+                {emailSendM.isPending ? "Sending…" : `Send to ${validEmailRecipients.length || 0}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 border border-border rounded-lg overflow-hidden">
         <div className="px-3 py-2 border-b border-border bg-muted/30 flex items-center justify-between gap-2">

@@ -1,0 +1,282 @@
+import { canonicalOfficialEmail } from "@/lib/cintara-email";
+import type { EmployeePickerEntry } from "@/lib/employee-picker-types";
+import { loadEmployeePickerDirectory } from "@/lib/employee-picker-directory.server";
+import {
+  markdownToEmailHtml,
+  markdownToPlainEmailText,
+  wrapMeetingNotesEmailHtml,
+} from "@/lib/markdown-email.server";
+import { formatMeetingDatePrefix } from "@/lib/notetaker-meeting-title.server";
+import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
+import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
+import { getNotesMdFromS3 } from "@/lib/notetaker-s3-calendar.server";
+import { getSesFromAddress, sendSesEmail, sesConfigured } from "@/lib/ses-mail.server";
+import {
+  looksLikeEmail,
+  normalizePersonName,
+  resolveCanonicalEmail,
+  resolveCanonicalSpeaker,
+  type SpeakerIdentityIndex,
+} from "@/lib/speaker-identity";
+import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
+
+const CINTARA_DOMAIN = "cintara.ai";
+
+export type MeetingNotesEmailRecipient = {
+  name: string;
+  email: string;
+  source: "calendar" | "transcript" | "roster";
+};
+
+export type MeetingNotesEmailPreview = {
+  configured: boolean;
+  fromAddress: string;
+  subject: string;
+  recipients: MeetingNotesEmailRecipient[];
+  unmapped: Array<{ name: string; source: "calendar" | "transcript" }>;
+  warnings: string[];
+  canSend: boolean;
+};
+
+export type MeetingNotesEmailSendResult = {
+  sent: boolean;
+  messageId?: string;
+  recipients: string[];
+  subject: string;
+  warnings: string[];
+};
+
+function isCintaraEmail(email: string): boolean {
+  const e = canonicalOfficialEmail(email).toLowerCase();
+  return e.endsWith(`@${CINTARA_DOMAIN}`);
+}
+
+function resolveNameToCintaraEmail(
+  label: string,
+  identity: SpeakerIdentityIndex,
+  roster: EmployeePickerEntry[],
+): { email: string | null; name: string } {
+  const raw = String(label || "").trim();
+  if (!raw) return { email: null, name: "Unknown" };
+
+  if (looksLikeEmail(raw)) {
+    const email = resolveCanonicalEmail(raw, identity);
+    if (!isCintaraEmail(email)) return { email: null, name: resolveCanonicalSpeaker(raw, identity) };
+    return { email: canonicalOfficialEmail(email), name: resolveCanonicalSpeaker(raw, identity) };
+  }
+
+  const canonical = resolveCanonicalSpeaker(raw, identity);
+  for (const e of roster) {
+    const eCanonical = resolveCanonicalSpeaker(e.name || e.email, identity);
+    if (
+      eCanonical === canonical ||
+      normalizePersonName(e.name) === normalizePersonName(canonical) ||
+      normalizePersonName(e.name).split(" ")[0] === normalizePersonName(canonical).split(" ")[0]
+    ) {
+      const email = canonicalOfficialEmail(resolveCanonicalEmail(e.email, identity));
+      if (isCintaraEmail(email)) {
+        return { email, name: e.name?.trim() || canonical };
+      }
+    }
+  }
+
+  return { email: null, name: canonical };
+}
+
+export async function resolveMeetingNotesRecipientEmails(botId: string): Promise<{
+  recipients: MeetingNotesEmailRecipient[];
+  unmapped: Array<{ name: string; source: "calendar" | "transcript" }>;
+  warnings: string[];
+}> {
+  const id = String(botId || "").trim();
+  if (!id) return { recipients: [], unmapped: [], warnings: ["Missing bot id"] };
+
+  const indexDoc = await loadBotIndexDoc(id).catch(() => null);
+  const participants = await resolveMeetingParticipants({
+    botId: id,
+    transcriptKey: indexDoc?.transcriptKey,
+    hasTranscript: Boolean(indexDoc?.transcriptKey),
+  });
+
+  const [{ index: identity, warnings: identityWarnings }, roster] = await Promise.all([
+    getSpeakerIdentityIndex(),
+    loadEmployeePickerDirectory(),
+  ]);
+
+  const warnings = identityWarnings.slice(0, 4);
+  const byEmail = new Map<string, MeetingNotesEmailRecipient>();
+  const unmapped: Array<{ name: string; source: "calendar" | "transcript" }> = [];
+
+  for (const p of participants) {
+    const source = p.source === "calendar" ? "calendar" : "transcript";
+    const { email, name } = resolveNameToCintaraEmail(p.name, identity, roster.employees);
+    if (email) {
+      const key = email.toLowerCase();
+      if (!byEmail.has(key)) {
+        byEmail.set(key, { name, email, source });
+      }
+      continue;
+    }
+    unmapped.push({ name: p.name, source });
+  }
+
+  const recipients = [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name));
+  if (!recipients.length) {
+    warnings.push("No Cintara participant emails could be resolved for this meeting.");
+  }
+  if (unmapped.length) {
+    warnings.push(
+      `${unmapped.length} participant name(s) could not be mapped to @cintara.ai — they will not receive this email.`,
+    );
+  }
+
+  return { recipients, unmapped, warnings };
+}
+
+async function loadNotesMarkdown(botId: string, notesMdOverride?: string): Promise<{ notesMd: string; title: string }> {
+  const override = String(notesMdOverride || "").trim();
+  const indexDoc = await loadBotIndexDoc(botId).catch(() => null);
+  const title = String(indexDoc?.title || "Meeting").trim() || "Meeting";
+
+  if (override) return { notesMd: override, title };
+
+  if (indexDoc?.notesKey) {
+    const notesMd = (await getNotesMdFromS3({ notesKey: indexDoc.notesKey })).trim();
+    if (notesMd) return { notesMd, title };
+  }
+
+  throw new Error("No meeting notes found. Generate and persist notes before sending email.");
+}
+
+function buildEmailSubject(title: string, meetingStartAt?: string | null): string {
+  const clean = String(title || "Meeting").trim() || "Meeting";
+  const prefix = meetingStartAt ? formatMeetingDatePrefix(meetingStartAt) : "";
+  if (prefix && !clean.startsWith(`${prefix} `)) {
+    return `Meeting notes — ${prefix} ${clean}`;
+  }
+  return `Meeting notes — ${clean}`;
+}
+
+function meetingDateLabel(meetingStartAt?: string | null): string | undefined {
+  if (!meetingStartAt) return undefined;
+  const d = new Date(meetingStartAt);
+  if (!Number.isFinite(d.getTime())) return undefined;
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+export async function previewMeetingNotesEmail(args: {
+  botId: string;
+  notesMd?: string;
+  title?: string;
+}): Promise<MeetingNotesEmailPreview> {
+  const { recipients, unmapped, warnings } = await resolveMeetingNotesRecipientEmails(args.botId);
+  const indexDoc = await loadBotIndexDoc(args.botId).catch(() => null);
+  const title = String(args.title || indexDoc?.title || "Meeting").trim() || "Meeting";
+  const subject = buildEmailSubject(title, indexDoc?.finalizedAt || null);
+
+  let notesWarning: string | null = null;
+  try {
+    const { notesMd } = await loadNotesMarkdown(args.botId, args.notesMd);
+    if (!notesMd.trim()) notesWarning = "Notes are empty.";
+  } catch (e) {
+    notesWarning = e instanceof Error ? e.message : "Notes unavailable";
+  }
+
+  const allWarnings = [...warnings];
+  if (notesWarning) allWarnings.push(notesWarning);
+  if (!sesConfigured()) {
+    allWarnings.push("SES is not configured (AWS credentials + SES_FROM_EMAIL).");
+  }
+
+  return {
+    configured: sesConfigured(),
+    fromAddress: getSesFromAddress(),
+    subject,
+    recipients,
+    unmapped,
+    warnings: allWarnings,
+    canSend: sesConfigured() && recipients.length > 0 && !notesWarning,
+  };
+}
+
+export async function sendMeetingNotesEmail(args: {
+  botId: string;
+  notesMd?: string;
+  title?: string;
+  recipients?: Array<{ name: string; email: string }>;
+}): Promise<MeetingNotesEmailSendResult> {
+  if (!sesConfigured()) {
+    throw new Error("AWS SES is not configured. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and SES_FROM_EMAIL.");
+  }
+
+  const overrideRecipients = (args.recipients ?? [])
+    .map((r) => ({
+      name: String(r.name || "").trim(),
+      email: canonicalOfficialEmail(String(r.email || "").trim()),
+      source: "roster" as const,
+    }))
+    .filter((r) => r.name && r.email);
+
+  const deduped = new Map<string, MeetingNotesEmailRecipient>();
+  for (const r of overrideRecipients) {
+    deduped.set(r.email.toLowerCase(), r);
+  }
+
+  const resolved = await resolveMeetingNotesRecipientEmails(args.botId);
+  const recipients = overrideRecipients.length ? [...deduped.values()] : resolved.recipients;
+  const warnings = overrideRecipients.length ? [] : resolved.warnings;
+
+  if (!recipients.length) {
+    throw new Error("No recipient emails to send to.");
+  }
+
+  for (const r of recipients) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email)) {
+      throw new Error(`Invalid email address: ${r.email}`);
+    }
+  }
+
+  const indexDoc = await loadBotIndexDoc(args.botId).catch(() => null);
+  const { notesMd, title: loadedTitle } = await loadNotesMarkdown(args.botId, args.notesMd);
+  const title = String(args.title || loadedTitle || "Meeting").trim() || "Meeting";
+  const subject = buildEmailSubject(title, indexDoc?.finalizedAt || null);
+  const bodyHtml = markdownToEmailHtml(notesMd);
+  const html = wrapMeetingNotesEmailHtml({
+    title,
+    meetingDateLabel: meetingDateLabel(indexDoc?.finalizedAt || null),
+    bodyHtml,
+    appUrl: process.env.ALYSON_APP_BASE_URL?.trim() || process.env.VITE_ALYSON_APP_BASE_URL?.trim(),
+  });
+  const text = [
+    `Meeting notes — ${title}`,
+    "",
+    markdownToPlainEmailText(notesMd),
+    "",
+    "— Alyson Notetaker",
+  ].join("\n");
+
+  const sent = await sendSesEmail({
+    to: recipients.map((r) => r.email),
+    subject,
+    html,
+    text,
+    replyTo: [getSesFromAddress().match(/<([^>]+)>/)?.[1] || "notetaker@cintara.ai"],
+  });
+
+  return {
+    sent: true,
+    messageId: sent.messageId,
+    recipients: sent.recipients,
+    subject,
+    warnings,
+  };
+}
