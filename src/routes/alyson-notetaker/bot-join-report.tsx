@@ -549,7 +549,11 @@ function BotJoinReportPage() {
                     Eligible meetings not joined
                   </h3>
                   <p className="text-[12px] text-muted-foreground mt-0.5">
-                    {report.missedMeetings.length} calendar meeting(s) with a Meet link where Alyson did not join the call.
+                    {report.missedMeetings.length} calendar meeting(s) with a Meet link where Alyson did not join the
+                    call. The bot waits up to{" "}
+                    <span className="font-medium text-foreground">20 minutes</span> in the waiting room or for someone
+                    to start the meeting — if it times out, that is usually because the host did not start or admit the
+                    bot, not a bot failure.
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -558,6 +562,7 @@ function BotJoinReportPage() {
                       <tr className="border-b border-border text-left text-muted-foreground">
                         <th className="px-3 py-2 font-medium">Meeting</th>
                         <th className="px-3 py-2 font-medium">Scheduled start</th>
+                        <th className="px-3 py-2 font-medium min-w-[220px]">What happened</th>
                         <th className="px-3 py-2 font-medium">Meet link</th>
                       </tr>
                     </thead>
@@ -566,12 +571,28 @@ function BotJoinReportPage() {
                         <tr key={m.dedupeKey} className="border-b border-border/60 hover:bg-muted/20">
                           <td className="px-3 py-2.5 font-medium">{m.title}</td>
                           <td className="px-3 py-2.5 whitespace-nowrap">{formatTs(m.startTime)}</td>
+                          <td className="px-3 py-2.5 text-[11px] leading-relaxed">
+                            <span
+                              className={
+                                m.hostSideTimeout
+                                  ? "text-amber-800 dark:text-amber-300"
+                                  : "text-muted-foreground"
+                              }
+                            >
+                              {m.outcomeLabel}
+                            </span>
+                            {m.waitingRoomLabel && m.waitingRoomLabel !== "—" ? (
+                              <span className="block mt-0.5 text-muted-foreground">
+                                Waiting room: {m.waitingRoomLabel}
+                              </span>
+                            ) : null}
+                          </td>
                           <td className="px-3 py-2.5">
                             <a
                               href={m.meetingUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-primary hover:underline truncate block max-w-[240px]"
+                              className="text-primary hover:underline truncate block max-w-[200px]"
                             >
                               {m.meetingUrl.replace(/^https?:\/\//, "")}
                             </a>

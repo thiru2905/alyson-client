@@ -137,16 +137,29 @@ export function downloadBotJoinReportPdf(report: BotJoinReport) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.text("Eligible meetings not joined", margin, y);
-    y += 8;
+    y += 6;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(90);
+    const missedNote =
+      "Bot waits up to 20 min in waiting room / for host to start. Timeout = host-side, not bot failure.";
+    doc.text(missedNote, margin, y, { maxWidth: pageW - margin * 2 });
+    y += 12;
+    doc.setTextColor(0);
 
     autoTable(doc, {
       startY: y,
       margin: { left: margin, right: margin },
-      head: [["Meeting", "Scheduled start"]],
-      body: report.missedMeetings.map((m) => [m.title.slice(0, 50), formatShortTs(m.startTime)]),
-      styles: { fontSize: 8, cellPadding: 4 },
+      head: [["Meeting", "Scheduled start", "What happened"]],
+      body: report.missedMeetings.map((m) => [
+        m.title.slice(0, 36),
+        formatShortTs(m.startTime),
+        m.outcomeLabel.slice(0, 72),
+      ]),
+      styles: { fontSize: 7, cellPadding: 3 },
       headStyles: { fillColor: [40, 40, 40] },
       theme: "grid",
+      columnStyles: { 2: { cellWidth: 200 } },
     });
   }
 

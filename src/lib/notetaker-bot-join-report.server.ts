@@ -26,6 +26,7 @@ import {
   type BotJoinReportDiagnostics,
   type BotJoinReportRow,
   type CalendarMeetingRef,
+  type MissedMeetingDetail,
 } from "@/lib/notetaker-bot-join-report.types";
 import {
   applyAdmissionTimingToRow,
@@ -42,6 +43,7 @@ export type {
   BotJoinCriticalMetrics,
   BotJoinReportDiagnostics,
   BotJoinDailyPoint,
+  MissedMeetingDetail,
 };
 
 type ScheduledState = { scheduled: UnifiedScheduledStateEntry[] };
@@ -265,6 +267,77 @@ function formatWaitingRoom(seconds: number | null): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+/** Matches recall-bot-config automatic_leave waiting_room_timeout / noone_joined_timeout. */
+const RECALL_BOT_WAIT_MINUTES = 20;
+
+function isHostSideJoinTimeout(bot: BotJoinReportRow | undefined): boolean {
+  if (!bot || bot.joinedMeeting) return false;
+  const sub = String(bot.fatalSubCode || "").toLowerCase();
+  if (
+    sub.includes("waiting_room") ||
+    sub.includes("noone") ||
+    sub.includes("no_one") ||
+    sub.includes("nobody")
+  ) {
+    return true;
+  }
+  if (bot.stuckInWaitingRoom) return true;
+  if (bot.waitingRoomEnteredAt && !bot.joinedMeeting) return true;
+  if (
+    bot.joiningCallAt &&
+    !bot.admittedAt &&
+    (bot.finalStatus === "fatal" || bot.finalStatus === "call_ended")
+  ) {
+    return true;
+  }
+  if ((bot.waitingRoomSeconds ?? 0) >= 15 * 60) return true;
+  return false;
+}
+
+function buildMissedMeetingDetail(
+  meeting: CalendarMeetingRef,
+  bot: BotJoinReportRow | undefined,
+  sched: UnifiedScheduledStateEntry | undefined,
+): MissedMeetingDetail {
+  const botAttempted = Boolean(
+    bot?.joiningCallAt ||
+      bot?.waitingRoomEnteredAt ||
+      bot?.botId ||
+      sched?.recallBotId,
+  );
+  const hostSideTimeout = isHostSideJoinTimeout(bot);
+
+  let outcomeLabel: string;
+  if (hostSideTimeout) {
+    const waitNote =
+      bot?.waitingRoomLabel && bot.waitingRoomLabel !== "—"
+        ? ` (waited ${bot.waitingRoomLabel})`
+        : "";
+    outcomeLabel =
+      `Bot waited up to ${RECALL_BOT_WAIT_MINUTES} min${waitNote} — ` +
+      "meeting not started or host did not admit the bot (host-side, not a bot failure)";
+  } else if (bot?.joiningCallAt && !bot.joinedMeeting) {
+    outcomeLabel = `Bot attempted to join (${bot.finalStatus}) — not admitted to the call`;
+  } else if (bot?.recallFetchError) {
+    outcomeLabel = `Bot scheduled — ${bot.recallFetchError}`;
+  } else if (bot || sched) {
+    outcomeLabel = `Bot scheduled — no successful join (${bot?.finalStatus || sched?.status || "unknown"})`;
+  } else {
+    outcomeLabel = "No bot was scheduled for this meeting";
+  }
+
+  return {
+    ...meeting,
+    botId: bot?.botId || (sched ? String(sched.recallBotId) : null),
+    botAttempted,
+    hostSideTimeout,
+    outcomeLabel,
+    waitingRoomLabel: bot?.waitingRoomLabel ?? null,
+    finalStatus: bot?.finalStatus ?? null,
+    fatalSubCode: bot?.fatalSubCode ?? null,
+  };
 }
 
 function daysBetweenInclusive(start: string, end: string): string[] {
@@ -888,7 +961,7 @@ export async function buildBotJoinReport(args: {
   }
 
   const joinedMeetings: BotJoinReportRow[] = [];
-  const missedMeetings: CalendarMeetingRef[] = [];
+  const missedMeetings: MissedMeetingDetail[] = [];
 
   if (calendarAvailable) {
     for (const meeting of eligibleMeetings) {
@@ -942,7 +1015,7 @@ export async function buildBotJoinReport(args: {
           ),
         );
       } else {
-        missedMeetings.push(meeting);
+        missedMeetings.push(buildMissedMeetingDetail(meeting, bot, sched));
       }
     }
   }

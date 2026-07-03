@@ -21,6 +21,19 @@ export type CalendarMeetingRef = {
   dedupeKey: string;
 };
 
+/** Eligible meeting with no successful join — includes bot wait/timeout context from Recall. */
+export type MissedMeetingDetail = CalendarMeetingRef & {
+  botId?: string | null;
+  botAttempted: boolean;
+  /** Human-readable outcome (includes wait timeout when applicable). */
+  outcomeLabel: string;
+  /** Host did not start meeting or admit bot within Recall wait window. */
+  hostSideTimeout: boolean;
+  waitingRoomLabel?: string | null;
+  finalStatus?: string | null;
+  fatalSubCode?: string | null;
+};
+
 export type BotJoinDailyPoint = {
   day: string;
   eligibleMeetings: number;
@@ -107,7 +120,7 @@ export type BotJoinReport = {
   /** Eligible calendar meetings for this account that the bot successfully joined. */
   joinedMeetings: BotJoinReportRow[];
   /** Eligible calendar meetings with no successful bot join. */
-  missedMeetings: CalendarMeetingRef[];
+  missedMeetings: MissedMeetingDetail[];
   /** Per-day join rate and lateness trends. */
   daily: BotJoinDailyPoint[];
   rows: BotJoinReportRow[];
