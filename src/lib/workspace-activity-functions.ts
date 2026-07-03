@@ -1,10 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import type { WorkspaceActivityResponse } from "@/lib/workspace-activity-types";
-import type { WorkspaceUserActivityDetail } from "@/lib/workspace-activity-types";
+import type {
+  WorkspaceActivityEmailBodyResult,
+  WorkspaceActivityResponse,
+  WorkspaceUserActivityDetail,
+} from "@/lib/workspace-activity-types";
 
 export type {
   GmailSentSnippet,
+  WorkspaceActivityEmailBodyResult,
   WorkspaceActivityItem,
   WorkspaceActivityResponse,
   WorkspaceActivityRow,
@@ -52,6 +56,31 @@ export type WorkspaceActivityInsightResult = {
   summary: string;
   model: string;
 };
+
+const EmailBodyInput = z.object({
+  userEmail: z.string().email(),
+  messageId: z.string().max(200).optional(),
+  title: z.string().min(1).max(500),
+  preview: z.string().max(50_000).optional(),
+  at: z.string().min(1),
+});
+
+export const getWorkspaceActivityEmailBody = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => EmailBodyInput.parse(data))
+  .handler(async ({ data }): Promise<WorkspaceActivityEmailBodyResult> => {
+    const { fetchGmailMessageFullBody } = await import("@/lib/workspace-activity-content.server");
+    if (data.messageId) {
+      const fromGmail = await fetchGmailMessageFullBody(data.userEmail, data.messageId);
+      if (fromGmail) return fromGmail;
+    }
+    const preview = String(data.preview || "").trim();
+    return {
+      subject: data.title,
+      sentAt: data.at,
+      body: preview || "(No email body available — Workspace audit only.)",
+      source: "preview",
+    };
+  });
 
 export const getWorkspaceActivityItemInsight = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => InsightInput.parse(data))

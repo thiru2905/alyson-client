@@ -10,6 +10,8 @@ type Props = {
   isBusy?: boolean;
   draftMatchesApplied?: boolean;
   compact?: boolean;
+  presetDays?: readonly number[];
+  onPreset?: (days: number) => void;
 };
 
 export function WorkspaceActivityRangePicker({
@@ -21,10 +23,29 @@ export function WorkspaceActivityRangePicker({
   isBusy,
   draftMatchesApplied,
   compact,
+  presetDays,
+  onPreset,
 }: Props) {
+  const presets = presetDays?.length ? presetDays : null;
+
   if (compact) {
     return (
       <div className="flex flex-wrap items-end gap-2">
+        {presets && onPreset ? (
+          <div className="flex flex-wrap items-center gap-1 mr-1">
+            {presets.map((days) => (
+              <button
+                key={days}
+                type="button"
+                disabled={isBusy}
+                onClick={() => onPreset(days)}
+                className="h-8 px-2 rounded-md border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                {days === 1 ? "24h" : `${days}d`}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <label className="space-y-0.5">
           <span className="text-[10px] text-muted-foreground">Start</span>
           <input
@@ -60,6 +81,21 @@ export function WorkspaceActivityRangePicker({
 
   return (
     <div className="surface-card p-4 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+      {presets && onPreset ? (
+        <div className="md:col-span-4 flex flex-wrap gap-1.5 pb-1">
+          {presets.map((days) => (
+            <button
+              key={days}
+              type="button"
+              disabled={isBusy}
+              onClick={() => onPreset(days)}
+              className="h-7 px-2.5 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50"
+            >
+              Last {days === 1 ? "24 hours" : `${days} days`}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <label className="space-y-1">
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Start (local)</span>
         <input

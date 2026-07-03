@@ -63,6 +63,7 @@ import { Route as ApiCronNotetakerTranscriptsRouteImport } from './routes/api/cr
 import { Route as ApiCronDailyReportsRouteImport } from './routes/api/cron/daily-reports'
 import { Route as ApiAnalyticsWorkspaceActivityRouteImport } from './routes/api/analytics/workspace-activity'
 import { Route as ApiAnalyticsUnifiedMeetingsRouteImport } from './routes/api/analytics/unified-meetings'
+import { Route as ApiAnalyticsRecallCostRouteImport } from './routes/api/analytics/recall-cost'
 import { Route as ApiAnalyticsEmployeeScoringRouteImport } from './routes/api/analytics/employee-scoring'
 import { Route as AlysonNotetakerAnalyticsUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/analytics.unified-meetings'
 import { Route as ApiRecallWebhooksCalendarRouteImport } from './routes/api/recall/webhooks/calendar'
@@ -359,6 +360,11 @@ const ApiAnalyticsUnifiedMeetingsRoute =
     path: '/api/analytics/unified-meetings',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiAnalyticsRecallCostRoute = ApiAnalyticsRecallCostRouteImport.update({
+  id: '/api/analytics/recall-cost',
+  path: '/api/analytics/recall-cost',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAnalyticsEmployeeScoringRoute =
   ApiAnalyticsEmployeeScoringRouteImport.update({
     id: '/api/analytics/employee-scoring',
@@ -481,6 +487,7 @@ export interface FileRoutesByFullPath {
   '/leave/': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/employee-scoring': typeof ApiAnalyticsEmployeeScoringRouteWithChildren
+  '/api/analytics/recall-cost': typeof ApiAnalyticsRecallCostRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -546,6 +553,7 @@ export interface FileRoutesByTo {
   '/leave': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/employee-scoring': typeof ApiAnalyticsEmployeeScoringRouteWithChildren
+  '/api/analytics/recall-cost': typeof ApiAnalyticsRecallCostRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -615,6 +623,7 @@ export interface FileRoutesById {
   '/leave/': typeof LeaveIndexRoute
   '/alyson-notetaker/analytics/unified-meetings': typeof AlysonNotetakerAnalyticsUnifiedMeetingsRoute
   '/api/analytics/employee-scoring': typeof ApiAnalyticsEmployeeScoringRouteWithChildren
+  '/api/analytics/recall-cost': typeof ApiAnalyticsRecallCostRoute
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
@@ -685,6 +694,7 @@ export interface FileRouteTypes {
     | '/leave/'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/employee-scoring'
+    | '/api/analytics/recall-cost'
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
@@ -750,6 +760,7 @@ export interface FileRouteTypes {
     | '/leave'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/employee-scoring'
+    | '/api/analytics/recall-cost'
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
@@ -818,6 +829,7 @@ export interface FileRouteTypes {
     | '/leave/'
     | '/alyson-notetaker/analytics/unified-meetings'
     | '/api/analytics/employee-scoring'
+    | '/api/analytics/recall-cost'
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
@@ -863,6 +875,7 @@ export interface RootRouteChildren {
   WorkspaceActivityRoute: typeof WorkspaceActivityRouteWithChildren
   WebhooksRecallRoute: typeof WebhooksRecallRoute
   ApiAnalyticsEmployeeScoringRoute: typeof ApiAnalyticsEmployeeScoringRouteWithChildren
+  ApiAnalyticsRecallCostRoute: typeof ApiAnalyticsRecallCostRoute
   ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   ApiAnalyticsWorkspaceActivityRoute: typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
@@ -1256,6 +1269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAnalyticsUnifiedMeetingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/analytics/recall-cost': {
+      id: '/api/analytics/recall-cost'
+      path: '/api/analytics/recall-cost'
+      fullPath: '/api/analytics/recall-cost'
+      preLoaderRoute: typeof ApiAnalyticsRecallCostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/analytics/employee-scoring': {
       id: '/api/analytics/employee-scoring'
       path: '/api/analytics/employee-scoring'
@@ -1543,6 +1563,7 @@ const rootRouteChildren: RootRouteChildren = {
   WebhooksRecallRoute: WebhooksRecallRoute,
   ApiAnalyticsEmployeeScoringRoute:
     ApiAnalyticsEmployeeScoringRouteWithChildren,
+  ApiAnalyticsRecallCostRoute: ApiAnalyticsRecallCostRoute,
   ApiAnalyticsUnifiedMeetingsRoute:
     ApiAnalyticsUnifiedMeetingsRouteWithChildren,
   ApiAnalyticsWorkspaceActivityRoute:

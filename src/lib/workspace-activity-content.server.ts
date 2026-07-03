@@ -947,6 +947,56 @@ async function fetchGmailMessageStats(
   }
 }
 
+export type WorkspaceActivityEmailBody = {
+  subject: string;
+  to?: string;
+  cc?: string;
+  from?: string;
+  sentAt?: string;
+  body: string;
+  source: "gmail" | "preview";
+};
+
+export function gmailMessageIdFromItem(item: {
+  meta?: Record<string, string>;
+}): string | null {
+  return pickMeta(item.meta ?? {}, ["gmail_id", "message_id", "gmail_message_id", "msg_id"]) || null;
+}
+
+/** Full sent-mail body via Gmail API (domain-wide delegation). */
+export async function fetchGmailMessageFullBody(
+  userEmail: string,
+  messageId: string,
+): Promise<WorkspaceActivityEmailBody | null> {
+  try {
+    const auth = await loadServiceAccountJwtForSubject(userEmail, [GMAIL_READONLY_SCOPE]);
+    const gmail = google.gmail({ version: "v1", auth });
+    const msg = await gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
+    const headers = msg.data.payload?.headers ?? [];
+    const subject =
+      headers.find((h) => h.name?.toLowerCase() === "subject")?.value?.trim() || "(no subject)";
+    const to = headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim();
+    const cc = headers.find((h) => h.name?.toLowerCase() === "cc")?.value?.trim();
+    const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value?.trim();
+    const dateHdr = headers.find((h) => h.name?.toLowerCase() === "date")?.value;
+    const sentAt = dateHdr
+      ? new Date(dateHdr).toISOString()
+      : new Date(Number(msg.data.internalDate || Date.now())).toISOString();
+    const body = gmailReadableBody(msg.data.payload, msg.data.snippet, subject);
+    return {
+      subject: subject.slice(0, 500),
+      to: to?.slice(0, 500),
+      cc: cc?.slice(0, 500),
+      from: from?.slice(0, 500),
+      sentAt,
+      body: body || "(Empty message body)",
+      source: "gmail",
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Merge Gmail API rows with audit rows so every email has char/word counts when possible. */
 export async function mergeAndEnrichEmails(
   userEmail: string,
@@ -990,6 +1040,7 @@ export async function mergeAndEnrichEmails(
             bodyWords: fetched.bodyWords,
             to: fetched.to ?? audit.to,
             source: "gmail",
+            meta: { ...(audit.meta ?? {}), gmail_id: messageId },
           }),
         );
         continue;

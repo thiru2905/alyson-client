@@ -114,6 +114,58 @@ function meetingDedupeKey(meetingUrl: string, startTime: string): string {
   return `${String(meetingUrl).trim()}|${normalizeStartIso(startTime)}`;
 }
 
+function googleMeetCode(url: string | null | undefined): string | null {
+  const raw = String(url || "").trim().toLowerCase();
+  if (!raw) return null;
+  const m = raw.match(/([a-z]{3,4}-[a-z]{3,4}-[a-z]{3,4})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function meetUrlsEquivalent(a: string | null | undefined, b: string | null | undefined): boolean {
+  const sa = String(a || "").trim();
+  const sb = String(b || "").trim();
+  if (!sa || !sb) return false;
+  if (sa === sb) return true;
+  const ca = googleMeetCode(sa);
+  const cb = googleMeetCode(sb);
+  return Boolean(ca && cb && ca === cb);
+}
+
+function scheduledEntryIndicatesJoin(entry: UnifiedScheduledStateEntry): boolean {
+  if (entry.joinedAt) return true;
+  const s = String(entry.status || "");
+  return s === "done" || s === "in_call" || s === "no_transcript";
+}
+
+function findScheduledForCalendarMeeting(
+  meeting: CalendarMeetingRef,
+  scheduled: UnifiedScheduledStateEntry[],
+): UnifiedScheduledStateEntry | undefined {
+  if (meeting.googleEventId) {
+    const byEvent = scheduled.find((s) => s.googleEventId === meeting.googleEventId);
+    if (byEvent) return byEvent;
+  }
+  const keys = new Set(dedupeKeysForMeeting(meeting.meetingUrl, meeting.startTime));
+  for (const entry of scheduled) {
+    if (entry.dedupeKey && keys.has(entry.dedupeKey)) return entry;
+    if (!meetUrlsEquivalent(entry.meetingUrl, meeting.meetingUrl)) continue;
+    const meetingMs = Date.parse(meeting.startTime);
+    const entryMs = Date.parse(entry.startTime || entry.botJoinAt || "");
+    if (!Number.isFinite(meetingMs) || !Number.isFinite(entryMs)) continue;
+    const delta = Math.abs(entryMs - meetingMs);
+    if (delta <= 15 * 60_000) return entry;
+  }
+  const titleNorm = meeting.title.trim().toLowerCase();
+  const meetingMs = Date.parse(meeting.startTime);
+  for (const entry of scheduled) {
+    if (String(entry.title || "").trim().toLowerCase() !== titleNorm) continue;
+    const entryMs = Date.parse(entry.startTime || entry.botJoinAt || "");
+    if (!Number.isFinite(meetingMs) || !Number.isFinite(entryMs)) continue;
+    if (Math.abs(entryMs - meetingMs) <= 15 * 60_000) return entry;
+  }
+  return undefined;
+}
+
 function containsSkipKeywords(title: string): boolean {
   const t = title.toLowerCase();
   return ["out of office", "ooo", "lunch", "break", "holiday"].some((k) => t.includes(k));
@@ -338,7 +390,7 @@ function candidateMatchesEligibleMeeting(
   const startMs = Date.parse(start);
   if (!Number.isFinite(startMs)) return false;
   for (const meeting of eligibleMeetings) {
-    if (meeting.meetingUrl !== url) continue;
+    if (!meetUrlsEquivalent(meeting.meetingUrl, url)) continue;
     const meetingMs = Date.parse(meeting.startTime);
     if (!Number.isFinite(meetingMs)) continue;
     const delta = startMs - meetingMs;
@@ -669,7 +721,7 @@ function findBotForMeeting(
 
   const startMs = Date.parse(meeting.startTime);
   return rows.find((r) => {
-    if (!r.meetingUrl || r.meetingUrl !== meeting.meetingUrl) return false;
+    if (!r.meetingUrl || !meetUrlsEquivalent(r.meetingUrl, meeting.meetingUrl)) return false;
     const candidateStart = r.scheduledStart || r.meetingStartAt || r.botJoinAt;
     if (!candidateStart) return false;
     const candidateMs = Date.parse(candidateStart);
@@ -804,17 +856,81 @@ export async function buildBotJoinReport(args: {
     };
   });
 
+  let scheduledEntries: UnifiedScheduledStateEntry[] = [];
+  try {
+    if (unifiedScheduledStateUsesS3()) {
+      scheduledEntries = (await readUnifiedScheduledStateFromS3()).scheduled;
+    }
+  } catch {
+    // best-effort — Recall rows still usable without schedule index
+  }
+  const scheduledByBotId = new Map(
+    scheduledEntries.map((s) => [String(s.recallBotId), s]),
+  );
+
+  let botIndexByBotId = new Map<string, { lineCount?: number; transcriptKey?: string }>();
+  try {
+    const docs = await listAllBotIndexDocs();
+    botIndexByBotId = new Map(docs.map((d) => [String(d.botId), d]));
+  } catch {
+    // ignore
+  }
+
+  for (const row of rows) {
+    const sched = scheduledByBotId.get(row.botId);
+    const idx = botIndexByBotId.get(row.botId);
+    const joinedFromSchedule = sched ? scheduledEntryIndicatesJoin(sched) : false;
+    const joinedFromS3 = Boolean(idx && ((idx.lineCount ?? 0) > 0 || idx.transcriptKey));
+    if (joinedFromSchedule || joinedFromS3) {
+      row.joinedMeeting = true;
+      row.stuckInWaitingRoom = false;
+    }
+  }
+
   const joinedMeetings: BotJoinReportRow[] = [];
   const missedMeetings: CalendarMeetingRef[] = [];
 
   if (calendarAvailable) {
     for (const meeting of eligibleMeetings) {
       const bot = findBotForMeeting(meeting, rows);
-      if (bot?.joinedMeeting) {
+      const sched = findScheduledForCalendarMeeting(meeting, scheduledEntries);
+      const idx = sched ? botIndexByBotId.get(String(sched.recallBotId)) : undefined;
+      const joinedFromSchedule = sched ? scheduledEntryIndicatesJoin(sched) : false;
+      const joinedFromS3 = Boolean(idx && ((idx.lineCount ?? 0) > 0 || idx.transcriptKey));
+      const joined = Boolean(bot?.joinedMeeting) || joinedFromSchedule || joinedFromS3;
+
+      if (joined) {
+        const base: BotJoinReportRow =
+          bot ??
+          ({
+            botId: String(sched!.recallBotId),
+            title: meeting.title,
+            meetingUrl: meeting.meetingUrl,
+            scheduledStart: meeting.startTime,
+            meetingStartAt: meeting.startTime,
+            meetingStartReliable: true,
+            calendarUserEmail: sched!.calendarUserEmail,
+            googleEventId: meeting.googleEventId,
+            source: "unified_scheduled",
+            joiningCallAt: null,
+            waitingRoomEnteredAt: null,
+            admittedAt: sched!.joinedAt ?? null,
+            waitingRoomSeconds: null,
+            waitingRoomLabel: "—",
+            lateToStartSeconds: null,
+            lateToStartLabel: "—",
+            lateMinutes: null,
+            finalStatus: String(sched!.status || "done"),
+            joinedMeeting: true,
+            stuckInWaitingRoom: false,
+            fatalSubCode: null,
+          } as BotJoinReportRow);
         joinedMeetings.push(
           applyAdmissionTimingToRow(
             {
-              ...bot,
+              ...base,
+              joinedMeeting: true,
+              stuckInWaitingRoom: false,
               title: meeting.title,
               meetingUrl: meeting.meetingUrl,
               googleEventId: meeting.googleEventId,

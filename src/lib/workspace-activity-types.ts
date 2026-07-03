@@ -41,6 +41,16 @@ export type WorkspaceActivityDetailStats = {
   meetings: { count: number };
 };
 
+export type WorkspaceActivityEmailBodyResult = {
+  subject: string;
+  to?: string;
+  cc?: string;
+  from?: string;
+  sentAt?: string;
+  body: string;
+  source: "gmail" | "preview";
+};
+
 export type WorkspaceUserActivityDetail = {
   userEmail: string;
   range: { start: string; end: string };

@@ -1,15 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Loader2, Mail, RefreshCw, Sparkles, X } from "lucide-react";
 import { EmptyState, PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar, TableSkeleton } from "@/components/Skeleton";
-import { WorkspaceActivityRangePicker } from "@/components/WorkspaceActivityRangePicker";
+import { WorkspaceActivityRangePicker, workspacePresetRange } from "@/components/WorkspaceActivityRangePicker";
 import {
+  getWorkspaceActivityEmailBody,
   getWorkspaceActivityItemInsight,
   getWorkspaceUserActivityDetail,
 } from "@/lib/workspace-activity-functions";
-import type { WorkspaceActivityItem } from "@/lib/workspace-activity-types";
+import type { WorkspaceActivityEmailBodyResult, WorkspaceActivityItem } from "@/lib/workspace-activity-types";
 import {
   defaultWorkspaceRange,
   fmtWorkspaceRangeLabel,
@@ -20,6 +21,8 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 type TabKey = "overview" | "emails" | "chat" | "docs" | "meetings";
+
+const RANGE_PRESETS = [1, 7, 30] as const;
 
 export const Route = createFileRoute("/workspace-activity/$userEmail")({
   head: () => ({ meta: [{ title: "Employee — Workspace Activity — Alyson HR" }] }),
@@ -62,6 +65,19 @@ function isMostlyChatAuditFlags(text: string) {
   if (tokens.length < 2) return false;
   const flags = tokens.filter((t) => CHAT_AUDIT_FLAG_RE.test(t.replace(/\s+/g, "_")));
   return flags.length >= Math.max(2, tokens.length - 1);
+}
+
+function gmailMessageIdFromItem(item: WorkspaceActivityItem): string | null {
+  const m = item.meta;
+  if (!m) return null;
+  return m.gmail_id || m.message_id || m.gmail_message_id || m.msg_id || null;
+}
+
+function canOpenContentModal(kind: InsightKind, item: WorkspaceActivityItem) {
+  const text = previewText(item);
+  if (!text.trim()) return false;
+  if (kind === "email") return true;
+  return canInsightPreview(kind, item);
 }
 
 function canInsightPreview(kind: InsightKind, item: WorkspaceActivityItem) {
@@ -123,16 +139,25 @@ function ContentPreviewInsight({
 }) {
   const text = previewText(item);
   const labels = INSIGHT_LABELS[insightKind];
-  const clickable = canInsightPreview(insightKind, item);
+  const canOpen = canOpenContentModal(insightKind, item);
+  const canSummarize = canInsightPreview(insightKind, item);
+  const isEmail = insightKind === "email";
   const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<"summary" | "full">("summary");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fullLoading, setFullLoading] = useState(false);
+  const [fullBody, setFullBody] = useState<WorkspaceActivityEmailBodyResult | null>(null);
+  const [fullError, setFullError] = useState<string | null>(null);
   const cacheRef = useRef(new Map<string, string>());
+  const fullCacheRef = useRef(new Map<string, WorkspaceActivityEmailBodyResult>());
 
   const cacheKey = `${item.at}|${item.title}`;
+  const fullCacheKey = `${cacheKey}|${gmailMessageIdFromItem(item) ?? "preview"}`;
 
   const loadInsight = async () => {
+    if (!canSummarize) return;
     const cached = cacheRef.current.get(cacheKey);
     if (cached) {
       setSummary(cached);
@@ -143,7 +168,7 @@ function ContentPreviewInsight({
     setError(null);
     try {
       const previewForApi =
-        insightKind === "email" && item.title && !text.toLowerCase().includes(item.title.toLowerCase().slice(0, 24))
+        isEmail && item.title && !text.toLowerCase().includes(item.title.toLowerCase().slice(0, 24))
           ? `Subject: ${item.title}\n\n${text}`
           : text;
       const r = await getWorkspaceActivityItemInsight({
@@ -166,9 +191,45 @@ function ContentPreviewInsight({
     }
   };
 
+  const loadFullEmail = async () => {
+    const cached = fullCacheRef.current.get(fullCacheKey);
+    if (cached) {
+      setFullBody(cached);
+      setFullError(null);
+      setPanel("full");
+      return;
+    }
+    setFullLoading(true);
+    setFullError(null);
+    try {
+      const r = await getWorkspaceActivityEmailBody({
+        data: {
+          userEmail,
+          messageId: gmailMessageIdFromItem(item) ?? undefined,
+          title: item.title,
+          preview: text,
+          at: item.at,
+        },
+      });
+      fullCacheRef.current.set(fullCacheKey, r);
+      setFullBody(r);
+      setPanel("full");
+    } catch (e) {
+      setFullError(e instanceof Error ? e.message : "Failed to load email body");
+    } finally {
+      setFullLoading(false);
+    }
+  };
+
   const onOpen = () => {
     setOpen(true);
-    void loadInsight();
+    setPanel("summary");
+    if (canSummarize) void loadInsight();
+  };
+
+  const closeModal = () => {
+    setOpen(false);
+    setPanel("summary");
   };
 
   if (!text) {
@@ -177,17 +238,17 @@ function ContentPreviewInsight({
 
   return (
     <>
-      {clickable ? (
+      {canOpen ? (
         <button
           type="button"
           onClick={onOpen}
           className="text-left w-full rounded-md px-1 -mx-1 py-0.5 hover:bg-primary/10 hover:text-foreground transition-colors group"
-          title="Click for AI summary (Groq)"
+          title={isEmail ? "Click to view email details" : "Click for AI summary (Groq)"}
         >
           <p className="whitespace-pre-wrap break-words line-clamp-6">{text}</p>
           <span className="inline-flex items-center gap-1 text-[10px] text-primary/80 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Sparkles className="h-3 w-3" />
-            Summarize
+            {isEmail ? <Mail className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+            {isEmail ? "View" : "Summarize"}
           </span>
         </button>
       ) : (
@@ -202,10 +263,10 @@ function ContentPreviewInsight({
           role="dialog"
           aria-modal="true"
           aria-labelledby={labels.ariaId}
-          onClick={() => setOpen(false)}
+          onClick={closeModal}
         >
           <div
-            className="surface-card w-full max-w-lg max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+            className="surface-card w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-3">
@@ -214,16 +275,17 @@ function ContentPreviewInsight({
                   id={labels.ariaId}
                   className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium"
                 >
-                  {labels.modalTitle}
+                  {isEmail ? "Email details" : labels.modalTitle}
                 </div>
                 <h3 className="text-[15px] font-medium mt-1 leading-snug">{item.title}</h3>
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {fmtWhen(item.at)} · {rangeLabel}
+                  {item.to ? ` · To: ${item.to}` : ""}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={closeModal}
                 className="h-8 w-8 rounded-md border border-border flex items-center justify-center shrink-0"
                 aria-label="Close"
               >
@@ -231,23 +293,114 @@ function ContentPreviewInsight({
               </button>
             </div>
 
-            <div className="text-[11px] text-muted-foreground mb-3 p-2 rounded-md bg-muted/40 border border-border/60 max-h-24 overflow-y-auto">
-              {text.slice(0, 400)}
-              {text.length > 400 ? "…" : ""}
-            </div>
-
-            {loading ? (
-              <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {labels.loading}
+            {isEmail ? (
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {canSummarize ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPanel("summary");
+                      if (!summary && !loading) void loadInsight();
+                    }}
+                    className={
+                      "h-7 px-2.5 rounded text-[11px] font-medium border " +
+                      (panel === "summary"
+                        ? "bg-foreground text-background border-foreground"
+                        : "border-border text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    AI summary
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void loadFullEmail()}
+                  disabled={fullLoading}
+                  className={
+                    "h-7 px-2.5 rounded text-[11px] font-medium border inline-flex items-center gap-1.5 " +
+                    (panel === "full"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {fullLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+                  Read entire email
+                </button>
               </div>
-            ) : error ? (
-              <p className="text-[13px] text-destructive">{error}</p>
-            ) : (
-              <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{summary}</div>
-            )}
+            ) : null}
 
-            <p className="text-[10px] text-muted-foreground mt-4">{labels.footer}</p>
+            {panel === "full" && isEmail ? (
+              fullLoading ? (
+                <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading full email from Gmail…
+                </div>
+              ) : fullError ? (
+                <p className="text-[13px] text-destructive">{fullError}</p>
+              ) : fullBody ? (
+                <div className="space-y-3">
+                  {fullBody.from ? (
+                    <p className="text-[12px] text-muted-foreground">
+                      <span className="font-medium text-foreground">From:</span> {fullBody.from}
+                    </p>
+                  ) : null}
+                  {fullBody.to ? (
+                    <p className="text-[12px] text-muted-foreground">
+                      <span className="font-medium text-foreground">To:</span> {fullBody.to}
+                    </p>
+                  ) : null}
+                  {fullBody.cc ? (
+                    <p className="text-[12px] text-muted-foreground">
+                      <span className="font-medium text-foreground">Cc:</span> {fullBody.cc}
+                    </p>
+                  ) : null}
+                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap border border-border/60 rounded-md p-3 bg-muted/20 max-h-[50vh] overflow-y-auto">
+                    {fullBody.body}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {fullBody.source === "gmail"
+                      ? "Full message from Gmail API."
+                      : "Audit/preview only — Gmail delegation may be required for the complete body."}
+                  </p>
+                </div>
+              ) : null
+            ) : (
+              <>
+                <div className="text-[11px] text-muted-foreground mb-3 p-2 rounded-md bg-muted/40 border border-border/60 max-h-24 overflow-y-auto">
+                  {text.slice(0, 400)}
+                  {text.length > 400 ? "…" : ""}
+                </div>
+
+                {!canSummarize ? (
+                  <p className="text-[13px] text-muted-foreground">
+                    Preview only — use &ldquo;Read entire email&rdquo; for the full message when available.
+                  </p>
+                ) : loading ? (
+                  <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {labels.loading}
+                  </div>
+                ) : error ? (
+                  <p className="text-[13px] text-destructive">{error}</p>
+                ) : (
+                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{summary}</div>
+                )}
+
+                {isEmail && canSummarize ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadFullEmail()}
+                    disabled={fullLoading}
+                    className="mt-4 h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+                  >
+                    {fullLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
+                    Read entire email
+                  </button>
+                ) : null}
+
+                <p className="text-[10px] text-muted-foreground mt-4">{labels.footer}</p>
+              </>
+            )}
           </div>
         </div>
       ) : null}
@@ -401,6 +554,26 @@ function WorkspaceEmployeeDetailPage() {
     });
   };
 
+  const applyPreset = (days: number) => {
+    const preset = workspacePresetRange(days);
+    setDraftStart(preset.draftStart);
+    setDraftEnd(preset.draftEnd);
+    const next = {
+      start: new Date(preset.draftStart).toISOString(),
+      end: new Date(preset.draftEnd).toISOString(),
+    };
+    if (next.start === start && next.end === end) {
+      void q.refetch();
+      return;
+    }
+    navigate({
+      to: "/workspace-activity/$userEmail",
+      params: { userEmail: encodedEmail },
+      search: next,
+      replace: true,
+    });
+  };
+
   const listSearch = { start, end };
   const rangeLabel = useMemo(() => fmtWorkspaceRangeLabel(start, end), [start, end]);
 
@@ -437,31 +610,25 @@ function WorkspaceEmployeeDetailPage() {
     lastToastKey.current = key;
   }, [q.isSuccess, q.isPlaceholderData, q.data, start, end]);
 
-  const tabLabel =
-    tab === "overview"
-      ? "Overview"
-      : tab === "emails"
-        ? "Emails"
-        : tab === "chat"
-          ? "Chat"
-          : tab === "docs"
-            ? "Docs"
-            : "Meetings";
+  const tabDefs = useMemo(
+    () =>
+      [
+        ["overview", "Overview"],
+        ["emails", `Emails (${data?.emails.length ?? 0})`],
+        ["chat", `Chat (${data?.chats.length ?? 0})`],
+        ["docs", `Docs (${data?.docs.length ?? 0})`],
+        ["meetings", `Meetings (${data?.meetings.length ?? 0})`],
+      ] as const,
+    [data?.chats.length, data?.docs.length, data?.emails.length, data?.meetings.length],
+  );
 
   const statusBanner = (() => {
     if (coldLoad) {
       return {
         tone: "loading" as const,
-        text: `Loading ${tabLabel} from Google Workspace — emails, chat, and docs can take 30–60 seconds.`,
+        text: `Loading workspace activity for ${fmtWorkspaceRangeLabel(start, end)} — this can take 30–60 seconds.`,
       };
     }
-    if (showingStaleRange) {
-      return {
-        tone: "loading" as const,
-        text: `Updating ${fmtWorkspaceRangeLabel(start, end)} — previous ${tabLabel.toLowerCase()} stays visible until ready.`,
-      };
-    }
-    if (isBusy) return { tone: "loading" as const, text: `Refreshing ${tabLabel.toLowerCase()}…` };
     if (q.isError && !data) {
       return {
         tone: "error" as const,
@@ -494,6 +661,8 @@ function WorkspaceEmployeeDetailPage() {
               onStartChange={setDraftStart}
               onEndChange={setDraftEnd}
               onApply={applyRange}
+              onPreset={applyPreset}
+              presetDays={RANGE_PRESETS}
               compact
               isBusy={isBusy}
               draftMatchesApplied={draftMatchesApplied}
@@ -508,15 +677,7 @@ function WorkspaceEmployeeDetailPage() {
               Refresh
             </button>
             <div className="inline-flex rounded-md border border-border p-0.5 bg-paper">
-              {(
-                [
-                  ["overview", "Overview"],
-                  ["emails", "Emails"],
-                  ["chat", "Chat"],
-                  ["docs", "Docs"],
-                  ["meetings", "Meetings"],
-                ] as const
-              ).map(([key, label]) => (
+              {tabDefs.map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
@@ -569,48 +730,25 @@ function WorkspaceEmployeeDetailPage() {
           </div>
         ) : data ? (
           <>
-            <div className="surface-card p-4 text-[12px] text-muted-foreground border-l-2 border-l-sky-500/50">
-              {data.gmailEnriched ? (
-                <span className="text-foreground font-medium">Gmail body</span>
-              ) : (
-                <span className="text-foreground font-medium">Audit-only emails</span>
-              )}{" "}
-              — subjects and lengths from{" "}
-              {data.gmailEnriched ? "Gmail API (domain-wide delegation)" : "Workspace audit (no full body)"}.{" "}
-              {data.docsEnriched ? (
-                <span className="text-foreground font-medium">Docs content</span>
-              ) : (
-                <span>Docs</span>
-              )}{" "}
-              {data.docsEnriched ? "include word counts from Google Docs API." : "show audit titles only unless Docs API access works."}{" "}
-              {data.chatEnriched ? (
-                <span className="text-foreground font-medium">Chat body</span>
-              ) : (
-                <span className="text-foreground font-medium">Audit-only chat</span>
-              )}{" "}
-              —{" "}
-              {data.chatEnriched
-                ? "message text from Chat API (domain-wide delegation)."
-                : "audit counts room/title only unless chat.messages.readonly is delegated."}
-            </div>
+            {tab === "overview" ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                <Stat label="Emails" value={String(data.stats.emails.count)} sub={`avg ${fmtNum(data.stats.emails.avgBodyChars)} chars`} />
+                <Stat label="Chat" value={String(data.stats.chats.count)} sub={`avg ${fmtNum(data.stats.chats.avgBodyChars)} chars`} />
+                <Stat
+                  label="Docs"
+                  value={String(data.stats.docs.count)}
+                  sub={`${fmtNum(data.stats.docs.totalWords)} words total`}
+                />
+                <Stat label="Meetings" value={String(data.stats.meetings.count)} />
+                <Stat
+                  label="Email volume"
+                  value={fmtNum(data.stats.emails.totalBodyChars)}
+                  sub="chars sent (window)"
+                />
+              </div>
+            ) : null}
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-              <Stat label="Emails" value={String(data.stats.emails.count)} sub={`avg ${fmtNum(data.stats.emails.avgBodyChars)} chars`} />
-              <Stat label="Chat" value={String(data.stats.chats.count)} sub={`avg ${fmtNum(data.stats.chats.avgBodyChars)} chars`} />
-              <Stat
-                label="Docs"
-                value={String(data.stats.docs.count)}
-                sub={`${fmtNum(data.stats.docs.totalWords)} words total`}
-              />
-              <Stat label="Meetings" value={String(data.stats.meetings.count)} />
-              <Stat
-                label="Email volume"
-                value={fmtNum(data.stats.emails.totalBodyChars)}
-                sub="chars sent (window)"
-              />
-            </div>
-
-            {data.focusHints.length ? (
+            {tab === "overview" && data.focusHints.length ? (
               <div className="surface-card p-4">
                 <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">
                   Focus signals
@@ -626,19 +764,13 @@ function WorkspaceEmployeeDetailPage() {
               </div>
             ) : null}
 
-            <div className="surface-card p-3 text-[12px] text-muted-foreground">
-              {showingStaleRange ? <span className="font-medium text-foreground">Pending range · </span> : null}
-              {tabLabel} · {data.emails.length} emails · {data.chats.length} chat · {data.docs.length} docs ·{" "}
-              {data.meetings.length} meetings
-            </div>
-
             <div className={isBusy && !showingStaleRange ? "opacity-90 transition-opacity" : ""}>
               {tab === "overview" && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <PreviewList title="Recent emails" items={data.emails.slice(0, 6)} />
-                  <PreviewList title="Recent chat" items={data.chats.slice(0, 6)} />
-                  <PreviewList title="Recent docs" items={data.docs.slice(0, 6)} />
-                  <PreviewList title="Recent meetings" items={data.meetings.slice(0, 6)} />
+                  <PreviewList title="Recent emails" items={data.emails.slice(0, 5)} onOpenTab={() => setTab("emails")} />
+                  <PreviewList title="Recent chat" items={data.chats.slice(0, 5)} onOpenTab={() => setTab("chat")} />
+                  <PreviewList title="Recent docs" items={data.docs.slice(0, 5)} onOpenTab={() => setTab("docs")} />
+                  <PreviewList title="Recent meetings" items={data.meetings.slice(0, 5)} onOpenTab={() => setTab("meetings")} />
                 </div>
               )}
               {tab === "emails" && (
@@ -693,13 +825,6 @@ function WorkspaceEmployeeDetailPage() {
             ) : null}
           </>
         ) : null}
-
-        {isBusy && !coldLoad ? (
-          <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Refreshing detail…
-          </div>
-        ) : null}
       </div>
     </div>
   );
@@ -715,26 +840,35 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-function PreviewList({ title, items }: { title: string; items: WorkspaceActivityItem[] }) {
+function PreviewList({
+  title,
+  items,
+  onOpenTab,
+}: {
+  title: string;
+  items: WorkspaceActivityItem[];
+  onOpenTab?: () => void;
+}) {
   return (
     <div className="surface-card p-4">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">{title}</div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">{title}</div>
+        {onOpenTab && items.length ? (
+          <button type="button" onClick={onOpenTab} className="text-[10px] text-primary hover:underline">
+            View all
+          </button>
+        ) : null}
+      </div>
       {!items.length ? (
         <p className="text-[12px] text-muted-foreground">None in window</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {items.map((it, i) => (
             <li key={i} className="text-[12px] border-b border-border/50 pb-2 last:border-0 last:pb-0">
               <div className="flex justify-between gap-2">
                 <span className="font-medium text-foreground line-clamp-1">{it.title}</span>
                 <span className="text-muted-foreground shrink-0">{fmtWhen(it.at)}</span>
               </div>
-              <div className="text-[10px] text-muted-foreground mt-0.5 capitalize">
-                {it.category ?? "general"}
-                {it.bodyChars != null ? ` · ${it.bodyChars} chars` : ""}
-                {it.bodyWords != null ? ` · ${it.bodyWords} words` : ""}
-              </div>
-              <p className="text-muted-foreground mt-1 line-clamp-3">{it.preview ?? it.detail ?? "—"}</p>
             </li>
           ))}
         </ul>

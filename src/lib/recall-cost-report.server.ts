@@ -24,6 +24,10 @@ export type RecallCostReport = {
   range: { start: string; end: string };
   generatedAt: string;
   recallConfigured: boolean;
+  /** Set when Recall billing API failed for the selected period. */
+  billingFetchError?: string | null;
+  /** Recall dashboard may also include storage, variants, DSDK — not in bot_total API. */
+  storageAndExtrasNotIncluded: boolean;
   /** Daily bot/cost split is estimated from period total + meeting counts (Recall allows 5 billing calls/min). */
   dailyCostsEstimated: boolean;
   usage: {
@@ -67,6 +71,7 @@ export type RecallCostReport = {
     costPerRecallMeetingUsd: number | null;
   };
   daily: RecallCostDailyRow[];
+  warnings: string[];
 };
 
 function isoDay(d: Date) {
@@ -126,12 +131,16 @@ function allocateDailyBotSeconds(
   return out;
 }
 
-async function fetchUsageSeconds(startDay: string, endDay: string): Promise<number> {
+async function fetchUsageSeconds(
+  startDay: string,
+  endDay: string,
+): Promise<{ seconds: number; error: string | null }> {
   try {
     const usage = await fetchRecallBotUsage({ startDay, endDay });
-    return Number(usage.bot_total ?? 0);
-  } catch {
-    return 0;
+    return { seconds: Number(usage.bot_total ?? 0), error: null };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { seconds: 0, error: msg };
   }
 }
 
@@ -160,16 +169,33 @@ export async function buildRecallCostReport(args: {
 
   let botTotalSeconds = 0;
   let monthBotSeconds = 0;
+  let billingFetchError: string | null = null;
+  const warnings: string[] = [];
 
   if (recallConfigured) {
     // At most 2 Recall billing API calls per report (period + month if different range).
-    botTotalSeconds = await fetchUsageSeconds(args.start, args.end);
+    const periodUsage = await fetchUsageSeconds(args.start, args.end);
+    botTotalSeconds = periodUsage.seconds;
+    if (periodUsage.error) {
+      billingFetchError = periodUsage.error;
+      warnings.push(`Recall billing API (period): ${periodUsage.error}`);
+    }
     if (periodKey === monthKey) {
       monthBotSeconds = botTotalSeconds;
     } else {
-      monthBotSeconds = await fetchUsageSeconds(month.start, month.end);
+      const monthUsage = await fetchUsageSeconds(month.start, month.end);
+      monthBotSeconds = monthUsage.seconds;
+      if (monthUsage.error) {
+        warnings.push(`Recall billing API (calendar month): ${monthUsage.error}`);
+      }
     }
+  } else {
+    warnings.push("RECALL_API_KEY not set — bot hours and USD totals are zero.");
   }
+
+  warnings.push(
+    "Totals use Recall bot_total seconds × configured hourly rates. Recall dashboard credits may also include media storage, bot variants (web_4_core/web_gpu), and DSDK — not returned by the billing usage API.",
+  );
 
   const periodCosts = recallUsageCostsFromSeconds(botTotalSeconds);
   const meetingCount = meetingsInRange.length;
@@ -214,6 +240,8 @@ export async function buildRecallCostReport(args: {
     range: { start: args.start, end: args.end },
     generatedAt: new Date().toISOString(),
     recallConfigured,
+    billingFetchError,
+    storageAndExtrasNotIncluded: true,
     dailyCostsEstimated: true,
     usage: {
       botTotalSeconds,
@@ -254,5 +282,6 @@ export async function buildRecallCostReport(args: {
         monthMeetingsWithBot > 0 ? monthCosts.totalUsageCostUsd / monthMeetingsWithBot : null,
     },
     daily,
+    warnings,
   };
 }

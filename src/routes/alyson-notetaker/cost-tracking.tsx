@@ -218,8 +218,21 @@ function CostTrackingPage() {
                 RECALL_API_KEY not set — usage from Recall unavailable.
               </span>
             ) : null}
+            {report?.billingFetchError ? (
+              <span className="text-destructive">
+                Billing API error: {report.billingFetchError}
+              </span>
+            ) : null}
           </div>
         </div>
+
+        {report?.warnings?.length ? (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-900 dark:text-amber-200 space-y-1">
+            {report.warnings.map((w, i) => (
+              <div key={i}>{w}</div>
+            ))}
+          </div>
+        ) : null}
 
         {q.isError && !report ? (
           <div className="surface-card p-4 text-sm text-destructive">
