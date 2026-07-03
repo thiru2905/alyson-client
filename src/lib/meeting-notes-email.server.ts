@@ -6,7 +6,7 @@ import {
   markdownToPlainEmailText,
   wrapMeetingNotesEmailHtml,
 } from "@/lib/markdown-email.server";
-import { formatMeetingDatePrefix } from "@/lib/notetaker-meeting-title.server";
+import { buildMeetingNotesEmailSubject } from "@/lib/meeting-notes-email-subject";
 import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
 import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
 import { getNotesMdFromS3 } from "@/lib/notetaker-s3-calendar.server";
@@ -34,6 +34,7 @@ export type MeetingNotesEmailPreview = {
   subject: string;
   /** Email body H1 heading (defaults to meeting title). */
   heading: string;
+  meetingStartAt?: string | null;
   recipients: MeetingNotesEmailRecipient[];
   unmapped: Array<{ name: string; source: "calendar" | "transcript" }>;
   warnings: string[];
@@ -151,12 +152,7 @@ async function loadNotesMarkdown(botId: string, notesMdOverride?: string): Promi
 }
 
 function buildEmailSubject(title: string, meetingStartAt?: string | null): string {
-  const clean = String(title || "Meeting").trim() || "Meeting";
-  const prefix = meetingStartAt ? formatMeetingDatePrefix(meetingStartAt) : "";
-  if (prefix && !clean.startsWith(`${prefix} `)) {
-    return `Meeting notes — ${prefix} ${clean}`;
-  }
-  return `Meeting notes — ${clean}`;
+  return buildMeetingNotesEmailSubject(title, meetingStartAt);
 }
 
 function meetingDateLabel(meetingStartAt?: string | null): string | undefined {
@@ -204,6 +200,7 @@ export async function previewMeetingNotesEmail(args: {
     fromAddress: getSesFromAddress(),
     subject,
     heading: title,
+    meetingStartAt: indexDoc?.finalizedAt || null,
     recipients,
     unmapped,
     warnings: allWarnings,
