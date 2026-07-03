@@ -520,6 +520,9 @@ function SessionPanel({
   const [emailRecipients, setEmailRecipients] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ name: "", email: "" });
+  const [notesEmailSent, setNotesEmailSent] = useState(false);
+
+  const notesEmailSentStorageKey = (id: string) => `alyson-notes-email-sent:${id}`;
 
   const mergedLines = useMemo(() => {
     const fetched = q.data?.lines ?? [];
@@ -589,6 +592,14 @@ function SessionPanel({
     setChatInput("");
     setChatLoading(false);
     setSseStatus("idle");
+    setNotesEmailSent(false);
+    if (botId) {
+      try {
+        setNotesEmailSent(sessionStorage.getItem(notesEmailSentStorageKey(botId)) === "1");
+      } catch {
+        setNotesEmailSent(false);
+      }
+    }
     if (!botId) return;
     const url = `${String(base).replace(/\/$/, "")}/session/${encodeURIComponent(botId)}/events`;
     const es = new EventSource(url);
@@ -641,6 +652,14 @@ function SessionPanel({
       setNotes(res.notes);
       setNotesModel(res.model);
       setCopied(false);
+      setNotesEmailSent(false);
+      if (botId) {
+        try {
+          sessionStorage.removeItem(notesEmailSentStorageKey(botId));
+        } catch {
+          // ignore
+        }
+      }
     },
   });
 
@@ -696,6 +715,14 @@ function SessionPanel({
     },
     onSuccess: (res) => {
       toast.success(`Notes emailed to ${res.recipients.length} participant${res.recipients.length === 1 ? "" : "s"}`);
+      setNotesEmailSent(true);
+      if (botId) {
+        try {
+          sessionStorage.setItem(notesEmailSentStorageKey(botId), "1");
+        } catch {
+          // ignore
+        }
+      }
       setEmailOpen(false);
       setEmailPreview(null);
       setEmailRecipients([]);
@@ -915,19 +942,29 @@ function SessionPanel({
               >
                 <Copy className="h-3.5 w-3.5" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!plainNotes.trim() || !botId || emailPreviewM.isPending) return;
-                  emailPreviewM.mutate();
-                }}
-                disabled={!plainNotes.trim() || !botId || emailPreviewM.isPending || emailSendM.isPending}
-                className="h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                title="Email formatted notes to meeting participants"
-                aria-label="Email notes to participants"
-              >
-                <Send className="h-3.5 w-3.5" />
-              </button>
+              {notesEmailSent ? (
+                <span
+                  className="h-7 px-2 inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-700 dark:text-emerald-400"
+                  title="Meeting notes were emailed to participants"
+                >
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                  Notes sent
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!plainNotes.trim() || !botId || emailPreviewM.isPending) return;
+                    emailPreviewM.mutate();
+                  }}
+                  disabled={!plainNotes.trim() || !botId || emailPreviewM.isPending || emailSendM.isPending}
+                  className="h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
+                  title="Email formatted notes to meeting participants"
+                  aria-label="Email notes to participants"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
           <div className="p-4">
@@ -1105,12 +1142,21 @@ function SessionPanel({
               </button>
               <button
                 type="button"
-                disabled={!canSendEmail || emailSendM.isPending || editingRecipientId !== null}
+                disabled={!canSendEmail || emailSendM.isPending || editingRecipientId !== null || notesEmailSent}
                 onClick={() => emailSendM.mutate()}
                 className="h-9 px-3 rounded-md bg-foreground text-background text-[12px] hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
               >
-                <Send className="h-3.5 w-3.5" />
-                {emailSendM.isPending ? "Sending…" : `Send to ${validEmailRecipients.length || 0}`}
+                {notesEmailSent ? (
+                  <>
+                    <Check className="h-3.5 w-3.5" />
+                    Notes sent
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-3.5 w-3.5" />
+                    {emailSendM.isPending ? "Sending…" : `Send to ${validEmailRecipients.length || 0}`}
+                  </>
+                )}
               </button>
             </div>
           </div>

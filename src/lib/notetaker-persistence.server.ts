@@ -267,6 +267,7 @@ export async function persistMeetingToS3({
       botId: session.botId,
       transcriptKey,
       existingRecallMediaDeletedAt: existingIndex?.recallMediaDeletedAt,
+      persistedAt: endedAt,
     }).catch(() => {
       // cron cleanup retries; persist must not fail on Recall delete
     });

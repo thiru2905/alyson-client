@@ -1,6 +1,6 @@
 import {
   deleteRecallBotMedia,
-  RECALL_MEDIA_DELETE_AFTER_MS,
+  getRecallMediaDeleteAfterMs,
   recallMediaDeleteEnabled,
 } from "@/lib/recall/recall-delete-media.server";
 import { patchBotIndexRecallMediaDeleted } from "@/lib/notetaker-persistence.server";
@@ -34,7 +34,7 @@ function persistAnchorIso(doc: {
 }
 
 /**
- * Delete Recall-side bot media once our S3 copy exists (immediate by default).
+ * Delete Recall-side bot media once our S3 copy exists and the retention window has passed.
  * Safe to run on a schedule — skips bots still in-call or missing S3 transcripts.
  */
 export async function runRecallMediaCleanup(): Promise<RecallMediaCleanupResult> {
@@ -50,13 +50,14 @@ export async function runRecallMediaCleanup(): Promise<RecallMediaCleanupResult>
       skippedNoTranscript: 0,
       skippedInProgress: 0,
       errors: 0,
-      warnings: ["RECALL_DELETE_MEDIA_AFTER_S3=false — Recall retention cleanup disabled"],
+      warnings: ["Recall media cleanup is disabled"],
     };
   }
 
-  const deleteAfterHours = RECALL_MEDIA_DELETE_AFTER_MS / (60 * 60 * 1000);
+  const deleteAfterMs = getRecallMediaDeleteAfterMs();
+  const deleteAfterHours = deleteAfterMs / (60 * 60 * 1000);
   const now = Date.now();
-  const cutoff = now - RECALL_MEDIA_DELETE_AFTER_MS;
+  const cutoff = now - deleteAfterMs;
   const warnings: string[] = [];
   let eligible = 0;
   let deleted = 0;
@@ -159,17 +160,29 @@ export async function runRecallMediaCleanup(): Promise<RecallMediaCleanupResult>
   };
 }
 
-/** After S3 persist — drop Recall recording media so retention hours stop accruing. */
+/** After S3 persist — drop Recall recording media once retention window elapsed. */
 export async function deleteRecallMediaAfterS3Persist(args: {
   botId: string;
   transcriptKey: string;
   existingRecallMediaDeletedAt?: string;
+  /** Meeting finalize / persist timestamp — retention counted from here. */
+  persistedAt?: string;
 }): Promise<{ deleted: boolean; skipped?: string }> {
   if (!recallMediaDeleteEnabled()) return { deleted: false, skipped: "disabled" };
   if (args.existingRecallMediaDeletedAt) return { deleted: false, skipped: "already_deleted" };
 
   const botId = String(args.botId || "").trim();
   if (!botId) return { deleted: false, skipped: "missing_bot_id" };
+
+  const deleteAfterMs = getRecallMediaDeleteAfterMs();
+  const anchor = String(args.persistedAt || "").trim();
+  if (deleteAfterMs > 0 && anchor && Number.isFinite(Date.parse(anchor))) {
+    if (Date.parse(anchor) > Date.now() - deleteAfterMs) {
+      return { deleted: false, skipped: "too_recent" };
+    }
+  } else if (deleteAfterMs > 0 && !anchor) {
+    return { deleted: false, skipped: "too_recent" };
+  }
 
   try {
     const transcriptText = (await getTranscriptTextFromS3({ transcriptKey: args.transcriptKey })).trim();

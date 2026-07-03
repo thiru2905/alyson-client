@@ -1,13 +1,15 @@
 import { recallFetch } from "@/lib/recall/recall-client.server";
 
-/** Delete Recall-side media as soon as S3 has a transcript (stops retention billing). */
-export const RECALL_MEDIA_DELETE_AFTER_MS = 0;
+/** Keep Recall recording media 3 days after S3 transcript exists, then delete from Recall. */
+export const RECALL_MEDIA_DELETE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
 
-function recallMediaDeleteEnabled(): boolean {
-  return String(process.env.RECALL_DELETE_MEDIA_AFTER_S3 ?? "true").trim().toLowerCase() !== "false";
+export function getRecallMediaDeleteAfterMs(): number {
+  return RECALL_MEDIA_DELETE_AFTER_MS;
 }
 
-export { recallMediaDeleteEnabled };
+export function recallMediaDeleteEnabled(): boolean {
+  return true;
+}
 
 /**
  * Permanently delete all recording media Recall stores for a bot.

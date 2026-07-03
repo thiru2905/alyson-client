@@ -28,10 +28,12 @@ export type RecallCalendarSyncCronResult = {
   }>;
 };
 
-/** Automated Sync now for one allowlisted calendar when pending > 0 (same as UI Sync now). */
+/** Automated Sync now for one allowlisted calendar (server cron + webhooks — always runs sync). */
 export async function autoSyncRecallCalendarIfPending(args: {
   calendarId: string;
   ownerEmail: string;
+  /** When true, skip sync if preview reports zero pending (UI-only fallback). */
+  requirePending?: boolean;
 }): Promise<{
   ran: boolean;
   pendingBefore: number;
@@ -42,6 +44,7 @@ export async function autoSyncRecallCalendarIfPending(args: {
 }> {
   const calendarId = String(args.calendarId || "").trim();
   const ownerEmail = String(args.ownerEmail || "").trim();
+  const requirePending = Boolean(args.requirePending);
   if (!calendarId) {
     return { ran: false, pendingBefore: 0, scheduled: 0, skipped: 0, errors: [], reason: "Missing calendar id" };
   }
@@ -76,7 +79,7 @@ export async function autoSyncRecallCalendarIfPending(args: {
     // Non-fatal — still attempt sync when preview fails.
   }
 
-  if (pendingBefore === 0) {
+  if (requirePending && pendingBefore === 0) {
     return {
       ran: false,
       pendingBefore: 0,
@@ -124,6 +127,7 @@ export async function runRecallCalendarAutoSyncCron(): Promise<RecallCalendarSyn
     const run = await autoSyncRecallCalendarIfPending({
       calendarId: conn.recallCalendarId,
       ownerEmail: conn.email,
+      requirePending: false,
     });
 
     if (!run.ran) {
@@ -133,7 +137,7 @@ export async function runRecallCalendarAutoSyncCron(): Promise<RecallCalendarSyn
         pendingBefore: run.pendingBefore,
         scheduled: 0,
         skipped: 0,
-        errors: [],
+        errors: run.errors,
         skippedRun: true,
         reason: run.reason,
       });
@@ -160,5 +164,5 @@ export async function runRecallCalendarAutoSyncCron(): Promise<RecallCalendarSyn
 }
 
 export function recallCalendarSyncCronEnabled(): boolean {
-  return String(process.env.RECALL_CALENDAR_SYNC_CRON_ENABLED ?? "true").trim().toLowerCase() !== "false";
+  return true;
 }

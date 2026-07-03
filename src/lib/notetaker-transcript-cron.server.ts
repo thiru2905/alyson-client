@@ -162,6 +162,17 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     warnings.push(`recall_media_cleanup: ${String(e)}`);
   }
 
+  try {
+    const { runUnifiedMeetingsBackgroundMaintenance } = await import("@/lib/unified-meetings-background.server");
+    const um = await runUnifiedMeetingsBackgroundMaintenance();
+    if (um.warnings.length) warnings.push(...um.warnings);
+    if (um.calendarBotsScheduled > 0) {
+      warnings.push(`unified_meetings: scheduled ${um.calendarBotsScheduled} calendar bot(s)`);
+    }
+  } catch (e) {
+    warnings.push(`unified_meetings: ${String(e)}`);
+  }
+
   return {
     ok: errors === 0,
     ranAt,

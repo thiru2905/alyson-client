@@ -196,27 +196,43 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
         allowlist: getRecallCalendarAllowlist(),
       };
     }
-    // Auto-schedule bots for new upcoming meetings when calendar events change (server-side Sync now).
+
+    let meetingsRefreshed = false;
+    let meetingsReturned = 0;
+    try {
+      const { refreshUnifiedMeetings } = await import("@/lib/unifiedMeetingsService");
+      const summary = await refreshUnifiedMeetings();
+      meetingsRefreshed = true;
+      meetingsReturned = summary.meetingsReturned ?? 0;
+    } catch {
+      // Non-fatal — still run Recall calendar sync for this calendar.
+    }
+
     const auto = await autoSyncRecallCalendarIfPending({
       calendarId: calendar_id,
       ownerEmail,
+      requirePending: false,
     });
     if (auto.ran) {
       return {
-        action: "auto_sync_pending",
+        action: "auto_sync",
         calendarId: calendar_id,
         ownerEmail,
         pendingBefore: auto.pendingBefore,
         scheduled: auto.scheduled,
         skipped: auto.skipped,
         errors: auto.errors,
+        meetingsRefreshed,
+        meetingsReturned,
       };
     }
     return {
-      action: "no_pending",
+      action: "sync_skipped",
       calendarId: calendar_id,
       ownerEmail,
-      reason: auto.reason ?? "No pending meetings",
+      reason: auto.reason ?? "Sync not run",
+      meetingsRefreshed,
+      meetingsReturned,
     };
   }
 

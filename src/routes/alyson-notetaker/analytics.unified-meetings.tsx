@@ -621,7 +621,7 @@ function RecallCalendarConnectionRow({
               {upcomingCount} upcoming · {scheduledInAppCount} scheduled in app · {serverPending} pending
               {needsAutoSync && RECALL_CALENDAR_AUTO_SYNC ? (
                 <span className="text-foreground">
-                  {busy ? " — syncing…" : " — also syncs via server cron (every 5 min)"}
+                  {busy ? " — syncing…" : " — also syncs automatically (cron + calendar webhooks)"}
                 </span>
               ) : null}
             </div>
