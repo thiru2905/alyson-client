@@ -8,6 +8,30 @@ export function formatMeetingDatePrefix(startTimeIso: string): string {
   return `${dd}${mm}${yyyy}`;
 }
 
+/** Calendar day YYYY-MM-DD in a given IANA timezone. */
+export function calendarDayInTimeZone(
+  date: Date | string,
+  timeZone = "Asia/Kolkata",
+): string | null {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (!Number.isFinite(d.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+export function isMeetingOnCalendarDay(
+  startTimeIso: string | undefined | null,
+  dayIso: string,
+  timeZone = "Asia/Kolkata",
+): boolean {
+  if (!startTimeIso) return false;
+  return calendarDayInTimeZone(startTimeIso, timeZone) === dayIso;
+}
+
 /** Prefix meeting title with occurrence date: `03072026 DE standup`. Idempotent if already prefixed. */
 export function buildDatedMeetingTitle(title: string, startTimeIso: string): string {
   const cleanTitle = String(title || "Meeting").trim() || "Meeting";

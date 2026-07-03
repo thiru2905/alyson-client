@@ -9,7 +9,7 @@ import {
 } from "@/lib/alyson-notetaker-functions";
 import { getNotetakerSession, loadNotetakerSessionArchive } from "@/lib/notetaker-get-session-functions";
 import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-functions";
-import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X } from "lucide-react";
+import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { finalizeAndPersistNotetakerSession } from "@/lib/notetaker-persistence-functions";
@@ -61,6 +61,7 @@ function AlysonNotetakerPage() {
   }, [picked, sessionsQ.data]);
 
   const sessions = sessionsQ.data?.sessions ?? [];
+  const scheduledBotsToday = sessionsQ.data?.scheduledBotsToday ?? 0;
   const hasRecallConfig = sessionsQ.data?.hasRecallConfig ?? false;
   const sessionsLoading = sessionsQ.isLoading && !sessionsQ.data;
   const filteredSessions = useMemo(() => {
@@ -180,14 +181,26 @@ function AlysonNotetakerPage() {
         description="Create a Recall bot for a meeting, stream transcripts live, and generate notes."
         dense
         actions={
-          <Link
-            to="/alyson-notetaker/calendar"
-            onClick={() => toast.message("Calendar view")}
-            reloadDocument
-            className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
-          >
-            Calendar
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/alyson-notetaker/unified-meetings"
+              className="h-7 px-2.5 rounded-md border border-border bg-muted/40 text-[11.5px] font-medium inline-flex items-center gap-1.5 text-foreground hover:bg-muted/70"
+              title="Meetings scheduled for today (India time)"
+            >
+              <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>
+                {scheduledBotsToday} {scheduledBotsToday === 1 ? "bot" : "bots"}
+              </span>
+            </Link>
+            <Link
+              to="/alyson-notetaker/calendar"
+              onClick={() => toast.message("Calendar view")}
+              reloadDocument
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+            >
+              Calendar
+            </Link>
+          </div>
         }
       />
       <div className="px-5 md:px-8 py-6">

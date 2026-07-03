@@ -16,7 +16,7 @@ import {
 } from "@/lib/meeting-bot-reserve.server";
 import { removeBotFromRecallCalendarEvent } from "@/lib/recall/recall-calendar-v2.server";
 import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-config.server";
-import { buildDatedMeetingTitle } from "@/lib/notetaker-meeting-title.server";
+import { buildDatedMeetingTitle, calendarDayInTimeZone, isMeetingOnCalendarDay } from "@/lib/notetaker-meeting-title.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { unifiedScheduledStatusForUi } from "@/lib/unified-scheduled-lifecycle.server";
 import {
@@ -382,10 +382,33 @@ export type UnifiedScheduledBotSession = {
   botId: string;
   title: string;
   meetingUrl?: string;
+  meetingStartAt?: string;
   createdAt: string;
   status: string;
   creationSource?: StateEntry["creationSource"];
 };
+
+/**
+ * Count distinct bots whose meeting occurrence falls on the given calendar day (IST by default).
+ */
+export function countScheduledBotsForDay(
+  rows: Array<{ botId: string; meetingStartAt?: string }>,
+  dayIso?: string,
+  timeZone = "Asia/Kolkata",
+): number {
+  const targetDay = dayIso ?? calendarDayInTimeZone(new Date(), timeZone);
+  if (!targetDay) return 0;
+  const seen = new Set<string>();
+  let count = 0;
+  for (const row of rows) {
+    const botId = String(row.botId || "").trim();
+    if (!botId || seen.has(botId) || isReservingBotId(botId)) continue;
+    if (!isMeetingOnCalendarDay(row.meetingStartAt, targetDay, timeZone)) continue;
+    seen.add(botId);
+    count++;
+  }
+  return count;
+}
 
 /**
  * All bots recorded in unified scheduling state (no time-window filter).
@@ -404,6 +427,7 @@ export async function listAllUnifiedScheduledBotSessions(): Promise<UnifiedSched
       botId,
       title: buildDatedMeetingTitle(String(row.title || "Unified meeting"), row.startTime),
       meetingUrl: row.meetingUrl ? String(row.meetingUrl) : undefined,
+      meetingStartAt: row.startTime ? String(row.startTime) : undefined,
       createdAt: String(row.scheduledAt || row.startTime || new Date().toISOString()),
       status: unifiedScheduledStatusForUi(row),
       creationSource: row.creationSource,
