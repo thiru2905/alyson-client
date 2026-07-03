@@ -1,19 +1,10 @@
-import type { NotetakerSession, NotetakerSessionPayload } from "@/lib/alyson-notetaker-functions";
-import { autoPersistEndedMeetingToS3, ensureMeetingNotesInS3, maybeCheckpointTranscriptToS3 } from "@/lib/notetaker-auto-persist.server";
+import type { NotetakerSession } from "@/lib/alyson-notetaker-functions";
+import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import { notetakerTranscriptCronEnabled } from "@/lib/notetaker-cron-auth.server";
-import {
-  composeTranscript,
-  contentHash,
-  patchBotIndexCronStability,
-} from "@/lib/notetaker-persistence.server";
-import {
-  ENDED_SESSION_STATUSES,
-  autoPersistUnifiedScheduledBots,
-} from "@/lib/notetaker-session-catalog.server";
-import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
+import { autoPersistUnifiedScheduledBots } from "@/lib/notetaker-session-catalog.server";
+import { driveSessionPersistToS3 } from "@/lib/notetaker-session-persist-drive.server";
 import {
   listPersistedSessionsFromS3,
-  loadBotIndexDoc,
   mergeSessionsIndexToS3,
   invalidatePersistedSessionsS3Cache,
 } from "@/lib/notetaker-sessions-history.server";
@@ -21,22 +12,6 @@ import { listAllUnifiedScheduledBotSessions } from "@/lib/unifiedMeetingsService
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 import { runRecallMediaCleanup, type RecallMediaCleanupResult } from "@/lib/notetaker-recall-media-cleanup.server";
 import { activateDueScheduledBotSessions } from "@/lib/notetaker-scheduled-bot-activation.server";
-
-function normalizeSessionPayload(res: unknown, botId: string): NotetakerSessionPayload | null {
-  if (!res || typeof res !== "object") return null;
-  const o = res as Partial<NotetakerSessionPayload>;
-  if (!o.session?.botId) return null;
-  return {
-    session: o.session,
-    lines: Array.isArray(o.lines) ? o.lines : [],
-    participantCount: Number(o.participantCount ?? 0),
-    startedLabel: String(o.startedLabel ?? o.session.createdAt ?? ""),
-    hasRecallConfig: Boolean(o.hasRecallConfig ?? true),
-    hasGroqConfig: Boolean(o.hasGroqConfig ?? true),
-    notesMd: o.notesMd,
-    notesModel: o.notesModel,
-  };
-}
 
 export type NotetakerTranscriptCronResult = {
   ok: boolean;
@@ -138,72 +113,27 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
 
   for (const botId of botIds) {
     try {
-      const existingIndex = await loadBotIndexDoc(botId);
-      if (existingIndex?.cronFinalized) {
-        skippedFinalized += 1;
-        continue;
-      }
-
-      let payload: NotetakerSessionPayload | null = null;
-      try {
-        const res = await notetakerUpstream(`/api/session/${encodeURIComponent(botId)}`);
-        payload = normalizeSessionPayload(res, botId);
-      } catch {
-        upstreamUnavailable += 1;
-        continue;
-      }
-
-      if (!payload?.lines?.length) {
+      const driveResult = await driveSessionPersistToS3(botId, { bypassThrottle: true });
+      if (driveResult === "written") {
+        written += 1;
+        const notes = await ensureMeetingNotesInS3(botId);
+        if (notes.ok && notes.notesMd?.trim()) {
+          notesWritten += 1;
+          const { maybeGenerateMeetingTasksWhenReady } = await import(
+            "@/lib/notetaker-meeting-list-tasks.server"
+          );
+          void maybeGenerateMeetingTasksWhenReady(botId);
+        }
+      } else if (driveResult === "unchanged" || driveResult === "skipped_complete") {
+        skippedUnchanged += 1;
+        if (driveResult === "skipped_complete") skippedFinalized += 1;
+      } else if (driveResult === "empty") {
         skippedEmpty += 1;
-        continue;
-      }
-
-      const session = await withResolvedMeetingTitle(payload.session);
-      const transcriptHash = contentHash(composeTranscript(payload.lines).transcriptText);
-      const st = String(session.status || "").toLowerCase();
-      const ended = ENDED_SESSION_STATUSES.has(st);
-
-      const { touchUnifiedScheduledFromSession } = await import("@/lib/unified-scheduled-lifecycle.server");
-      await touchUnifiedScheduledFromSession({
-        botId,
-        upstreamStatus: session.status,
-        lineCount: payload.lines.length,
-        ended,
-      });
-
-      if (ended) {
-        let result = await autoPersistEndedMeetingToS3({
-          session,
-          lines: payload.lines,
-          existingNotesMd: payload.notesMd,
-          existingNotesModel: payload.notesModel,
-        });
-        if (result.skipped === "unchanged" || result.skipped === "notes_generation_failed") {
-          const backfill = await ensureMeetingNotesInS3(botId);
-          if (backfill.ok && backfill.notesMd?.trim()) {
-            result = { persisted: true, notesMd: backfill.notesMd };
-          }
-        }
-        if (result.persisted) {
-          written += 1;
-          if (result.notesMd?.trim()) {
-            notesWritten += 1;
-            const { maybeGenerateMeetingTasksWhenReady } = await import(
-              "@/lib/notetaker-meeting-list-tasks.server"
-            );
-            void maybeGenerateMeetingTasksWhenReady(botId);
-          }
-        } else if (result.skipped === "unchanged") {
-          skippedUnchanged += 1;
-        }
+      } else if (driveResult === "unavailable") {
+        upstreamUnavailable += 1;
       } else {
-        const action = await maybeCheckpointTranscriptToS3(session, payload.lines, { bypassThrottle: true });
-        if (action === "written") written += 1;
-        else if (action === "unchanged") skippedUnchanged += 1;
+        errors += 1;
       }
-
-      const stability = await patchBotIndexCronStability(botId, transcriptHash, existingIndex);
-      if (stability.newlyFinalized) newlyFinalized += 1;
     } catch (e) {
       errors += 1;
       warnings.push(`${botId}: ${String(e)}`);

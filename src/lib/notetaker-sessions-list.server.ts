@@ -1,5 +1,4 @@
 import type { NotetakerSession } from "@/lib/alyson-notetaker-functions";
-import { notetakerTranscriptCronEnabled } from "@/lib/notetaker-cron-auth.server";
 import { scheduleNotetakerCatalogMaintenance } from "@/lib/notetaker-session-catalog.server";
 import {
   listPersistedSessionsFromS3,
@@ -36,16 +35,8 @@ async function listUnifiedScheduledSessions(): Promise<{
   };
 }
 
-function sessionsBackgroundSyncEnabled() {
-  const explicit = process.env.NOTETAKER_SESSIONS_BACKGROUND_SYNC?.trim().toLowerCase();
-  if (explicit === "true") return true;
-  if (explicit === "false") return false;
-  // Cron is the primary dumper — skip UI-driven background sync by default.
-  return !notetakerTranscriptCronEnabled();
-}
-
 function scheduleBackgroundMaintenance(sessions: NotetakerSession[]) {
-  if (!sessionsBackgroundSyncEnabled()) return;
+  // Always backfill S3 when the sessions list loads — do not rely on opening each session.
   scheduleNotetakerCatalogMaintenance(sessions);
 }
 
