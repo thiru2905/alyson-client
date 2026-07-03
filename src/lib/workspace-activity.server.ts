@@ -61,7 +61,10 @@ const Input = z
 const CACHE_TTL_MS = 5 * 60_000;
 /** Cap audit pagination so a large org cannot hang the server for hours. */
 const MAX_AUDIT_PAGES_PER_APP = 40;
-const WORKSPACE_ACTIVITY_TIMEOUT_MS = 90_000;
+const WORKSPACE_ACTIVITY_TIMEOUT_MS = Math.max(
+  30_000,
+  Number(process.env.WORKSPACE_ACTIVITY_TIMEOUT_MS) || 90_000,
+);
 const activityCache = new Map<string, { at: number; data: WorkspaceActivityResponse }>();
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -405,6 +408,32 @@ async function runGetWorkspaceActivityImpl(
     };
     activityCache.set(cacheKey, { at: Date.now(), data: result });
     return result;
+}
+
+/** Faster subset for spreadsheets — outbound Gmail delivery counts only (last 7 days by default). */
+export async function getWorkspaceGmailSentCounts(args?: {
+  start?: string;
+  end?: string;
+}): Promise<{ counts: Map<string, number>; range: { start: string; end: string }; warnings: string[] }> {
+  const now = new Date();
+  const fallbackStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const startTime = normalizeEventIso(args?.start, fallbackStart);
+  const endTime = normalizeEventIso(args?.end, now);
+  const warnings: string[] = [];
+  const { reports } = await buildDirectoryAndReportsClients();
+  const counts = await countAppEvents({
+    reports,
+    applicationName: "gmail",
+    eventName: "delivery",
+    startTime,
+    endTime,
+    warnings,
+    includeEvent: (_event, metadata) => isOutboundSmtpDelivery(metadata),
+  }).catch((e) => {
+    warnings.push(`gmail delivery: ${e instanceof Error ? e.message : String(e)}`);
+    return new Map<string, number>();
+  });
+  return { counts, range: { start: startTime, end: endTime }, warnings };
 }
 
 const DETAIL_MAX_PER_KIND = 50;
