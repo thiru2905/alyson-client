@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { readS3MetadataValue } from "@/lib/s3-metadata.server";
 
 function requireEnv(name: string) {
   const v = process.env[name];
@@ -80,15 +81,10 @@ async function findMeetingPrefixByBotId(botId: string) {
       try {
         const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
         const meta = head.Metadata ?? {};
-        const metaBot = String(meta["x-amz-meta-bot-id"] || meta["bot-id"] || meta["x-amz-meta-session-id"] || "").trim();
-        // NOTE: AWS SDK lowercases metadata keys, but preserves values.
-        // In our uploads we set keys like "x-amz-meta-bot-id" inside Metadata (which becomes "x-amz-meta-bot-id" or "x-amz-meta-bot-id"?).
-        // Some SDKs normalize; we try a few.
+        const metaBot =
+          readS3MetadataValue(meta, "bot-id") ||
+          readS3MetadataValue(meta, "session-id");
         if (metaBot && metaBot === botId) return prefix;
-
-        // Fallback: if metadata was stored as "bot-id" by normalization
-        const botAlt = String(meta["x-amz-meta-bot-id"] || meta["botid"] || meta["bot_id"] || "").trim();
-        if (botAlt && botAlt === botId) return prefix;
       } catch {
         // ignore missing objects
       }
