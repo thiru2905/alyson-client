@@ -40,6 +40,7 @@ import { Route as WebhooksRecallRouteImport } from './routes/webhooks/recall'
 import { Route as TimeDashboardPacingRouteImport } from './routes/time-dashboard.pacing'
 import { Route as TimeDashboardMonthlyPacingRouteImport } from './routes/time-dashboard.monthly-pacing'
 import { Route as TimeDashboardUserIdRouteImport } from './routes/time-dashboard.$userId'
+import { Route as LeaveEmailInboxRouteImport } from './routes/leave/email-inbox'
 import { Route as LeaveCalendarRouteImport } from './routes/leave/calendar'
 import { Route as LeaveAuditRouteImport } from './routes/leave/audit'
 import { Route as LeaveAnalyticsRouteImport } from './routes/leave/analytics'
@@ -60,6 +61,7 @@ import { Route as ApiCronTimeDoctorTokenRouteImport } from './routes/api/cron/ti
 import { Route as ApiCronScheduledBotActivationRouteImport } from './routes/api/cron/scheduled-bot-activation'
 import { Route as ApiCronRecallCalendarSyncRouteImport } from './routes/api/cron/recall-calendar-sync'
 import { Route as ApiCronNotetakerTranscriptsRouteImport } from './routes/api/cron/notetaker-transcripts'
+import { Route as ApiCronLeaveEmailSyncRouteImport } from './routes/api/cron/leave-email-sync'
 import { Route as ApiCronDailyReportsRouteImport } from './routes/api/cron/daily-reports'
 import { Route as ApiAnalyticsWorkspaceActivityRouteImport } from './routes/api/analytics/workspace-activity'
 import { Route as ApiAnalyticsUnifiedMeetingsRouteImport } from './routes/api/analytics/unified-meetings'
@@ -234,6 +236,11 @@ const TimeDashboardUserIdRoute = TimeDashboardUserIdRouteImport.update({
   path: '/$userId',
   getParentRoute: () => TimeDashboardRoute,
 } as any)
+const LeaveEmailInboxRoute = LeaveEmailInboxRouteImport.update({
+  id: '/email-inbox',
+  path: '/email-inbox',
+  getParentRoute: () => LeaveRouteRoute,
+} as any)
 const LeaveCalendarRoute = LeaveCalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -343,6 +350,11 @@ const ApiCronNotetakerTranscriptsRoute =
     path: '/api/cron/notetaker-transcripts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCronLeaveEmailSyncRoute = ApiCronLeaveEmailSyncRouteImport.update({
+  id: '/api/cron/leave-email-sync',
+  path: '/api/cron/leave-email-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronDailyReportsRoute = ApiCronDailyReportsRouteImport.update({
   id: '/api/cron/daily-reports',
   path: '/api/cron/daily-reports',
@@ -477,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
+  '/leave/email-inbox': typeof LeaveEmailInboxRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
@@ -491,6 +504,7 @@ export interface FileRoutesByFullPath {
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
+  '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
@@ -543,6 +557,7 @@ export interface FileRoutesByTo {
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
+  '/leave/email-inbox': typeof LeaveEmailInboxRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
@@ -557,6 +572,7 @@ export interface FileRoutesByTo {
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
+  '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
@@ -613,6 +629,7 @@ export interface FileRoutesById {
   '/leave/analytics': typeof LeaveAnalyticsRoute
   '/leave/audit': typeof LeaveAuditRoute
   '/leave/calendar': typeof LeaveCalendarRoute
+  '/leave/email-inbox': typeof LeaveEmailInboxRoute
   '/time-dashboard/$userId': typeof TimeDashboardUserIdRoute
   '/time-dashboard/monthly-pacing': typeof TimeDashboardMonthlyPacingRoute
   '/time-dashboard/pacing': typeof TimeDashboardPacingRoute
@@ -627,6 +644,7 @@ export interface FileRoutesById {
   '/api/analytics/unified-meetings': typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
+  '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
@@ -684,6 +702,7 @@ export interface FileRouteTypes {
     | '/leave/analytics'
     | '/leave/audit'
     | '/leave/calendar'
+    | '/leave/email-inbox'
     | '/time-dashboard/$userId'
     | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
@@ -698,6 +717,7 @@ export interface FileRouteTypes {
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
+    | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
@@ -750,6 +770,7 @@ export interface FileRouteTypes {
     | '/leave/analytics'
     | '/leave/audit'
     | '/leave/calendar'
+    | '/leave/email-inbox'
     | '/time-dashboard/$userId'
     | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
@@ -764,6 +785,7 @@ export interface FileRouteTypes {
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
+    | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
@@ -819,6 +841,7 @@ export interface FileRouteTypes {
     | '/leave/analytics'
     | '/leave/audit'
     | '/leave/calendar'
+    | '/leave/email-inbox'
     | '/time-dashboard/$userId'
     | '/time-dashboard/monthly-pacing'
     | '/time-dashboard/pacing'
@@ -833,6 +856,7 @@ export interface FileRouteTypes {
     | '/api/analytics/unified-meetings'
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
+    | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
@@ -879,6 +903,7 @@ export interface RootRouteChildren {
   ApiAnalyticsUnifiedMeetingsRoute: typeof ApiAnalyticsUnifiedMeetingsRouteWithChildren
   ApiAnalyticsWorkspaceActivityRoute: typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
+  ApiCronLeaveEmailSyncRoute: typeof ApiCronLeaveEmailSyncRoute
   ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
   ApiCronRecallCalendarSyncRoute: typeof ApiCronRecallCalendarSyncRoute
   ApiCronScheduledBotActivationRoute: typeof ApiCronScheduledBotActivationRoute
@@ -1108,6 +1133,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TimeDashboardUserIdRouteImport
       parentRoute: typeof TimeDashboardRoute
     }
+    '/leave/email-inbox': {
+      id: '/leave/email-inbox'
+      path: '/email-inbox'
+      fullPath: '/leave/email-inbox'
+      preLoaderRoute: typeof LeaveEmailInboxRouteImport
+      parentRoute: typeof LeaveRouteRoute
+    }
     '/leave/calendar': {
       id: '/leave/calendar'
       path: '/calendar'
@@ -1246,6 +1278,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/notetaker-transcripts'
       fullPath: '/api/cron/notetaker-transcripts'
       preLoaderRoute: typeof ApiCronNotetakerTranscriptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/leave-email-sync': {
+      id: '/api/cron/leave-email-sync'
+      path: '/api/cron/leave-email-sync'
+      fullPath: '/api/cron/leave-email-sync'
+      preLoaderRoute: typeof ApiCronLeaveEmailSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/daily-reports': {
@@ -1429,6 +1468,7 @@ interface LeaveRouteRouteChildren {
   LeaveAnalyticsRoute: typeof LeaveAnalyticsRoute
   LeaveAuditRoute: typeof LeaveAuditRoute
   LeaveCalendarRoute: typeof LeaveCalendarRoute
+  LeaveEmailInboxRoute: typeof LeaveEmailInboxRoute
   LeaveIndexRoute: typeof LeaveIndexRoute
 }
 
@@ -1436,6 +1476,7 @@ const LeaveRouteRouteChildren: LeaveRouteRouteChildren = {
   LeaveAnalyticsRoute: LeaveAnalyticsRoute,
   LeaveAuditRoute: LeaveAuditRoute,
   LeaveCalendarRoute: LeaveCalendarRoute,
+  LeaveEmailInboxRoute: LeaveEmailInboxRoute,
   LeaveIndexRoute: LeaveIndexRoute,
 }
 
@@ -1569,6 +1610,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAnalyticsWorkspaceActivityRoute:
     ApiAnalyticsWorkspaceActivityRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
+  ApiCronLeaveEmailSyncRoute: ApiCronLeaveEmailSyncRoute,
   ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
   ApiCronRecallCalendarSyncRoute: ApiCronRecallCalendarSyncRoute,
   ApiCronScheduledBotActivationRoute: ApiCronScheduledBotActivationRoute,

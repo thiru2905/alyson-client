@@ -29,7 +29,13 @@ function dayNumber(iso: string): number {
   return Number(iso.slice(8, 10));
 }
 
-function eventChipClass(kind: LeaveCalendarEventKind, timing: LeaveEventTiming): string {
+function eventChipClass(kind: LeaveCalendarEventKind, timing: LeaveEventTiming, overLimit?: boolean): string {
+  if (overLimit) {
+    const redBase = "bg-red-500/20 text-red-950 dark:text-red-100 border-red-500/40";
+    if (timing === "past") return `${redBase} opacity-70`;
+    if (timing === "upcoming") return `${redBase} border-dashed`;
+    return redBase;
+  }
   const teamBase = "bg-sky-500/15 text-sky-900 dark:text-sky-100 border-sky-500/25";
   const personalBase = "bg-amber-500/15 text-amber-950 dark:text-amber-100 border-amber-500/30";
   const base = kind === "team" ? teamBase : personalBase;
@@ -119,6 +125,10 @@ export function LeaveCalendarView({
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm border border-dashed border-muted-foreground/50 bg-muted/30" />
           Upcoming
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-sm bg-red-500/30 border border-red-500/50" />
+          Over 10-day limit
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-muted/40 border border-border opacity-70" />
@@ -212,8 +222,8 @@ function CalendarDayCell({
                   onSelectEvent?.(ev);
                 }
               }}
-              className={`rounded px-1 py-0.5 text-[9px] leading-tight border truncate ${eventChipClass(ev.kind, timing)}`}
-              title={`${ev.kind === "team" ? "Team" : "Personal"} · ${ev.label} · ${ev.leaveType}${ev.location ? ` · ${ev.location}` : ""}`}
+              className={`rounded px-1 py-0.5 text-[9px] leading-tight border truncate ${eventChipClass(ev.kind, timing, ev.overLimit)}`}
+              title={`${ev.kind === "team" ? "Team" : "Personal"} · ${ev.label} · ${ev.leaveType}${ev.overLimit ? " · OVER LIMIT" : ""}${ev.location ? ` · ${ev.location}` : ""}`}
             >
               {eventChipLabel(ev)}
             </div>

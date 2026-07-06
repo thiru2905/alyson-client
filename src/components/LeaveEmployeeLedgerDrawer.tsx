@@ -13,6 +13,7 @@ import {
   sumLeaveDays,
   validateLifetimeLeaveLimit,
 } from "@/lib/leave-schema";
+import { isLeaveEventOverLimit } from "@/lib/leave-calendar";
 import { fmtDate } from "@/lib/format";
 
 type Props = {
@@ -130,12 +131,28 @@ export function LeaveEmployeeLedgerDrawer({
               {sorted.length === 0 ? (
                 <EmptyState>No leave recorded yet for this employee.</EmptyState>
               ) : (
-                sorted.map((e) => (
-                  <div key={e.id} className="rounded-lg border border-border px-3 py-2.5 bg-muted/20">
+                sorted.map((e) => {
+                  const overLimit = isLeaveEventOverLimit(ledger.leaveEvents, e.id);
+                  return (
+                  <div
+                    key={e.id}
+                    className={`rounded-lg border px-3 py-2.5 ${
+                      overLimit
+                        ? "border-red-500/40 bg-red-500/10"
+                        : "border-border bg-muted/20"
+                    }`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-medium text-[13px]">
-                          {leaveTypeLabel(e.leaveType)} · {e.days} day{e.days === 1 ? "" : "s"}
+                        <div className="font-medium text-[13px] flex items-center gap-2 flex-wrap">
+                          <span>
+                            {leaveTypeLabel(e.leaveType)} · {e.days} day{e.days === 1 ? "" : "s"}
+                          </span>
+                          {overLimit ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+                              Over limit
+                            </span>
+                          ) : null}
                         </div>
                         <div className="text-[12px] text-muted-foreground mt-0.5">
                           {fmtDate(e.startDate)} – {fmtDate(e.endDate)}
@@ -158,7 +175,8 @@ export function LeaveEmployeeLedgerDrawer({
                       ) : null}
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}

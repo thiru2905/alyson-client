@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { BarChart3, Calendar, FileText } from "lucide-react";
+import { BarChart3, Calendar, FileText, Mail } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/leave")({
@@ -31,6 +31,7 @@ function LeaveLayout() {
 
         <div className="shrink-0 flex items-center gap-2 flex-wrap">
           <Tab to="/leave" label="Employees" />
+          <Tab to="/leave/email-inbox" label="Email inbox" icon={Mail} />
           <Tab to="/leave/calendar" label="Team calendar" icon={Calendar} />
           <Tab to="/leave/analytics" label="Analytics" icon={BarChart3} />
           <Tab to="/leave/audit" label="Audit log" icon={FileText} />
@@ -47,7 +48,7 @@ function Tab({
   label,
   icon: Icon,
 }: {
-  to: "/leave" | "/leave/calendar" | "/leave/analytics" | "/leave/audit";
+  to: "/leave" | "/leave/email-inbox" | "/leave/calendar" | "/leave/analytics" | "/leave/audit";
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
 }) {

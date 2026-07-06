@@ -295,6 +295,8 @@ export async function appendLeaveRecord(args: {
   days?: number;
   note?: string;
   actor?: string | null;
+  /** When true, record leave even if lifetime limit exceeded (salary deduction case). */
+  allowOverLimit?: boolean;
 }) {
   const data = await ensureLeaveOnS3(args.actor ?? null);
   const ledger = data.employees[args.employeeId];
@@ -305,8 +307,10 @@ export async function appendLeaveRecord(args: {
   if (days <= 0) {
     throw new Error("Leave range has no weekdays (Sat–Sun are not counted).");
   }
-  const limitCheck = validateLifetimeLeaveLimit(ledger.leaveEvents, days);
-  if (!limitCheck.ok) throw new Error(limitCheck.message);
+  if (!args.allowOverLimit) {
+    const limitCheck = validateLifetimeLeaveLimit(ledger.leaveEvents, days);
+    if (!limitCheck.ok) throw new Error(limitCheck.message);
+  }
 
   const event: LeaveRecordEvent = {
     id: newLeaveEventId(),

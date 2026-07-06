@@ -306,10 +306,18 @@ function LeaveCalendarPage() {
 
 function PersonalLeaveEventCard({ ev, today }: { ev: LeaveCalendarEvent; today: string }) {
   const timing = leaveEventTiming(ev.startDate, ev.endDate, today);
+  const borderClass = ev.overLimit
+    ? "border-red-500/40 bg-red-500/[0.08]"
+    : "border-amber-500/25 bg-amber-500/[0.06]";
   return (
-    <div className="rounded-md border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[12px] flex flex-col sm:flex-row sm:items-center gap-2">
+    <div className={`rounded-md border ${borderClass} px-3 py-2 text-[12px] flex flex-col sm:flex-row sm:items-center gap-2`}>
       <div className="flex-1 min-w-0">
-        <div className="font-medium">{ev.label}</div>
+        <div className="font-medium flex items-center gap-2 flex-wrap">
+          {ev.label}
+          {ev.overLimit ? (
+            <span className="text-[10px] font-semibold uppercase text-red-600 dark:text-red-400">Over limit</span>
+          ) : null}
+        </div>
         <div className="text-muted-foreground">
           {ev.team || ev.location ? (
             <>

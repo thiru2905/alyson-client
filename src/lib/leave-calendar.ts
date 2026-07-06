@@ -1,5 +1,5 @@
 import type { EmployeeLeaveLedger, TeamLeaveEvent } from "@/lib/leave-schema";
-import { formatTeamLeaveLabel, leaveTypeLabel } from "@/lib/leave-schema";
+import { formatTeamLeaveLabel, leaveTypeLabel, LIFETIME_LEAVE_DAYS_LIMIT } from "@/lib/leave-schema";
 import { addDaysIso, isWeekdayIso } from "@/lib/weekly-pacing";
 
 export type LeaveCalendarEventKind = "team" | "personal";
@@ -23,6 +23,8 @@ export type LeaveCalendarEvent = {
   leaveType: string;
   days: number;
   note?: string;
+  /** True when cumulative lifetime leave exceeds policy limit at this event. */
+  overLimit?: boolean;
 };
 
 export type LeaveEventTiming = "upcoming" | "active" | "past";
@@ -105,6 +107,22 @@ export function buildTeamLeaveCalendarEvents(teamLeaves: TeamLeaveEvent[]): Leav
     .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.location.localeCompare(b.location));
 }
 
+/** True when this event pushes cumulative lifetime days over the policy limit. */
+export function isLeaveEventOverLimit(
+  events: { id: string; days: number; startDate: string; createdAt: string }[],
+  eventId: string,
+): boolean {
+  const sorted = [...events].sort(
+    (a, b) => a.startDate.localeCompare(b.startDate) || a.createdAt.localeCompare(b.createdAt),
+  );
+  let total = 0;
+  for (const e of sorted) {
+    total += Number.isFinite(e.days) ? e.days : 0;
+    if (e.id === eventId) return total > LIFETIME_LEAVE_DAYS_LIMIT;
+  }
+  return false;
+}
+
 /** Build calendar events from per-employee leave records in the S3 ledger (active employees only). */
 export function buildPersonalLeaveCalendarEvents(ledgers: EmployeeLeaveLedger[]): LeaveCalendarEvent[] {
   const events: LeaveCalendarEvent[] = [];
@@ -125,6 +143,7 @@ export function buildPersonalLeaveCalendarEvents(ledgers: EmployeeLeaveLedger[])
         leaveType: leaveTypeLabel(ev.leaveType),
         days: ev.days,
         note: ev.note,
+        overLimit: isLeaveEventOverLimit(ledger.leaveEvents, ev.id),
       });
     }
   }

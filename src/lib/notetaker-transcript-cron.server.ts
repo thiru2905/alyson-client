@@ -173,6 +173,25 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     warnings.push(`unified_meetings: ${String(e)}`);
   }
 
+  try {
+    const { leaveEmailSyncEnabled } = await import("@/lib/leave-email-schema");
+    if (leaveEmailSyncEnabled()) {
+      const { runLeaveEmailSync } = await import("@/lib/leave-email-sync.server");
+      const leaveSync = await runLeaveEmailSync({ lookbackDays: 30, maxMessages: 50 });
+      if (leaveSync.applied > 0) {
+        warnings.push(`leave_email: applied ${leaveSync.applied} leave(s) to ledger`);
+      }
+      if (leaveSync.duplicates > 0) {
+        warnings.push(`leave_email: ${leaveSync.duplicates} already on ledger (skipped)`);
+      }
+      if (leaveSync.errors.length) {
+        warnings.push(`leave_email: ${leaveSync.errors[0]}`);
+      }
+    }
+  } catch (e) {
+    warnings.push(`leave_email: ${String(e)}`);
+  }
+
   return {
     ok: errors === 0,
     ranAt,

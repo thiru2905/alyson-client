@@ -23,6 +23,7 @@ const appendLeaveSchema = actorSchema.extend({
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   days: z.number().positive().optional(),
   note: z.string().optional(),
+  allowOverLimit: z.boolean().optional(),
 });
 
 const voidTeamLeaveSchema = actorSchema.extend({
@@ -98,6 +99,7 @@ export const recordLeave = createServerFn({ method: "POST" })
       days: data.days,
       note: data.note,
       actor: data.actor ?? null,
+      allowOverLimit: data.allowOverLimit,
     });
     return { event: result.event, ledger: result.ledger };
   });
