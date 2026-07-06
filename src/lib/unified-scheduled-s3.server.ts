@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 export type UnifiedScheduledStateEntry = {
   dedupeKey: string;
@@ -160,6 +161,7 @@ export async function writeUnifiedScheduledStateToS3(
       Key: STATE_KEY,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("unified-meetings", "scheduled-state"),
       Metadata: { kind: "alyson-unified-scheduled-state" },
       ...(opts?.ifMatch ? { IfMatch: opts.ifMatch } : {}),
     }),

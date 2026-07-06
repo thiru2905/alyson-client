@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import type {
   BonusCashEvent,
   BonusDataFile,
@@ -155,8 +156,8 @@ export async function appendBonusLog(entry: BonusLogEntry) {
       Key: key,
       Body: body,
       ContentType: "application/x-ndjson; charset=utf-8",
+      Tagging: s3CostAllocationTagging("bonus", "log"),
       Metadata: {
-        "x-amz-meta-kind": "alyson-hr-bonus-log",
         "x-amz-meta-updated-at": entry.ts,
       },
     }),
@@ -239,6 +240,7 @@ async function putBonusToS3(
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("bonus", "data"),
       Metadata: {
         "x-amz-meta-kind": "alyson-hr-bonus-data",
         "x-amz-meta-updated-at": updatedAt,

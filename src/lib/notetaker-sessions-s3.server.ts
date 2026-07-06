@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import type { NotetakerSession } from "@/lib/alyson-notetaker-functions";
 
 function requireEnv(name: string) {
@@ -86,8 +87,8 @@ export async function putNotetakerSessionsIndexToS3(args: {
       Key: keyName(),
       Body: body,
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker", "sessions-index"),
       Metadata: {
-        "x-amz-meta-kind": "alyson-notetaker-sessions-index",
         "x-amz-meta-version": "1",
         "x-amz-meta-generated-at": generatedAt,
       },

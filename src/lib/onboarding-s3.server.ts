@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import { diffOnboardingRows, summarizeRowEdit, summarizeRowEdits } from "@/lib/onboarding-audit";
 import { BUNDLED_ONBOARDING_ROSTER_CSV } from "@/lib/bundled-data";
 import { parseOnboardingCsv } from "@/lib/onboarding-csv";
@@ -175,8 +176,8 @@ export async function appendOnboardingLog(entry: OnboardingLogEntry) {
       Key: key,
       Body: body,
       ContentType: "application/x-ndjson; charset=utf-8",
+      Tagging: s3CostAllocationTagging("onboarding", "log"),
       Metadata: {
-        "x-amz-meta-kind": "alyson-hr-onboarding-log",
         "x-amz-meta-updated-at": entry.ts,
       },
     }),
@@ -302,6 +303,7 @@ export async function putOnboardingToS3(
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("onboarding", "data"),
       Metadata: {
         "x-amz-meta-kind": "alyson-hr-onboarding-data",
         "x-amz-meta-updated-at": updatedAt,

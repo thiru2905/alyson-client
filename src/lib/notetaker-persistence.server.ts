@@ -3,6 +3,7 @@ import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } fr
 import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 export type NotetakerBotIndexDoc = {
   version: number;
@@ -211,6 +212,7 @@ export async function persistMeetingToS3({
         Key: transcriptKey,
         Body: transcriptText,
         ContentType: "text/plain; charset=utf-8",
+        Tagging: s3CostAllocationTagging("notetaker", "transcript"),
         Metadata: metadata,
       }),
     );
@@ -224,6 +226,7 @@ export async function persistMeetingToS3({
         Key: notesKey,
         Body: notesMd,
         ContentType: "text/markdown; charset=utf-8",
+        Tagging: s3CostAllocationTagging("notetaker", "notes"),
         Metadata: metadata,
       }),
     );
@@ -257,6 +260,7 @@ export async function persistMeetingToS3({
         2,
       ),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker", "bot-index"),
       Metadata: { kind: "alyson-notetaker-bot-index", botid: String(session.botId) },
     }),
   );
@@ -297,6 +301,7 @@ export async function writeNotesMdForMeetingPrefix(prefix: string, notesMd: stri
       Key: notesKey,
       Body: body,
       ContentType: "text/markdown; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker", "notes"),
       Metadata: { kind: "alyson-notetaker-notes", prefix },
     }),
   );
@@ -312,6 +317,7 @@ export async function writeNotesMdForMeetingPrefix(prefix: string, notesMd: stri
           Key: botIndexKey,
           Body: JSON.stringify({ ...existing, notesKey, notesHash }, null, 2),
           ContentType: "application/json; charset=utf-8",
+          Tagging: s3CostAllocationTagging("notetaker", "bot-index"),
           Metadata: { kind: "alyson-notetaker-bot-index", botid: String(botId) },
         }),
       );
@@ -358,6 +364,7 @@ export async function patchBotIndexCronStability(
         2,
       ),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker", "bot-index"),
       Metadata: { kind: "alyson-notetaker-bot-index", botid: String(botId) },
     }),
   );
@@ -393,6 +400,7 @@ export async function patchBotIndexRecallMediaDeleted(
         2,
       ),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker", "bot-index"),
       Metadata: { kind: "alyson-notetaker-bot-index", botid: String(botId) },
     }),
   );

@@ -29,6 +29,7 @@ import {
   timeDoctorPacingListUsers,
 } from "@/lib/time-doctor-functions";
 import { enrichLeaveLedgersWithPacingActive } from "@/lib/weekly-pacing-active.server";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 export const LEAVE_S3_BUCKET = "alyson-hr-orgchart";
 export const LEAVE_S3_KEY = "leave/data.json";
@@ -114,6 +115,7 @@ export async function appendLeaveLog(entry: LeaveLogEntry) {
       Key: key,
       Body: existing + line,
       ContentType: "application/x-ndjson; charset=utf-8",
+      Tagging: s3CostAllocationTagging("leave", "log"),
       Metadata: {
         "x-amz-meta-kind": "alyson-hr-leave-log",
         "x-amz-meta-updated-at": entry.ts,
@@ -195,6 +197,7 @@ async function putLeaveToS3(
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("leave", "data"),
       Metadata: {
         "x-amz-meta-kind": "alyson-hr-leave-data",
         "x-amz-meta-updated-at": updatedAt,

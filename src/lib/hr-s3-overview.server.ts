@@ -9,6 +9,7 @@ import type { Readable } from "node:stream";
 import type { Department, Employee, Compensation, MetricsRow } from "@/lib/queries";
 import { isGenericPlaceholderRoster, revcloudOverviewParts } from "@/lib/revcloud-overview";
 import { archiveS3JsonBeforeWrite } from "@/lib/s3-archive.server";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 function requireEnv(name: string) {
   const v = process.env[name];
@@ -134,8 +135,8 @@ export async function putHrOverviewSnapshotToS3(snapshot: HrOverviewSnapshot) {
       Key: key,
       Body: body,
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("hr-overview", "snapshot"),
       Metadata: {
-        "x-amz-meta-kind": "alyson-hr-overview",
         "x-amz-meta-version": String(snapshot.version),
         "x-amz-meta-generated-at": snapshot.generatedAt,
         "x-amz-meta-source": snapshot.source,

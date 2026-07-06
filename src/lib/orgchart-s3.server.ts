@@ -8,6 +8,7 @@ import {
 import type { Readable } from "node:stream";
 import type { EmployeeFull } from "@/lib/queries";
 import { archiveObjectKey, archiveS3JsonBeforeWrite } from "@/lib/s3-archive.server";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 function requireEnv(name: string) {
   const v = process.env[name];
@@ -170,8 +171,8 @@ async function putJson(key: string, body: unknown, metaKind: string, updatedAt: 
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("orgchart", metaKind.includes("archive") ? "archive" : "data"),
       Metadata: {
-        "x-amz-meta-kind": metaKind,
         "x-amz-meta-updated-at": updatedAt,
       },
     }),
@@ -192,6 +193,7 @@ async function archiveFullOrgChartSnapshot(reason: string) {
       Key: key,
       Body: JSON.stringify({ ...snap, archiveReason: reason, archivedAt: at.toISOString() }, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("orgchart", "archive"),
       Metadata: {
         "x-amz-meta-kind": "alyson-orgchart-full-archive",
         "x-amz-meta-reason": reason,

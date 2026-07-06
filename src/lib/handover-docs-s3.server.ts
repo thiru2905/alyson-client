@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 
 export type HandoverDocRow = {
   id: string;
@@ -125,8 +126,8 @@ export async function putHandoverDocsToS3(rows: HandoverDocRow[]) {
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("handover", "index"),
       Metadata: {
-        "x-amz-meta-kind": "alyson-hr-handover-docs",
         "x-amz-meta-updated-at": updatedAt,
       },
     }),

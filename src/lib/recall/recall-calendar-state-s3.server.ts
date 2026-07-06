@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import type { RecallCalendarPlatform } from "@/lib/recall/recall-calendar-types";
 
 export type RecallCalendarConnection = {
@@ -128,6 +129,7 @@ export async function writeRecallCalendarState(state: RecallCalendarState): Prom
       Key: STATE_KEY,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("recall", "calendar-state"),
       Metadata: { kind: "alyson-recall-calendar-state" },
     }),
   );

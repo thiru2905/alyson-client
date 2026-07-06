@@ -1,5 +1,6 @@
 import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import { isGenericMeetingTitle } from "@/lib/notetaker-session-title.server";
 
 function requireEnv(name: string) {
@@ -407,6 +408,7 @@ export async function putTasksJsonToS3({
       Key: tasksKey,
       Body: body,
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("notetaker-calendar", "tasks"),
       Metadata: metadata,
     }),
   );

@@ -1,5 +1,6 @@
 import { GetObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging, s3CostModuleFromObjectKey } from "@/lib/s3-cost-tags.server";
 
 function isMissingObjectError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -44,6 +45,7 @@ export async function archiveS3JsonBeforeWrite(
         Key: archiveKey,
         Body: text,
         ContentType: "application/json; charset=utf-8",
+        Tagging: s3CostAllocationTagging(s3CostModuleFromObjectKey(sourceKey), "archive"),
         Metadata: {
           "x-amz-meta-archived-from": sourceKey,
           "x-amz-meta-archived-at": new Date().toISOString(),

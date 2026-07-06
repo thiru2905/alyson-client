@@ -5,6 +5,7 @@ import {
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
 import { LEAVE_S3_BUCKET } from "@/lib/leave-s3.server";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import type {
   LeaveEmailProcessedEntry,
   LeaveEmailQueueFile,
@@ -45,13 +46,14 @@ async function readJson<T>(key: string): Promise<T | null> {
   }
 }
 
-async function writeJson(key: string, body: unknown): Promise<void> {
+async function writeJson(key: string, body: unknown, resource: string): Promise<void> {
   await s3().send(
     new PutObjectCommand({
       Bucket: LEAVE_S3_BUCKET,
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("leave-email", resource),
     }),
   );
 }
@@ -86,7 +88,7 @@ export async function writeLeaveEmailQueue(items: LeaveEmailQueueItem[]): Promis
     updatedAt: new Date().toISOString(),
     items,
   };
-  await writeJson(LEAVE_EMAIL_QUEUE_S3_KEY, file);
+  await writeJson(LEAVE_EMAIL_QUEUE_S3_KEY, file, "queue");
   return file;
 }
 
@@ -115,7 +117,7 @@ export async function writeLeaveEmailSyncState(patch: Partial<LeaveEmailSyncStat
   if (patch.lastError === null || patch.lastError === "") {
     delete next.lastError;
   }
-  await writeJson(LEAVE_EMAIL_SYNC_STATE_S3_KEY, next);
+  await writeJson(LEAVE_EMAIL_SYNC_STATE_S3_KEY, next, "sync-state");
   return next;
 }
 
@@ -128,6 +130,7 @@ export async function appendLeaveEmailProcessed(entry: LeaveEmailProcessedEntry)
       Key: LEAVE_EMAIL_PROCESSED_S3_KEY,
       Body: existing + line,
       ContentType: "application/x-ndjson; charset=utf-8",
+      Tagging: s3CostAllocationTagging("leave-email", "processed"),
     }),
   );
 }

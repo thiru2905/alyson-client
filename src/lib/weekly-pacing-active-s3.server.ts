@@ -6,6 +6,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { Readable } from "node:stream";
+import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import { canonicalOfficialEmail, emailLookupKeys } from "@/lib/cintara-email";
 
 export type WeeklyPacingActiveOverrideEntry = {
@@ -143,8 +144,8 @@ export async function writeWeeklyPacingActiveOverridesToS3(
       Key: key,
       Body: JSON.stringify(body, null, 2),
       ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("weekly-pacing", "active-overrides"),
       Metadata: {
-        "x-amz-meta-kind": "weekly-pacing-active-overrides",
         "x-amz-meta-updated-at": updatedAt,
       },
     }),
