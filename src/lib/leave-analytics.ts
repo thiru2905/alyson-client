@@ -53,7 +53,144 @@ export type LeaveAnalyticsReport = {
   }>;
   recentLeave: LeaveRecordFact[];
   allLeave: LeaveRecordFact[];
+  weekdayBoard: LeaveWeekdayBoard;
 };
+
+export const LEAVE_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
+
+export type LeaveWeekdayOccurrence = {
+  date: string;
+  weekday: number;
+  weekdayLabel: (typeof LEAVE_WEEKDAY_LABELS)[number];
+  employeeId: string;
+  employeeName: string;
+  team: string;
+  leaveType: LeaveRecordEvent["leaveType"];
+};
+
+export type LeaveWeekdayBoardCell = {
+  employeeId: string;
+  name: string;
+  team: string;
+  days: number;
+};
+
+export type LeaveWeekdayBoardColumn = {
+  weekday: number;
+  label: (typeof LEAVE_WEEKDAY_LABELS)[number];
+  totalDays: number;
+  uniqueEmployees: number;
+  employees: LeaveWeekdayBoardCell[];
+};
+
+export type LeaveWeekdayBoard = {
+  columns: LeaveWeekdayBoardColumn[];
+  trend: Array<{ label: string; totalDays: number; uniqueEmployees: number }>;
+  employeeMatrix: Array<{
+    employeeId: string;
+    name: string;
+    team: string;
+    byWeekday: Record<(typeof LEAVE_WEEKDAY_LABELS)[number], number>;
+    total: number;
+  }>;
+};
+
+function weekdayLabelFromUtc(dow: number): (typeof LEAVE_WEEKDAY_LABELS)[number] | null {
+  if (dow < 1 || dow > 5) return null;
+  return LEAVE_WEEKDAY_LABELS[dow - 1];
+}
+
+/** Expand each leave range into individual Mon–Fri dates (weekends excluded). */
+export function expandLeaveToWeekdays(facts: LeaveRecordFact[]): LeaveWeekdayOccurrence[] {
+  const out: LeaveWeekdayOccurrence[] = [];
+  for (const p of facts) {
+    const cur = new Date(`${p.startDate}T12:00:00Z`);
+    const endD = new Date(`${p.endDate}T12:00:00Z`);
+    if (Number.isNaN(cur.getTime()) || Number.isNaN(endD.getTime()) || endD < cur) continue;
+    while (cur.getTime() <= endD.getTime()) {
+      const label = weekdayLabelFromUtc(cur.getUTCDay());
+      if (label) {
+        out.push({
+          date: cur.toISOString().slice(0, 10),
+          weekday: cur.getUTCDay(),
+          weekdayLabel: label,
+          employeeId: p.employeeId,
+          employeeName: p.employeeName,
+          team: p.team,
+          leaveType: p.leaveType,
+        });
+      }
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+  return out;
+}
+
+export function buildLeaveWeekdayBoard(facts: LeaveRecordFact[]): LeaveWeekdayBoard {
+  const occurrences = expandLeaveToWeekdays(facts);
+  const columnMaps = new Map<number, Map<string, LeaveWeekdayBoardCell>>();
+  const matrixMap = new Map<
+    string,
+    {
+      employeeId: string;
+      name: string;
+      team: string;
+      byWeekday: Record<(typeof LEAVE_WEEKDAY_LABELS)[number], number>;
+      total: number;
+    }
+  >();
+
+  for (const o of occurrences) {
+    const col = columnMaps.get(o.weekday) ?? new Map<string, LeaveWeekdayBoardCell>();
+    const cell = col.get(o.employeeId) ?? {
+      employeeId: o.employeeId,
+      name: o.employeeName,
+      team: o.team,
+      days: 0,
+    };
+    cell.days += 1;
+    col.set(o.employeeId, cell);
+    columnMaps.set(o.weekday, col);
+
+    const row = matrixMap.get(o.employeeId) ?? {
+      employeeId: o.employeeId,
+      name: o.employeeName,
+      team: o.team,
+      byWeekday: { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0 },
+      total: 0,
+    };
+    row.byWeekday[o.weekdayLabel] += 1;
+    row.total += 1;
+    matrixMap.set(o.employeeId, row);
+  }
+
+  const columns: LeaveWeekdayBoardColumn[] = [1, 2, 3, 4, 5].map((weekday) => {
+    const label = LEAVE_WEEKDAY_LABELS[weekday - 1];
+    const employees = [...(columnMaps.get(weekday)?.values() ?? [])].sort(
+      (a, b) => b.days - a.days || a.name.localeCompare(b.name),
+    );
+    const totalDays = employees.reduce((s, e) => s + e.days, 0);
+    return {
+      weekday,
+      label,
+      totalDays,
+      uniqueEmployees: employees.length,
+      employees,
+    };
+  });
+
+  const trend = columns.map((c) => ({
+    label: c.label,
+    totalDays: c.totalDays,
+    uniqueEmployees: c.uniqueEmployees,
+  }));
+
+  const employeeMatrix = [...matrixMap.values()].sort(
+    (a, b) => b.total - a.total || a.name.localeCompare(b.name),
+  );
+
+  return { columns, trend, employeeMatrix };
+}
 
 function normLabel(v: string, fallback: string): string {
   const t = v.trim();
@@ -199,6 +336,8 @@ export function buildLeaveAnalyticsReport(
     })
     .sort((a, b) => b.totalDays - a.totalDays || a.name.localeCompare(b.name));
 
+  const weekdayBoard = buildLeaveWeekdayBoard(allLeave);
+
   return {
     generatedAt: new Date().toISOString(),
     ledgerUpdatedAt,
@@ -220,6 +359,7 @@ export function buildLeaveAnalyticsReport(
     employeeBreakdown,
     recentLeave: allLeave.slice(0, 25),
     allLeave,
+    weekdayBoard,
   };
 }
 

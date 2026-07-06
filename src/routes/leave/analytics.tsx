@@ -19,6 +19,7 @@ import {
 import { BarChart3, Loader2, RefreshCw } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { getLeaveAnalytics } from "@/lib/leave-ledger-functions";
+import { buildLeaveWeekdayBoard, LEAVE_WEEKDAY_LABELS } from "@/lib/leave-analytics";
 import { leaveTypeLabel } from "@/lib/leave-schema";
 
 export const Route = createFileRoute("/leave/analytics")({
@@ -69,12 +70,14 @@ function LeaveAnalyticsPage() {
     const withLeave = employeeBreakdown.filter((e) => e.tookLeave).length;
     const activeEmployees = employeeBreakdown.length;
     const totalDays = allLeave.reduce((s, p) => s + p.days, 0);
+    const weekdayBoard = buildLeaveWeekdayBoard(allLeave);
 
     return {
       ...base,
       allLeave,
       byTeam,
       employeeBreakdown,
+      weekdayBoard,
       summary: {
         ...base.summary,
         totalDays,
@@ -108,6 +111,8 @@ function LeaveAnalyticsPage() {
       })) ?? [],
     [report],
   );
+
+  const weekdayTrendChart = useMemo(() => report?.weekdayBoard.trend ?? [], [report]);
 
   return (
     <div className="px-5 md:px-8 py-6 space-y-5">
@@ -183,6 +188,126 @@ function LeaveAnalyticsPage() {
               label="With / without leave"
               value={`${report.summary.employeesWithLeave} / ${report.summary.employeesWithoutLeave}`}
             />
+          </div>
+
+          <div className="surface-card p-4 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+              <div>
+                <div className="font-medium text-[13px]">Leave by day of week</div>
+                <div className="text-[12px] text-muted-foreground mt-0.5">
+                  Who took leave on Mon–Fri in {year}
+                  {teamFilter !== "__all__" ? ` · ${teamFilter}` : ""}. Weekends excluded.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                {report.weekdayBoard.columns.map((col) => (
+                  <span
+                    key={col.label}
+                    className="px-2 py-1 rounded-md border border-border bg-muted/30 tabular-nums"
+                  >
+                    <span className="font-medium text-foreground">{col.label}</span>
+                    <span className="text-muted-foreground"> · {col.totalDays}d · {col.uniqueEmployees} people</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="h-[220px]">
+              {weekdayTrendChart.every((d) => d.totalDays === 0) ? (
+                <EmptyChart />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weekdayTrendChart} margin={{ left: 8, right: 8, top: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.25} />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="totalDays" name="Leave days" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="uniqueEmployees" name="People" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {report.weekdayBoard.columns.map((col) => (
+                <div
+                  key={col.label}
+                  className="rounded-lg border border-border bg-background/60 flex flex-col h-[min(360px,55vh)] min-h-[220px] overflow-hidden"
+                >
+                  <div className="px-3 py-2 border-b border-border bg-muted/20 shrink-0">
+                    <div className="font-medium text-[12px]">{col.label}</div>
+                    <div className="text-[10px] text-muted-foreground tabular-nums">
+                      {col.totalDays} day{col.totalDays === 1 ? "" : "s"} · {col.uniqueEmployees} people
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-2 pr-1 space-y-1.5">
+                    {col.employees.length === 0 ? (
+                      <div className="text-[11px] text-muted-foreground text-center py-6">No leave</div>
+                    ) : (
+                      col.employees.map((e) => (
+                        <div
+                          key={e.employeeId}
+                          className="rounded-md border border-border/80 px-2 py-1.5 bg-background"
+                          title={`${e.name} · ${e.team}`}
+                        >
+                          <div className="text-[11px] font-medium truncate">{e.name}</div>
+                          <div className="text-[10px] text-muted-foreground flex justify-between gap-1">
+                            <span className="truncate">{e.team}</span>
+                            <span className="tabular-nums shrink-0">
+                              {e.days}d
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="surface-ops overflow-x-auto">
+            <div className="px-4 py-3 font-medium text-[13px]">Weekday pattern by employee ({year})</div>
+            <table className="ops-table w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  <th align="left">Employee</th>
+                  <th align="left">Team</th>
+                  {LEAVE_WEEKDAY_LABELS.map((d) => (
+                    <th key={d} align="right">
+                      {d}
+                    </th>
+                  ))}
+                  <th align="right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.weekdayBoard.employeeMatrix.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-8 text-muted-foreground text-[12px]">
+                      No weekday leave in this period
+                    </td>
+                  </tr>
+                ) : (
+                  report.weekdayBoard.employeeMatrix.map((e) => (
+                    <tr key={e.employeeId}>
+                      <td className="font-medium">{e.name}</td>
+                      <td className="text-muted-foreground">{e.team}</td>
+                      {LEAVE_WEEKDAY_LABELS.map((d) => (
+                        <td key={d} align="right" className="font-mono text-[12px]">
+                          {e.byWeekday[d] > 0 ? e.byWeekday[d] : "—"}
+                        </td>
+                      ))}
+                      <td align="right" className="font-mono font-medium">
+                        {e.total}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
