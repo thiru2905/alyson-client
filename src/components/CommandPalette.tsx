@@ -5,7 +5,8 @@ import { Search, ArrowRight } from "lucide-react";
 const ROUTES = [
   { to: "/", label: "Dashboard", group: "Workspace" },
   { to: "/team", label: "Team directory", group: "People" },
-  { to: "/boarding", label: "Onboarding & offboarding", group: "People" },
+  { to: "/employee-onboarding", label: "Employee onboarding", group: "People" },
+  // { to: "/boarding", label: "Onboarding & offboarding", group: "People" },
   { to: "/performance", label: "Performance", group: "People" },
   { to: "/leave", label: "Leave", group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/attendance", label: "Attendance", group: "People" },

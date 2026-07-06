@@ -37,8 +37,8 @@ const NEW_BADGE_ROUTES = new Set<string>([
   "/alyson-notetaker/bot-join-report",
   "/alyson-notetaker/unified-meetings",
   "/alyson-notetaker/tasks",
-  "/boarding",
   "/employee-onboarding",
+  // "/boarding", — superseded by Employee Onboarding
   "/handover-documentation",
   "/workspace-activity",
   "/employee-scoring",
@@ -50,7 +50,8 @@ const NAV: NavItem[] = [
   { to: "/alyson-brain", label: "Alyson Brain", icon: Sparkles, group: "Workspace", roles: ["super_admin", "ceo", "hr", "manager"] },
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, end: true, group: "Workspace" },
   { to: "/team", label: "Team", icon: Users, group: "People" },
-  { to: "/boarding", label: "Boarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
+  // Boarding — disabled; use Employee Onboarding instead
+  // { to: "/boarding", label: "Boarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/employee-onboarding", label: "Employee Onboarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People" },
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },

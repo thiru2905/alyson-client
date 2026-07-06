@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cloud, Loader2, RefreshCw, UserPlus } from "lucide-react";
@@ -263,12 +263,14 @@ function EmployeeOnboardingPage() {
               {syncM.isPending ? "Syncing…" : "Sync org chart fields"}
             </button>
           ) : null}
+          {/* Boarding module disabled — redundant with Employee Onboarding
           <Link
             to="/boarding"
             className="h-8 px-3 rounded-md border border-border text-[11.5px] font-medium inline-flex items-center hover:bg-muted/50"
           >
             Boarding module
           </Link>
+          */}
         </div>
 
         {q.isError ? (
