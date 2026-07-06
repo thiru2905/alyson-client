@@ -18,7 +18,7 @@ async function runTimeDoctorTokenCron(request: Request) {
 
   try {
     const result = await proactiveRefreshTimeDoctorTokenIfDue();
-    return Response.json({ ok: true, ...result });
+    return Response.json({ ok: true, skipped: true, mode: "access_token_only", ...result });
   } catch (e) {
     const message = formatTimeDoctorAuthError(e);
     console.error("[cron/time-doctor-token]", message.replace(/TIME_DOCTOR_AUTH_EXPIRED:\s*/i, ""));

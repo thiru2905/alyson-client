@@ -914,8 +914,6 @@ async function upstreamFetch<T>(
   const {
     timeDoctorOAuthEnv,
     getValidAccessToken,
-    refreshTimeDoctorAccessToken,
-    canConfigureTimeDoctorRefresh,
     TimeDoctorAuthError,
   } = await import("@/lib/time-doctor-token-manager.server");
 
@@ -950,32 +948,18 @@ async function upstreamFetch<T>(
     });
   };
 
-  const canRefresh = init?.auth !== "access_only" && canConfigureTimeDoctorRefresh();
-
   let token: string;
   try {
-    token = await getValidAccessToken({ accessOnly: init?.auth === "access_only" });
+    token = await getValidAccessToken();
   } catch (e) {
     throw e instanceof TimeDoctorAuthError ? e : new TimeDoctorAuthError(String(e));
   }
 
-  let res = await doFetch(token);
-  let text = await res.text().catch(() => "");
-
-  if (!res.ok && (res.status === 401 || res.status === 403) && canRefresh) {
-    try {
-      const newToken = await refreshTimeDoctorAccessToken();
-      res = await doFetch(newToken);
-      text = await res.text().catch(() => "");
-    } catch (refreshErr) {
-      throw refreshErr instanceof TimeDoctorAuthError
-        ? refreshErr
-        : new TimeDoctorAuthError(String(refreshErr));
-    }
-  }
+  const res = await doFetch(token);
+  const text = await res.text().catch(() => "");
 
   if (!res.ok) {
-    if ((res.status === 401 || res.status === 403) && canRefresh) {
+    if (res.status === 401 || res.status === 403) {
       throw new TimeDoctorAuthError(formatTimeDoctorAuthError(text || res.statusText));
     }
     throw new Error(`Upstream error ${res.status} ${res.statusText}: ${text}`.slice(0, 2000));

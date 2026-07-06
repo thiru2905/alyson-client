@@ -2,7 +2,7 @@
 export const TIME_DOCTOR_AUTH_ERROR_PREFIX = "TIME_DOCTOR_AUTH_EXPIRED:";
 
 export const TIME_DOCTOR_REAUTH_MESSAGE =
-  "Session expired – please re-authenticate with Time Doctor (update the OAuth refresh token in environment settings).";
+  "Session expired – please update API_ACCESS_TOKEN in environment settings (Time Doctor access token, ~5 day lifetime).";
 
 export function formatTimeDoctorAuthError(cause?: unknown): string {
   const detail =
