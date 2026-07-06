@@ -210,6 +210,7 @@ function monthLabel(key: string): string {
 export function flattenLeaveRecords(ledgers: EmployeeLeaveLedger[], year?: number): LeaveRecordFact[] {
   const out: LeaveRecordFact[] = [];
   for (const ledger of ledgers) {
+    if (!ledger.active) continue;
     for (const e of ledger.leaveEvents) {
       if (year != null && !e.startDate.startsWith(String(year))) continue;
       out.push({
@@ -238,7 +239,7 @@ export function buildLeaveAnalyticsReport(
   year = new Date().getFullYear(),
 ): LeaveAnalyticsReport {
   const activeLedgers = ledgers.filter((l) => l.active);
-  const allLeave = flattenLeaveRecords(ledgers, year);
+  const allLeave = flattenLeaveRecords(activeLedgers, year);
   const totalDays = allLeave.reduce((s, p) => s + p.days, 0);
   const leaveCount = allLeave.length;
   const employeesWithLeaveSet = new Set(allLeave.map((p) => p.employeeId));
