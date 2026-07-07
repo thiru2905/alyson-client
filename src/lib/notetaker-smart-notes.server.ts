@@ -62,6 +62,7 @@ export async function runSmartMeetingNotes(data: { title?: string; transcriptTex
     "- Open questions",
     "Keep it tight and operational.",
     "Do not invent details not present in the summaries.",
+    "Output raw Markdown only — do not wrap the response in ```markdown or other code fences.",
   ].join("\n");
 
   const combined = await deepseekNotesChat(

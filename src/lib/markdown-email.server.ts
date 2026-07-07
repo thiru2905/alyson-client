@@ -6,6 +6,36 @@ function escHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Remove LLM-style markdown code fences so notes render as normal email content. */
+export function normalizeMeetingNotesMarkdown(md: string): string {
+  let text = String(md || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return text;
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const wrapped = text.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```\s*$/i);
+    if (wrapped) {
+      text = wrapped[1]!.trim();
+      changed = true;
+      continue;
+    }
+  }
+
+  text = text.replace(/^```(?:markdown|md)?\s*\n?/i, "");
+  text = text.replace(/\n?```\s*$/i, "");
+
+  return text
+    .split("\n")
+    .filter((line) => !/^```(?:markdown|md)?\s*$/i.test(line.trim()) && line.trim() !== "```")
+    .join("\n")
+    .trim();
+}
+
+function renderEmailCodeBlock(code: string): string {
+  return `<pre style="margin:12px 0;padding:12px 14px;background:#f4f4f5;border:1px solid #e5e7eb;border-radius:8px;overflow-x:auto;font-size:12px;line-height:1.5;color:#1f2937;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;">${escHtml(code)}</pre>`;
+}
+
 function inlineMarkdown(text: string): string {
   return escHtml(text)
     .replace(
@@ -87,7 +117,7 @@ function renderEmailTable(header: string[], rows: string[][]): string {
 
 /** Convert common meeting-notes markdown into email-safe HTML (no attachments). */
 export function markdownToEmailHtml(md: string): string {
-  const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeMeetingNotesMarkdown(md).split("\n");
   const out: string[] = [];
   let inUl = false;
   let inOl = false;
@@ -111,6 +141,35 @@ export function markdownToEmailHtml(md: string): string {
 
     if (!trimmed) {
       closeLists();
+      i++;
+      continue;
+    }
+
+    const fenceOpen = trimmed.match(/^```([\w-]*)\s*$/);
+    if (fenceOpen) {
+      closeLists();
+      const lang = (fenceOpen[1] ?? "").toLowerCase();
+      i++;
+      const bodyLines: string[] = [];
+      while (i < lines.length) {
+        const closeLine = (lines[i] ?? "").trim();
+        if (closeLine === "```" || closeLine === "~~~") break;
+        bodyLines.push(lines[i] ?? "");
+        i++;
+      }
+      if (i < lines.length) i++;
+
+      const inner = bodyLines.join("\n").trim();
+      if (!inner) continue;
+      if (!lang || lang === "markdown" || lang === "md") {
+        out.push(markdownToEmailHtml(inner));
+      } else {
+        out.push(renderEmailCodeBlock(inner));
+      }
+      continue;
+    }
+
+    if (trimmed === "```" || /^```(?:markdown|md)?$/i.test(trimmed)) {
       i++;
       continue;
     }
@@ -184,7 +243,7 @@ export function markdownToEmailHtml(md: string): string {
 }
 
 export function markdownToPlainEmailText(md: string): string {
-  const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+  const lines = normalizeMeetingNotesMarkdown(md).split("\n");
   const out: string[] = [];
   let i = 0;
 
@@ -194,6 +253,35 @@ export function markdownToPlainEmailText(md: string): string {
 
     if (!trimmed) {
       i++;
+      continue;
+    }
+
+    if (/^```(?:markdown|md)?\s*$/i.test(trimmed) || trimmed === "```") {
+      i++;
+      continue;
+    }
+
+    const fenceOpen = trimmed.match(/^```([\w-]*)\s*$/);
+    if (fenceOpen) {
+      const lang = (fenceOpen[1] ?? "").toLowerCase();
+      i++;
+      const bodyLines: string[] = [];
+      while (i < lines.length) {
+        const closeLine = (lines[i] ?? "").trim();
+        if (closeLine === "```" || closeLine === "~~~") break;
+        bodyLines.push(lines[i] ?? "");
+        i++;
+      }
+      if (i < lines.length) i++;
+
+      const inner = bodyLines.join("\n").trim();
+      if (inner) {
+        if (!lang || lang === "markdown" || lang === "md") {
+          out.push(markdownToPlainEmailText(inner));
+        } else {
+          out.push(inner);
+        }
+      }
       continue;
     }
 
