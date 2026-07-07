@@ -141,6 +141,7 @@ function BonusAnalyticsPage() {
             className="rounded border-border"
           />
           Active employees only
+          <span className="text-[11px] text-muted-foreground/80">(Weekly Pacing)</span>
         </label>
         <select
           value={granularity}

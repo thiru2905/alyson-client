@@ -1,5 +1,6 @@
 import { resolveCintaraActiveForPacing, type CintaraActiveMemberLookup } from "@/lib/cintara-active-members";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
+import type { EmployeeCompensationLedger } from "@/lib/bonus-schema";
 import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 import type { OrgChartRosterLookup } from "@/lib/org-chart-roster";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
@@ -62,6 +63,44 @@ export async function enrichLeaveLedgersWithPacingActive(
     }
     const resolved = resolvePacingActiveWithOverrides(overrides, activeLookup, rosterLookup, {
       employeeId: id,
+      email: ledger.officialEmail,
+      name: ledger.employeeName,
+    });
+    next[id] = { ...ledger, active: resolved.active };
+  }
+
+  return next;
+}
+
+/** Active flag for Bonus — same Weekly Pacing rules (domain roster + S3 overrides). */
+export async function enrichBonusLedgersWithPacingActive(
+  employees: Record<string, EmployeeCompensationLedger>,
+  onboardingEmployeeIds: Set<string>,
+): Promise<Record<string, EmployeeCompensationLedger>> {
+  const overrides = await loadWeeklyPacingActiveOverridesForReport();
+  const activeLookup = getCintaraActiveMemberLookup();
+  const rosterLookup = getOrgChartRosterLookup();
+
+  const { listTimeDoctorUsersLight } = await import("@/lib/time-doctor-functions");
+  const tdUsers = await listTimeDoctorUsersLight().catch(() => []);
+  const tdIdByEmail = new Map<string, string>();
+  for (const u of tdUsers) {
+    const email = String(u.email || "").trim().toLowerCase();
+    if (email) tdIdByEmail.set(email, u.id);
+  }
+
+  const next: Record<string, EmployeeCompensationLedger> = {};
+
+  for (const [id, ledger] of Object.entries(employees)) {
+    if (!onboardingEmployeeIds.has(id)) {
+      next[id] = { ...ledger, active: false };
+      continue;
+    }
+
+    const emailKey = ledger.officialEmail.trim().toLowerCase();
+    const pacingEmployeeId = (emailKey && tdIdByEmail.get(emailKey)) || id;
+    const resolved = resolvePacingActiveWithOverrides(overrides, activeLookup, rosterLookup, {
+      employeeId: pacingEmployeeId,
       email: ledger.officialEmail,
       name: ledger.employeeName,
     });

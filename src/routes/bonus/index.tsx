@@ -203,6 +203,7 @@ function BonusEmployeesPage() {
             className="rounded border-border"
           />
           Active employees only
+          <span className="text-[11px] text-muted-foreground/80">(Weekly Pacing)</span>
         </label>
         <div className="text-[12px] text-muted-foreground sm:ml-auto">
           Showing {filtered.length} of {ledgers.length}

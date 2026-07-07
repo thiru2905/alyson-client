@@ -18,6 +18,7 @@ import type {
 import { newBonusEventId, newShareEventId } from "@/lib/bonus-schema";
 import { ensureOnboardingOnS3 } from "@/lib/onboarding-s3.server";
 import type { OnboardingRow } from "@/lib/onboarding-schema";
+import { enrichBonusLedgersWithPacingActive } from "@/lib/weekly-pacing-active.server";
 
 function requireEnv(name: string) {
   const v = process.env[name];
@@ -99,7 +100,7 @@ function ledgerFromOnboardingRow(
     jobTitle: String(row["Job Title"] ?? existing?.jobTitle ?? "").trim(),
     team: String(row.Team ?? existing?.team ?? "").trim(),
     location: String(row.Location ?? existing?.location ?? "").trim(),
-    active: true,
+    active: existing?.active ?? true,
     bonusEvents: existing?.bonusEvents ?? [],
     shareEvents: existing?.shareEvents ?? [],
     updatedAt: existing?.updatedAt ?? now,
@@ -267,7 +268,12 @@ export async function ensureBonusOnS3(actor?: string | null) {
   const onboarding = await ensureOnboardingOnS3(actor);
   const existing = await getBonusFromS3();
   const prevEmployees = existing.file?.employees ?? {};
-  const merged = syncLedgersWithOnboarding(onboarding.rows, prevEmployees);
+  const synced = syncLedgersWithOnboarding(onboarding.rows, prevEmployees);
+
+  const onboardingIds = new Set(
+    onboarding.rows.map((row) => employeeIdFromRow(row)).filter(Boolean),
+  );
+  const merged = await enrichBonusLedgersWithPacingActive(synced, onboardingIds);
 
   const prevCount = Object.keys(prevEmployees).length;
   const mergedCount = Object.keys(merged).length;
@@ -284,10 +290,10 @@ export async function ensureBonusOnS3(actor?: string | null) {
         prev.officialEmail !== String(row["Official Email"] ?? "").trim() ||
         prev.team !== String(row.Team ?? "").trim() ||
         prev.location !== String(row.Location ?? "").trim() ||
-        prev.jobTitle !== String(row["Job Title"] ?? "").trim() ||
-        !prev.active
+        prev.jobTitle !== String(row["Job Title"] ?? "").trim()
       );
-    });
+    }) ||
+    Object.entries(merged).some(([id, ledger]) => prevEmployees[id]?.active !== ledger.active);
 
   if (!isBootstrap && !rosterChanged && existing.file) {
     return {

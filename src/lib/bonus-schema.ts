@@ -33,7 +33,7 @@ export type EmployeeCompensationLedger = {
   jobTitle: string;
   team: string;
   location: string;
-  /** False when employee was removed from onboarding roster (ledger history retained). */
+  /** Active per Weekly Pacing (Cintara domain + S3 overrides). False when removed from onboarding. */
   active: boolean;
   bonusEvents: BonusCashEvent[];
   shareEvents: ShareEvent[];
