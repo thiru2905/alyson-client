@@ -2,6 +2,10 @@ import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-not
 import { composeTranscript, contentHash, persistMeetingToS3 } from "@/lib/notetaker-persistence.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { runSmartMeetingNotes } from "@/lib/notetaker-smart-notes.server";
+import {
+  resolveMeetingParticipantDisplayNames,
+} from "@/lib/meeting-notes-names.server";
+import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
 import { loadBotIndexDoc, mergeNotetakerSessions } from "@/lib/notetaker-sessions-history.server";
 import { getNotesMdFromS3, getTranscriptTextFromS3, invalidateNotetakerCalendarS3Cache } from "@/lib/notetaker-s3-calendar.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
@@ -92,10 +96,25 @@ async function resolveNotesForS3(args: {
   });
   if (!transcriptText) return null;
 
+  let participantNames: string[] = [];
+  try {
+    const idx = await loadBotIndexDoc(args.botId).catch(() => null);
+    const participants = await resolveMeetingParticipants({
+      botId: args.botId,
+      transcriptKey: idx?.transcriptKey,
+      hasTranscript: true,
+      transcriptText,
+    });
+    participantNames = await resolveMeetingParticipantDisplayNames({ participants });
+  } catch {
+    // optional — notes still generate without participant hints
+  }
+
   try {
     const smart = await runSmartMeetingNotes({
       title: args.session.title || "Meeting",
       transcriptText,
+      participantNames,
     });
     if (String(smart?.notes || "").trim()) {
       return { notesMd: String(smart.notes).trim(), model: smart.model };
@@ -505,10 +524,22 @@ export async function ensureMeetingNotesByPrefix(
   }
   if (!transcriptText) return { ok: false, skipped: "empty_transcript" };
 
+  let participantNames: string[] = [];
+  try {
+    const participants = await resolveMeetingParticipants({
+      botId: botId ?? null,
+      transcriptText,
+    });
+    participantNames = await resolveMeetingParticipantDisplayNames({ participants });
+  } catch {
+    // optional
+  }
+
   try {
     const smart = await runSmartMeetingNotes({
       title: titleFromPrefix(prefix),
       transcriptText,
+      participantNames,
     });
     const notesMd = String(smart?.notes || "").trim();
     if (!notesMd) return { ok: false, skipped: "notes_generation_failed" };

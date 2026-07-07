@@ -1,4 +1,5 @@
 import { deepseekApiKey, deepseekChat, resolveDeepseekModel, type GroqMessage } from "@/lib/groq-chat.server";
+import { expandParticipantNamesInMeetingNotes } from "@/lib/meeting-notes-names.server";
 
 function chunkText(text: string, chunkSize: number, overlap: number) {
   const out: string[] = [];
@@ -17,13 +18,22 @@ async function deepseekNotesChat(messages: GroqMessage[], model: string): Promis
   return deepseekChat(messages, 0.2, { model });
 }
 
-export async function runSmartMeetingNotes(data: { title?: string; transcriptText: string }) {
+export async function runSmartMeetingNotes(data: {
+  title?: string;
+  transcriptText: string;
+  /** Full names of meeting participants — used in prompts and to expand initials in output. */
+  participantNames?: string[];
+}) {
   if (!deepseekApiKey()) {
     throw new Error("Missing DEEPSEEK_API_KEY — meeting notes require DeepSeek.");
   }
 
   const title = (data.title || "Meeting").trim();
   const transcript = String(data.transcriptText || "").trim();
+  const participantNames = [...new Set((data.participantNames ?? []).map((n) => n.trim()).filter(Boolean))];
+  const participantLine = participantNames.length
+    ? `Known participants (always use these full names, never initials): ${participantNames.join(", ")}`
+    : "";
   const model = await resolveDeepseekModel();
 
   const chunks =
@@ -37,7 +47,11 @@ export async function runSmartMeetingNotes(data: { title?: string; transcriptTex
       "Summarize the transcript chunk into high-signal bullet points.",
       "Extract: decisions, action items (with owner if mentioned), risks/blockers, and key context.",
       "Be concise. Do not hallucinate names or facts not in the chunk.",
-    ].join("\n");
+      participantLine,
+      "When naming people, use their full name from the participant list — never abbreviations or initials (e.g. use Thirumalai Nambi, not TN).",
+    ]
+      .filter(Boolean)
+      .join("\n");
     const summary = await deepseekNotesChat(
       [
         { role: "system", content: sys },
@@ -60,10 +74,15 @@ export async function runSmartMeetingNotes(data: { title?: string; transcriptTex
     "- Action items",
     "- Risks / blockers",
     "- Open questions",
+    participantLine,
+    "Use full participant names everywhere (summary, action item owners). Never use initials or abbreviations.",
+    "Action items format: **Full Name**: task description",
     "Keep it tight and operational.",
     "Do not invent details not present in the summaries.",
     "Output raw Markdown only — do not wrap the response in ```markdown or other code fences.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const combined = await deepseekNotesChat(
     [
@@ -76,8 +95,12 @@ export async function runSmartMeetingNotes(data: { title?: string; transcriptTex
     model,
   );
 
-  const notes = combined.trim();
-  if (!notes) throw new Error("DeepSeek returned empty notes");
+  const notesRaw = combined.trim();
+  if (!notesRaw) throw new Error("DeepSeek returned empty notes");
+
+  const notes = participantNames.length
+    ? expandParticipantNamesInMeetingNotes(notesRaw, participantNames)
+    : notesRaw;
 
   return {
     notes,

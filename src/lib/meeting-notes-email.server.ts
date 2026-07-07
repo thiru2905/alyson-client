@@ -7,6 +7,10 @@ import {
   wrapMeetingNotesEmailHtml,
 } from "@/lib/markdown-email.server";
 import { buildMeetingNotesEmailSubject } from "@/lib/meeting-notes-email-subject";
+import {
+  expandParticipantNamesInMeetingNotes,
+  resolveMeetingParticipantDisplayNames,
+} from "@/lib/meeting-notes-names.server";
 import { resolveMeetingParticipants } from "@/lib/notetaker-meeting-participants.server";
 import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
 import { getNotesMdFromS3 } from "@/lib/notetaker-s3-calendar.server";
@@ -121,14 +125,32 @@ async function loadNotesMarkdown(botId: string, notesMdOverride?: string): Promi
   const indexDoc = await loadBotIndexDoc(botId).catch(() => null);
   const title = String(indexDoc?.title || "Meeting").trim() || "Meeting";
 
-  if (override) return { notesMd: override, title };
-
-  if (indexDoc?.notesKey) {
-    const notesMd = (await getNotesMdFromS3({ notesKey: indexDoc.notesKey })).trim();
-    if (notesMd) return { notesMd, title };
+  let notesMd = "";
+  if (override) {
+    notesMd = override;
+  } else if (indexDoc?.notesKey) {
+    notesMd = (await getNotesMdFromS3({ notesKey: indexDoc.notesKey })).trim();
   }
 
-  throw new Error("No meeting notes found. Generate and persist notes before sending email.");
+  if (!notesMd) {
+    throw new Error("No meeting notes found. Generate and persist notes before sending email.");
+  }
+
+  try {
+    const participants = await resolveMeetingParticipants({
+      botId,
+      transcriptKey: indexDoc?.transcriptKey,
+      hasTranscript: Boolean(indexDoc?.transcriptKey),
+    });
+    const displayNames = await resolveMeetingParticipantDisplayNames({ participants });
+    if (displayNames.length) {
+      notesMd = expandParticipantNamesInMeetingNotes(notesMd, displayNames);
+    }
+  } catch {
+    // send with raw notes if participant resolution fails
+  }
+
+  return { notesMd, title };
 }
 
 function buildEmailSubject(title: string, meetingStartAt?: string | null): string {

@@ -29,6 +29,10 @@ import {
   resolveRosterPersonEmail,
 } from "@/lib/speaker-identity";
 import { meetingTasksKey, type MeetingListPersonTasks, type MeetingListTask } from "@/lib/notetaker-meeting-ui";
+import {
+  expandParticipantNamesInMeetingNotes,
+  resolveOwnerDisplayName,
+} from "@/lib/meeting-notes-names.server";
 
 const ExtractedTaskSchema = z.object({
   title: z.string(),
@@ -176,7 +180,7 @@ async function extractTasksWithDeepseek(args: {
     '{"people":[{"name":"Person Name","email":"optional@email.com","tasks":[{"title":"...","dueHint":"...","priority":"low|medium|high","status":"open|done|unclear","sourceQuote":"..."}]}]}',
     "Rules:",
     "- Include one entry per participant who has at least one task; omit people with zero tasks.",
-    "- Only assign tasks to people in the participant list — use their exact name.",
+    "- Only assign tasks to people in the participant list — use their exact full name (never initials).",
     "- Do not invent owners, deadlines, or tasks not supported by the text.",
     "- Prefer open items; mark done only when explicitly completed.",
     "- If no tasks for anyone, return {\"people\":[]}.",
@@ -195,18 +199,23 @@ async function extractTasksWithDeepseek(args: {
   const parsed = MeetingTasksByPersonSchema.parse(extractJsonObject(raw));
   const rosterByKey = new Map(args.roster.map((p) => [personKey(p.name, p.email), p]));
   const rosterByName = new Map(args.roster.map((p) => [normalizePersonName(p.name), p]));
+  const rosterDisplayNames = args.roster.map((p) => p.name);
 
   const people: MeetingListPersonTasks[] = [];
   for (const row of parsed.people) {
-    const name = row.name.trim();
-    if (!name) continue;
+    const rawName = row.name.trim();
+    if (!rawName) continue;
+    const name = resolveOwnerDisplayName(rawName, rosterDisplayNames);
     const fromRoster =
       rosterByName.get(normalizePersonName(name)) ||
-      rosterByKey.get(personKey(name, row.email));
+      rosterByName.get(normalizePersonName(rawName)) ||
+      rosterByKey.get(personKey(name, row.email)) ||
+      rosterByKey.get(personKey(rawName, row.email));
+    const resolvedName = fromRoster?.name || name;
     const email = fromRoster?.email || row.email?.trim() || null;
     const tasks = row.tasks.map(normalizeTask).filter((t) => t.title).slice(0, 6);
     if (tasks.length === 0) continue;
-    people.push({ personKey: personKey(name, email), name, email, tasks });
+    people.push({ personKey: personKey(resolvedName, email), name: resolvedName, email, tasks });
   }
 
   people.sort((a, b) => a.name.localeCompare(b.name));
@@ -375,10 +384,15 @@ export async function resolveMeetingListTasks(args: {
     warnings.push("No participants found — tasks may be unassigned.");
   }
 
+  const rosterDisplayNames = roster.map((p) => p.name);
+  const notesForExtraction = rosterDisplayNames.length
+    ? expandParticipantNamesInMeetingNotes(notesMd, rosterDisplayNames)
+    : notesMd;
+
   const { people, model } = await extractTasksWithDeepseek({
     title: args.title,
     day: args.day,
-    notesMd,
+    notesMd: notesForExtraction,
     transcriptText,
     roster,
   });
