@@ -12,13 +12,11 @@ import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
 import { getNotesMdFromS3 } from "@/lib/notetaker-s3-calendar.server";
 import { getSesFromAddress, sendSesEmail, sesConfigured } from "@/lib/ses-mail.server";
 import {
-  looksLikeEmail,
-  normalizePersonName,
-  resolveCanonicalEmail,
-  resolveCanonicalSpeaker,
+  resolveRosterPersonEmail,
   type SpeakerIdentityIndex,
 } from "@/lib/speaker-identity";
 import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
+import { isSpeakerIdentityExcluded } from "@/lib/speaker-identity-overrides";
 
 const CINTARA_DOMAIN = "cintara.ai";
 
@@ -49,41 +47,22 @@ export type MeetingNotesEmailSendResult = {
   warnings: string[];
 };
 
-function isCintaraEmail(email: string): boolean {
+function isAllowedMeetingRecipientEmail(email: string): boolean {
   const e = canonicalOfficialEmail(email).toLowerCase();
-  return e.endsWith(`@${CINTARA_DOMAIN}`);
+  if (e.endsWith(`@${CINTARA_DOMAIN}`) || e.endsWith("@revcloud.com")) return true;
+  if (e.endsWith("@betterpeoplesupport.com")) return true;
+  return false;
 }
 
-function resolveNameToCintaraEmail(
+function resolveNameToMeetingEmail(
   label: string,
   identity: SpeakerIdentityIndex,
   roster: EmployeePickerEntry[],
 ): { email: string | null; name: string } {
-  const raw = String(label || "").trim();
-  if (!raw) return { email: null, name: "Unknown" };
-
-  if (looksLikeEmail(raw)) {
-    const email = resolveCanonicalEmail(raw, identity);
-    if (!isCintaraEmail(email)) return { email: null, name: resolveCanonicalSpeaker(raw, identity) };
-    return { email: canonicalOfficialEmail(email), name: resolveCanonicalSpeaker(raw, identity) };
-  }
-
-  const canonical = resolveCanonicalSpeaker(raw, identity);
-  for (const e of roster) {
-    const eCanonical = resolveCanonicalSpeaker(e.name || e.email, identity);
-    if (
-      eCanonical === canonical ||
-      normalizePersonName(e.name) === normalizePersonName(canonical) ||
-      normalizePersonName(e.name).split(" ")[0] === normalizePersonName(canonical).split(" ")[0]
-    ) {
-      const email = canonicalOfficialEmail(resolveCanonicalEmail(e.email, identity));
-      if (isCintaraEmail(email)) {
-        return { email, name: e.name?.trim() || canonical };
-      }
-    }
-  }
-
-  return { email: null, name: canonical };
+  const { email, name } = resolveRosterPersonEmail(label, identity, roster);
+  if (!email) return { email: null, name };
+  if (!isAllowedMeetingRecipientEmail(email)) return { email: null, name };
+  return { email: canonicalOfficialEmail(email), name };
 }
 
 export async function resolveMeetingNotesRecipientEmails(botId: string): Promise<{
@@ -106,13 +85,14 @@ export async function resolveMeetingNotesRecipientEmails(botId: string): Promise
     loadEmployeePickerDirectory(),
   ]);
 
+  const activeRoster = roster.employees.filter((e) => !isSpeakerIdentityExcluded(e));
   const warnings = identityWarnings.slice(0, 4);
   const byEmail = new Map<string, MeetingNotesEmailRecipient>();
   const unmapped: Array<{ name: string; source: "calendar" | "transcript" }> = [];
 
   for (const p of participants) {
     const source = p.source === "calendar" ? "calendar" : "transcript";
-    const { email, name } = resolveNameToCintaraEmail(p.name, identity, roster.employees);
+    const { email, name } = resolveNameToMeetingEmail(p.name, identity, activeRoster);
     if (email) {
       const key = email.toLowerCase();
       if (!byEmail.has(key)) {
@@ -125,11 +105,11 @@ export async function resolveMeetingNotesRecipientEmails(botId: string): Promise
 
   const recipients = [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name));
   if (!recipients.length) {
-    warnings.push("No Cintara participant emails could be resolved for this meeting.");
+    warnings.push("No participant emails could be resolved for this meeting.");
   }
   if (unmapped.length) {
     warnings.push(
-      `${unmapped.length} participant name(s) could not be mapped to @cintara.ai — they will not receive this email.`,
+      `${unmapped.length} participant name(s) could not be mapped to a known email — they will not receive this email.`,
     );
   }
 

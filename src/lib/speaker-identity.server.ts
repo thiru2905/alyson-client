@@ -1,4 +1,5 @@
 import { loadEmployeePickerDirectory } from "@/lib/employee-picker-directory.server";
+import { isSpeakerIdentityExcluded } from "@/lib/speaker-identity-overrides";
 import {
   buildSpeakerIdentityIndex,
   EMPTY_SPEAKER_IDENTITY_INDEX,
@@ -18,7 +19,8 @@ export async function getSpeakerIdentityIndex(): Promise<{
 
   try {
     const roster = await loadEmployeePickerDirectory();
-    const index = buildSpeakerIdentityIndex(roster.employees);
+    const activeEmployees = roster.employees.filter((e) => !isSpeakerIdentityExcluded(e));
+    const index = buildSpeakerIdentityIndex(activeEmployees);
     cache = { at: Date.now(), index, warnings: roster.warnings.slice(0, 4) };
     return { index, warnings: cache.warnings };
   } catch (e) {

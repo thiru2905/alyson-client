@@ -5,9 +5,8 @@ import type { LeaveEmailExtraction } from "@/lib/leave-email-schema";
 import type { EmployeeLeaveLedger } from "@/lib/leave-schema";
 import {
   looksLikeEmail,
-  normalizePersonName,
   resolveCanonicalEmail,
-  resolveCanonicalSpeaker,
+  resolveRosterPersonEmail,
 } from "@/lib/speaker-identity";
 import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
 
@@ -42,20 +41,9 @@ function matchByName(
   identity: Awaited<ReturnType<typeof getSpeakerIdentityIndex>>["index"],
   employees: Record<string, EmployeeLeaveLedger>,
 ): LeaveEmailEmployeeMatch | null {
-  const canonical = resolveCanonicalSpeaker(name, identity);
-  for (const e of roster) {
-    const eCanonical = resolveCanonicalSpeaker(e.name || e.email, identity);
-    if (
-      eCanonical === canonical ||
-      normalizePersonName(e.name) === normalizePersonName(canonical) ||
-      normalizePersonName(e.name).split(" ")[0] === normalizePersonName(canonical).split(" ")[0]
-    ) {
-      const email = canonicalOfficialEmail(resolveCanonicalEmail(e.email, identity));
-      const hit = matchByEmail(email, employees);
-      if (hit) return hit;
-    }
-  }
-  return null;
+  const { email } = resolveRosterPersonEmail(name, identity, roster);
+  if (!email) return null;
+  return matchByEmail(email, employees);
 }
 
 export async function matchLeaveEmailToEmployee(args: {

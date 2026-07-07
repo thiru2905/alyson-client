@@ -1,5 +1,8 @@
 /** Merge transcript speaker labels that belong to the same person (multiple emails / name variants). */
 
+import type { EmployeePickerEntry } from "@/lib/employee-picker-types";
+import { findSpeakerEmailOverride } from "@/lib/speaker-identity-overrides";
+
 export type SpeakerIdentityEntry = {
   email: string;
   name: string;
@@ -130,6 +133,13 @@ export function buildSpeakerIdentityIndex(entries: SpeakerIdentityEntry[]): Spea
     byLocalPart.set(local, group);
   }
   for (const group of byLocalPart.values()) {
+    if (group.length < 2) continue;
+    const names = group
+      .map((i) => normalizePersonName(roster[i]!.name))
+      .filter((n) => n.length >= 2);
+    const uniqueNames = new Set(names);
+    // Same email local-part across different people (e.g. ahsan@cintara vs ahsan@revcloud) must not merge.
+    if (uniqueNames.size > 1) continue;
     for (let j = 1; j < group.length; j++) uf.union(group[0]!, group[j]!);
   }
 
@@ -168,8 +178,6 @@ export function buildSpeakerIdentityIndex(entries: SpeakerIdentityEntry[]): Spea
         aliases.add(entry.name.toLowerCase());
         const norm = normalizePersonName(entry.name);
         if (norm) aliases.add(norm);
-        const first = norm.split(" ")[0];
-        if (first && first.length >= 3) aliases.add(first);
       }
     }
 
@@ -210,6 +218,10 @@ export function resolveCanonicalEmail(email: string, index: SpeakerIdentityIndex
 export function resolveCanonicalSpeaker(label: string, index: SpeakerIdentityIndex): string {
   const raw = String(label || "").trim();
   if (!raw) return "Speaker";
+
+  const override = findSpeakerEmailOverride(raw);
+  if (override) return override.canonicalName;
+
   if (!index.aliasToCanonical.size) return raw;
 
   const lower = raw.toLowerCase();
@@ -220,11 +232,6 @@ export function resolveCanonicalSpeaker(label: string, index: SpeakerIdentityInd
   if (norm) {
     const byNorm = index.aliasToCanonical.get(norm);
     if (byNorm) return byNorm;
-    const first = norm.split(" ")[0];
-    if (first && first.length >= 3) {
-      const byFirst = index.aliasToCanonical.get(first);
-      if (byFirst) return byFirst;
-    }
   }
 
   if (looksLikeEmail(raw)) {
@@ -234,6 +241,50 @@ export function resolveCanonicalSpeaker(label: string, index: SpeakerIdentityInd
   }
 
   return raw;
+}
+
+function rosterEntryMatchesCanonical(entry: EmployeePickerEntry, canonical: string, identity: SpeakerIdentityIndex): boolean {
+  const eCanonical = resolveCanonicalSpeaker(entry.name || entry.email, identity);
+  if (eCanonical === canonical) return true;
+  const entryNorm = normalizePersonName(entry.name);
+  const canonicalNorm = normalizePersonName(canonical);
+  return Boolean(entryNorm && canonicalNorm && entryNorm === canonicalNorm);
+}
+
+/** Resolve a transcript/calendar label to an official email using overrides, then roster (no first-name-only guess). */
+export function resolveRosterPersonEmail(
+  label: string,
+  identity: SpeakerIdentityIndex,
+  roster: EmployeePickerEntry[],
+): { email: string | null; name: string } {
+  const raw = String(label || "").trim();
+  if (!raw) return { email: null, name: "Unknown" };
+
+  const override = findSpeakerEmailOverride(raw);
+  if (override) {
+    return { email: override.email.toLowerCase(), name: override.canonicalName };
+  }
+
+  if (looksLikeEmail(raw)) {
+    const email = resolveCanonicalEmail(raw, identity).toLowerCase();
+    const match = roster.find((e) => resolveCanonicalEmail(e.email, identity).toLowerCase() === email);
+    return {
+      email,
+      name: match?.name?.trim() || resolveCanonicalSpeaker(raw, identity),
+    };
+  }
+
+  const canonical = resolveCanonicalSpeaker(raw, identity);
+  for (const e of roster) {
+    if (rosterEntryMatchesCanonical(e, canonical, identity)) {
+      return {
+        email: resolveCanonicalEmail(e.email, identity).toLowerCase(),
+        name: e.name?.trim() || canonical,
+      };
+    }
+  }
+
+  return { email: null, name: canonical };
 }
 
 export function speakerMatchesAnyFilterWithIdentity(

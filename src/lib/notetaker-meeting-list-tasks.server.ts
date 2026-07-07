@@ -18,11 +18,15 @@ import {
   resolveMeetingParticipants,
   type MeetingParticipant,
 } from "@/lib/notetaker-meeting-participants.server";
+import { loadEmployeePickerDirectory } from "@/lib/employee-picker-directory.server";
+import { isSpeakerIdentityExcluded } from "@/lib/speaker-identity-overrides";
 import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
 import {
   looksLikeEmail,
+  normalizePersonName,
   resolveCanonicalEmail,
   resolveCanonicalSpeaker,
+  resolveRosterPersonEmail,
 } from "@/lib/speaker-identity";
 import { meetingTasksKey, type MeetingListPersonTasks, type MeetingListTask } from "@/lib/notetaker-meeting-ui";
 
@@ -104,10 +108,14 @@ function normalizeTask(raw: z.infer<typeof ExtractedTaskSchema>): MeetingListTas
 function buildParticipantRoster(
   participants: MeetingParticipant[],
   identity: Awaited<ReturnType<typeof getSpeakerIdentityIndex>>["index"],
+  roster: Awaited<ReturnType<typeof loadEmployeePickerDirectory>>["employees"],
 ) {
   return participants.map((p) => {
-    const canonical = resolveCanonicalSpeaker(p.name, identity);
-    const email = looksLikeEmail(p.name) ? resolveCanonicalEmail(p.name, identity) : null;
+    const resolved = resolveRosterPersonEmail(p.name, identity, roster);
+    const canonical = resolved.name || resolveCanonicalSpeaker(p.name, identity);
+    const email =
+      resolved.email ||
+      (looksLikeEmail(p.name) ? resolveCanonicalEmail(p.name, identity) : null);
     return {
       name: canonical || p.name,
       email,
@@ -186,12 +194,16 @@ async function extractTasksWithDeepseek(args: {
 
   const parsed = MeetingTasksByPersonSchema.parse(extractJsonObject(raw));
   const rosterByKey = new Map(args.roster.map((p) => [personKey(p.name, p.email), p]));
+  const rosterByName = new Map(args.roster.map((p) => [normalizePersonName(p.name), p]));
 
   const people: MeetingListPersonTasks[] = [];
   for (const row of parsed.people) {
     const name = row.name.trim();
     if (!name) continue;
-    const email = row.email?.trim() || rosterByKey.get(personKey(name, row.email))?.email || null;
+    const fromRoster =
+      rosterByName.get(normalizePersonName(name)) ||
+      rosterByKey.get(personKey(name, row.email));
+    const email = fromRoster?.email || row.email?.trim() || null;
     const tasks = row.tasks.map(normalizeTask).filter((t) => t.title).slice(0, 6);
     if (tasks.length === 0) continue;
     people.push({ personKey: personKey(name, email), name, email, tasks });
@@ -356,7 +368,9 @@ export async function resolveMeetingListTasks(args: {
   const { index: identity, warnings: identityWarnings } = await getSpeakerIdentityIndex();
   warnings.push(...identityWarnings.slice(0, 2));
 
-  const roster = buildParticipantRoster(participants, identity);
+  const directory = await loadEmployeePickerDirectory();
+  const activeRoster = directory.employees.filter((e) => !isSpeakerIdentityExcluded(e));
+  const roster = buildParticipantRoster(participants, identity, activeRoster);
   if (roster.length === 0) {
     warnings.push("No participants found — tasks may be unassigned.");
   }

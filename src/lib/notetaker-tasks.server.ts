@@ -13,12 +13,14 @@ import {
   listMeetingsFromS3,
   type S3Meeting,
 } from "@/lib/notetaker-s3-calendar.server";
+import { isSpeakerIdentityExcluded } from "@/lib/speaker-identity-overrides";
 import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
 import {
   looksLikeEmail,
   normalizePersonName,
   resolveCanonicalEmail,
   resolveCanonicalSpeaker,
+  resolveRosterPersonEmail,
   type SpeakerIdentityIndex,
 } from "@/lib/speaker-identity";
 import { parseTranscriptUtterances } from "@/lib/notetaker-transcript-parse.server";
@@ -216,25 +218,8 @@ function resolveOwnerToAssignee(
   const raw = String(ownerLabel || "").trim();
   if (!raw) return { email: null, name: null };
 
-  if (looksLikeEmail(raw)) {
-    const email = resolveCanonicalEmail(raw, identity);
-    const match = roster.find((e) => resolveCanonicalEmail(e.email, identity) === email);
-    return { email, name: match?.name?.trim() || resolveCanonicalSpeaker(raw, identity) };
-  }
-
-  const canonical = resolveCanonicalSpeaker(raw, identity);
-  for (const e of roster) {
-    const eCanonical = resolveCanonicalSpeaker(e.name || e.email, identity);
-    if (
-      eCanonical === canonical ||
-      normalizePersonName(e.name) === normalizePersonName(canonical) ||
-      normalizePersonName(e.name).split(" ")[0] === normalizePersonName(canonical).split(" ")[0]
-    ) {
-      return { email: resolveCanonicalEmail(e.email, identity), name: e.name?.trim() || canonical };
-    }
-  }
-
-  return { email: null, name: canonical };
+  const { email, name } = resolveRosterPersonEmail(raw, identity, roster);
+  return { email, name: name || null };
 }
 
 function buildMeetingContext(args: {
@@ -448,7 +433,7 @@ export async function buildNotetakerTasksReport(args: {
   let roster: EmployeePickerEntry[] = [];
   try {
     const dir = await loadEmployeePickerDirectory();
-    roster = dir.employees;
+    roster = dir.employees.filter((e) => !isSpeakerIdentityExcluded(e));
     warnings.push(...dir.warnings.slice(0, 2));
   } catch (e) {
     warnings.push(`employee_directory: ${String(e)}`);
