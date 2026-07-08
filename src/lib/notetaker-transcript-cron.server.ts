@@ -36,6 +36,13 @@ export type NotetakerTranscriptCronResult = {
     superseded: number;
     issueCount: number;
   };
+  notesAutoEmail?: {
+    scanned: number;
+    attempted: number;
+    sent: number;
+    skipped: number;
+    errors: number;
+  };
 };
 
 async function collectBotIds(): Promise<{ botIds: Set<string>; warnings: string[] }> {
@@ -155,9 +162,26 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
           );
           void maybeGenerateMeetingTasksWhenReady(botId);
         }
+        try {
+          const { maybeAutoSendMeetingNotesEmail } = await import(
+            "@/lib/notetaker-meeting-notes-auto-email.server"
+          );
+          await maybeAutoSendMeetingNotesEmail(botId);
+        } catch {
+          // email listener is best-effort
+        }
       } else if (driveResult === "unchanged" || driveResult === "skipped_complete") {
         skippedUnchanged += 1;
         if (driveResult === "skipped_complete") skippedFinalized += 1;
+        // Catch-up listener for already-persisted meetings that never got notes emailed.
+        try {
+          const { maybeAutoSendMeetingNotesEmail } = await import(
+            "@/lib/notetaker-meeting-notes-auto-email.server"
+          );
+          await maybeAutoSendMeetingNotesEmail(botId);
+        } catch {
+          // ignore
+        }
       } else if (driveResult === "empty") {
         skippedEmpty += 1;
         if (!skipRecall && recallBackfillsAttempted < MAX_RECALL_BACKFILLS_PER_CRON) {
@@ -259,6 +283,28 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     warnings.push(`meeting_integrity: ${String(e)}`);
   }
 
+  let notesAutoEmail: NotetakerTranscriptCronResult["notesAutoEmail"];
+  try {
+    const { sweepAutoSendMeetingNotesEmails } = await import(
+      "@/lib/notetaker-meeting-notes-auto-email.server"
+    );
+    const sweep = await sweepAutoSendMeetingNotesEmails();
+    notesAutoEmail = {
+      scanned: sweep.scanned,
+      attempted: sweep.attempted,
+      sent: sweep.sent,
+      skipped: sweep.skipped,
+      errors: sweep.errors,
+    };
+    if (sweep.sent > 0 || sweep.errors > 0) {
+      warnings.push(
+        `notes_auto_email: sent=${sweep.sent} attempted=${sweep.attempted} errors=${sweep.errors}`,
+      );
+    }
+  } catch (e) {
+    warnings.push(`notes_auto_email: ${String(e)}`);
+  }
+
   return {
     ok: errors === 0,
     ranAt,
@@ -276,5 +322,6 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     recallMediaCleanup,
     scheduledBotActivation,
     meetingIntegrity,
+    notesAutoEmail,
   };
 }

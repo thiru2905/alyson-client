@@ -24,10 +24,14 @@ import { isSpeakerIdentityExcluded } from "@/lib/speaker-identity-overrides";
 
 const CINTARA_DOMAIN = "cintara.ai";
 
+/** Always included on meeting-notes emails so QA can verify delivery. */
+export const DEFAULT_MEETING_NOTES_MONITOR_EMAIL = "thirumalai@cintara.ai";
+export const DEFAULT_MEETING_NOTES_MONITOR_NAME = "Thirumalai";
+
 export type MeetingNotesEmailRecipient = {
   name: string;
   email: string;
-  source: "calendar" | "transcript" | "roster" | "manual";
+  source: "calendar" | "transcript" | "roster" | "manual" | "default";
 };
 
 export type MeetingNotesEmailPreview = {
@@ -108,6 +112,17 @@ export async function resolveMeetingNotesRecipientEmails(botId: string): Promise
   }
 
   const recipients = [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  const monitorEmail = canonicalOfficialEmail(DEFAULT_MEETING_NOTES_MONITOR_EMAIL).toLowerCase();
+  if (!byEmail.has(monitorEmail)) {
+    recipients.push({
+      name: DEFAULT_MEETING_NOTES_MONITOR_NAME,
+      email: canonicalOfficialEmail(DEFAULT_MEETING_NOTES_MONITOR_EMAIL),
+      source: "default",
+    });
+    recipients.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   if (!recipients.length) {
     warnings.push("No participant emails could be resolved for this meeting.");
   }
@@ -240,14 +255,26 @@ export async function sendMeetingNotesEmail(args: {
     }))
     .filter((r) => r.name && r.email);
 
-  const deduped = new Map<string, MeetingNotesEmailRecipient>();
-  for (const r of overrideRecipients) {
-    deduped.set(r.email.toLowerCase(), r);
+  const resolved = await resolveMeetingNotesRecipientEmails(args.botId);
+  const warnings = overrideRecipients.length ? [] : resolved.warnings;
+
+  const recipientsByEmail = new Map<string, MeetingNotesEmailRecipient>();
+  if (overrideRecipients.length) {
+    for (const r of overrideRecipients) recipientsByEmail.set(r.email.toLowerCase(), r);
+  } else {
+    for (const r of resolved.recipients) recipientsByEmail.set(r.email.toLowerCase(), r);
   }
 
-  const resolved = await resolveMeetingNotesRecipientEmails(args.botId);
-  const recipients = overrideRecipients.length ? [...deduped.values()] : resolved.recipients;
-  const warnings = overrideRecipients.length ? [] : resolved.warnings;
+  const monitorEmail = canonicalOfficialEmail(DEFAULT_MEETING_NOTES_MONITOR_EMAIL);
+  if (!recipientsByEmail.has(monitorEmail.toLowerCase())) {
+    recipientsByEmail.set(monitorEmail.toLowerCase(), {
+      name: DEFAULT_MEETING_NOTES_MONITOR_NAME,
+      email: monitorEmail,
+      source: "default",
+    });
+  }
+
+  const recipients = [...recipientsByEmail.values()];
 
   if (!recipients.length) {
     throw new Error("No recipient emails to send to.");

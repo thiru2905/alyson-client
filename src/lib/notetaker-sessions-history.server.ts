@@ -78,6 +78,9 @@ type BotIndexDoc = {
   integrityCheckedAt?: string | null;
   supersededByBotId?: string | null;
   supersededAt?: string | null;
+  notesEmailSentAt?: string | null;
+  notesEmailMessageId?: string | null;
+  notesEmailRecipients?: string[] | null;
 };
 
 function linesFromPlainTranscript(transcriptText: string) {

@@ -37,6 +37,10 @@ export type NotetakerBotIndexDoc = {
   integrityCheckedAt?: string | null;
   supersededByBotId?: string | null;
   supersededAt?: string | null;
+  /** Auto notes email listener — set after SES send succeeds. */
+  notesEmailSentAt?: string | null;
+  notesEmailMessageId?: string | null;
+  notesEmailRecipients?: string[] | null;
 };
 
 /** Consecutive 5-min cron runs with identical hash after Recall call_ended (~15–20 min stable). */

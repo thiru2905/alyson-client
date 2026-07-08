@@ -388,6 +388,11 @@ export async function autoPersistEndedMeetingToS3(args: {
     void maybeGenerateMeetingTasksWhenReady(botId);
   }
 
+  // Listener: bot left / meeting ended → auto-email notes to participants (+ default monitor).
+  void import("@/lib/notetaker-meeting-notes-auto-email.server")
+    .then(({ maybeAutoSendMeetingNotesEmail }) => maybeAutoSendMeetingNotesEmail(botId))
+    .catch(() => {});
+
   return {
     persisted: true,
     notesMd: notes?.notesMd ?? null,
