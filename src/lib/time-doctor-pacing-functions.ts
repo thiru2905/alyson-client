@@ -5,10 +5,19 @@ const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const MonthSchema = z.string().regex(/^\d{4}-\d{2}$/);
 
-const MonthlyPacingInput = z.object({
-  month: MonthSchema.optional(),
-  day: DateSchema.optional(),
-});
+const MonthlyPacingInput = z
+  .object({
+    month: MonthSchema.optional(),
+    day: DateSchema.optional(),
+    start: DateSchema.optional(),
+    end: DateSchema.optional(),
+  })
+  .refine((d) => !(d.start && !d.end) && !(d.end && !d.start), {
+    message: "Custom range requires both start and end dates",
+  })
+  .refine((d) => !d.start || !d.end || d.start <= d.end, {
+    message: "Start date must be on or before end date",
+  });
 
 const WeeklyPacingInput = z.object({
   targetHours: z.number().min(1).max(168).optional(),

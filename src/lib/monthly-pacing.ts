@@ -10,6 +10,9 @@ import {
   type WeeklyPacingLeaveSummary,
   type WeeklyPacingRow,
 } from "@/lib/weekly-pacing";
+import { formatRangeLabel } from "@/lib/time-dashboard-range";
+
+export { formatRangeLabel };
 
 export type MonthPacingMetrics = {
   targetHours: number;
@@ -75,11 +78,54 @@ export function resolveMonthlyRollupDay(monthYear: string, today = pacingTodayIs
   return today <= end ? today : end;
 }
 
-/** Elapsed weekdays in the month through rollup day (inclusive). */
+/** Elapsed weekdays in the period through rollup day (inclusive). */
+export function periodPacingSampleDays(periodStart: string, rollupDay: string, periodEnd: string): string[] {
+  const sampleEnd = rollupDay <= periodEnd ? rollupDay : periodEnd;
+  if (sampleEnd < periodStart) return [];
+  return enumerateDaysIso(periodStart, sampleEnd).filter(isWeekdayIso);
+}
+
+/** @deprecated Use periodPacingSampleDays */
 export function monthPacingSampleDays(monthStart: string, rollupDay: string, monthEnd: string): string[] {
-  const sampleEnd = rollupDay <= monthEnd ? rollupDay : monthEnd;
-  if (sampleEnd < monthStart) return [];
-  return enumerateDaysIso(monthStart, sampleEnd).filter(isWeekdayIso);
+  return periodPacingSampleDays(monthStart, rollupDay, monthEnd);
+}
+
+/** Rollup anchor for an arbitrary period: cap at today when the period is in progress. */
+export function resolvePeriodRollupDay(
+  periodStart: string,
+  periodEnd: string,
+  today = pacingTodayIso(),
+): string {
+  if (today < periodStart) return periodStart;
+  if (today > periodEnd) return periodEnd;
+  return today;
+}
+
+export function computePeriodPacingMetrics(args: {
+  periodStart: string;
+  periodEnd: string;
+  rollupDay: string;
+}): MonthPacingMetrics {
+  const { periodStart, periodEnd, rollupDay } = args;
+  const totalWorkDays = countWeekdaysInclusive(periodStart, periodEnd);
+  const targetHours = totalWorkDays * PACING_LEAVE_HOURS_PER_DAY;
+  const sampleDays = periodPacingSampleDays(periodStart, rollupDay, periodEnd);
+  const elapsedWorkDays = countWeekdaysInclusive(periodStart, rollupDay);
+  const tomorrow = addDaysIso(rollupDay, 1);
+  const remainingWorkDays =
+    rollupDay >= periodEnd ? 0 : countWeekdaysInclusive(tomorrow, periodEnd);
+  const monthProgressPct =
+    totalWorkDays > 0 ? Math.round((elapsedWorkDays / totalWorkDays) * 1000) / 10 : 0;
+
+  return {
+    targetHours,
+    monthEnd: periodEnd,
+    pacingSampleDays: sampleDays,
+    elapsedWorkDays,
+    totalWorkDays,
+    remainingWorkDays,
+    monthProgressPct,
+  };
 }
 
 export function computeMonthPacingMetrics(args: {
@@ -88,25 +134,11 @@ export function computeMonthPacingMetrics(args: {
 }): MonthPacingMetrics {
   const monthStart = monthStartIso(args.monthYear);
   const monthEnd = monthEndIso(args.monthYear);
-  const totalWorkDays = countWeekdaysInclusive(monthStart, monthEnd);
-  const targetHours = totalWorkDays * PACING_LEAVE_HOURS_PER_DAY;
-  const sampleDays = monthPacingSampleDays(monthStart, args.rollupDay, monthEnd);
-  const elapsedWorkDays = countWeekdaysInclusive(monthStart, args.rollupDay);
-  const tomorrow = addDaysIso(args.rollupDay, 1);
-  const remainingWorkDays =
-    args.rollupDay >= monthEnd ? 0 : countWeekdaysInclusive(tomorrow, monthEnd);
-  const monthProgressPct =
-    totalWorkDays > 0 ? Math.round((elapsedWorkDays / totalWorkDays) * 1000) / 10 : 0;
-
-  return {
-    targetHours,
-    monthEnd,
-    pacingSampleDays: sampleDays,
-    elapsedWorkDays,
-    totalWorkDays,
-    remainingWorkDays,
-    monthProgressPct,
-  };
+  return computePeriodPacingMetrics({
+    periodStart: monthStart,
+    periodEnd: monthEnd,
+    rollupDay: args.rollupDay,
+  });
 }
 
 function computeMonthPaceFromDailyHours(args: {

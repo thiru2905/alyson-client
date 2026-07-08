@@ -19,13 +19,14 @@ import { z } from "zod";
 import { PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar } from "@/components/Skeleton";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
-import { MonthlyPacingMonthPicker } from "@/components/MonthlyPacingMonthPicker";
+import { MonthlyPacingPeriodPicker, type MonthlyPacingPeriodMode } from "@/components/MonthlyPacingPeriodPicker";
 import { WeeklyPacingActiveCell } from "@/components/WeeklyPacingActiveCell";
 import { downloadCSV } from "@/lib/csv";
 import { fmtDate } from "@/lib/format";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
+import { isIsoDate } from "@/lib/time-dashboard-range";
 import { pacingTodayIso } from "@/lib/weekly-pacing";
-import { monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
+import { monthStartIso, monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
 import { useAuth } from "@/lib/auth";
 import {
   buildLeaveSummaryFromRows,
@@ -48,11 +49,14 @@ import {
 
 export const Route = createFileRoute("/time-dashboard/monthly-pacing")({
   head: () => ({ meta: [{ title: "Monthly Pacing — Alyson HR" }] }),
-  validateSearch: z
-    .object({
-      month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
-    })
-    .parse,
+  validateSearch: (search) =>
+    z
+      .object({
+        month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+        start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      })
+      .parse(search),
   component: MonthlyPacingPage,
 });
 
@@ -117,6 +121,7 @@ function MonthlyPacingPage() {
   const search = Route.useSearch();
   const today = pacingTodayIso();
   const defaultMonth = monthYearFromIso(today);
+  const hasCustomRange = isIsoDate(search.start) && isIsoDate(search.end);
 
   const [sortBy, setSortBy] = useState<WeeklyPacingSortField>("hoursRemaining");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -124,19 +129,43 @@ function MonthlyPacingPage() {
   const [locationFilter, setLocationFilter] = useState("__all__");
   const [teamFilter, setTeamFilter] = useState("__all__");
   const [activeFilter, setActiveFilter] = useState("__all__");
+  const [periodMode, setPeriodMode] = useState<MonthlyPacingPeriodMode>(
+    hasCustomRange ? "range" : "month",
+  );
   const [month, setMonth] = useState(search.month ?? defaultMonth);
+  const [rangeStart, setRangeStart] = useState(search.start ?? monthStartIso(defaultMonth));
+  const [rangeEnd, setRangeEnd] = useState(search.end ?? today);
 
   useEffect(() => {
-    if (search.month) setMonth(search.month);
-  }, [search.month]);
+    if (search.start && search.end) {
+      setPeriodMode("range");
+      setRangeStart(search.start);
+      setRangeEnd(search.end);
+    } else if (search.month) {
+      setPeriodMode("month");
+      setMonth(search.month);
+    }
+  }, [search.month, search.start, search.end]);
 
   const appliedMonth = search.month ?? defaultMonth;
-  const draftMatchesApplied = month === appliedMonth;
-  const isHistoricalMonth = isPastMonth(appliedMonth, today);
+  const appliedStart = search.start;
+  const appliedEnd = search.end;
+  const draftMatchesApplied =
+    periodMode === "range"
+      ? rangeStart === appliedStart && rangeEnd === appliedEnd
+      : month === appliedMonth;
+  const isHistoricalPeriod = hasCustomRange
+    ? appliedEnd! < today
+    : isPastMonth(appliedMonth, today);
 
   const q = useQuery({
-    queryKey: ["monthly-pacing-report", appliedMonth],
-    queryFn: () => fetchMonthlyPacingReport({ data: { month: appliedMonth } }),
+    queryKey: hasCustomRange
+      ? ["monthly-pacing-report", "range", appliedStart, appliedEnd]
+      : ["monthly-pacing-report", "month", appliedMonth],
+    queryFn: () =>
+      hasCustomRange
+        ? fetchMonthlyPacingReport({ data: { start: appliedStart, end: appliedEnd } })
+        : fetchMonthlyPacingReport({ data: { month: appliedMonth } }),
     enabled: canAccess,
     placeholderData: keepPreviousData,
     staleTime: 120_000,
@@ -248,12 +277,36 @@ function MonthlyPacingPage() {
   const hasFacetFilters =
     locationFilter !== "__all__" || teamFilter !== "__all__" || activeFilter !== "__all__";
 
-  function applyMonth() {
+  function applyPeriod() {
+    if (periodMode === "range") {
+      if (!isIsoDate(rangeStart) || !isIsoDate(rangeEnd)) {
+        toast.error("Enter valid start and end dates");
+        return;
+      }
+      if (rangeStart > rangeEnd) {
+        toast.error("Start date must be on or before end date");
+        return;
+      }
+      navigate({
+        to: "/time-dashboard/monthly-pacing",
+        search: { start: rangeStart, end: rangeEnd, month: undefined },
+        replace: true,
+      });
+      return;
+    }
     navigate({
       to: "/time-dashboard/monthly-pacing",
       search: { month, start: undefined, end: undefined },
       replace: true,
     });
+  }
+
+  function handlePeriodModeChange(mode: MonthlyPacingPeriodMode) {
+    setPeriodMode(mode);
+    if (mode === "range" && !isIsoDate(rangeStart)) {
+      setRangeStart(monthStartIso(month));
+      setRangeEnd(today);
+    }
   }
 
   function applySort(field: WeeklyPacingSortField) {
@@ -306,8 +359,11 @@ function MonthlyPacingPage() {
       "active",
       "status",
     ] as const;
+    const periodSlug = hasCustomRange
+      ? `${appliedStart}-to-${appliedEnd}`
+      : appliedMonth;
     downloadCSV(
-      `monthly-pacing-${appliedMonth}${slug ? `-${slug}` : ""}.csv`,
+      `monthly-pacing-${periodSlug}${slug ? `-${slug}` : ""}.csv`,
       rows.map((r) => ({
         email: r.email,
         name: r.name,
@@ -364,7 +420,7 @@ function MonthlyPacingPage() {
             </Link>
             <button
               type="button"
-              onClick={() => (draftMatchesApplied ? void q.refetch() : applyMonth())}
+              onClick={() => (draftMatchesApplied ? void q.refetch() : applyPeriod())}
               disabled={isBusy}
               className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
             >
@@ -396,10 +452,16 @@ function MonthlyPacingPage() {
         {report ? (
           <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <MonthlyPacingMonthPicker
+              <MonthlyPacingPeriodPicker
+                mode={periodMode}
+                onModeChange={handlePeriodModeChange}
                 month={month}
                 onMonthChange={setMonth}
-                onApply={applyMonth}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                onRangeStartChange={setRangeStart}
+                onRangeEndChange={setRangeEnd}
+                onApply={applyPeriod}
                 isBusy={isBusy}
                 draftMatchesApplied={draftMatchesApplied}
               />
@@ -549,13 +611,13 @@ function MonthlyPacingPage() {
               </div>
             </div>
 
-            {isHistoricalMonth ? (
+            {isHistoricalPeriod ? (
               <p className="text-[12px] text-muted-foreground">
-                Viewing a completed month — metrics are frozen as of <strong>{fmtDate(report.today)}</strong>.
+                Viewing a completed period — metrics are frozen as of <strong>{fmtDate(report.today)}</strong>.
               </p>
             ) : (
               <p className="text-[12px] text-muted-foreground">
-                Month-to-date through <strong>{fmtDate(report.today)}</strong> · projected pace = worked + avg daily
+                Period-to-date through <strong>{fmtDate(report.today)}</strong> · projected pace = worked + avg daily
                 hours × remaining workdays.
               </p>
             )}
@@ -566,7 +628,7 @@ function MonthlyPacingPage() {
                 <div className="text-2xl font-semibold mt-1 text-emerald-700 dark:text-emerald-300">
                   {summary.metTarget}
                 </div>
-                <div className="text-[11px] text-muted-foreground mt-1">≥ {report.targetHours}h this month</div>
+                <div className="text-[11px] text-muted-foreground mt-1">≥ {report.targetHours}h this period</div>
               </div>
               <div className="surface-card p-4">
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wide">Under target</div>
@@ -613,7 +675,7 @@ function MonthlyPacingPage() {
                   <div>
                     <div className="font-medium text-[13px] flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5 text-sky-700 dark:text-sky-300" />
-                      Leave this month
+                      Leave this period
                     </div>
                     <p className="text-[12px] text-muted-foreground mt-1 max-w-3xl">
                       From the{" "}
@@ -846,7 +908,7 @@ function MonthlyPacingPage() {
                         <td colSpan={16} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
-                            : "No employees found for this month."}
+                            : "No employees found for this period."}
                         </td>
                       </tr>
                     ) : (

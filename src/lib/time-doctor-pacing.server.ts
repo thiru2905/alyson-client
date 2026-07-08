@@ -37,13 +37,17 @@ import {
 } from "@/lib/weekly-pacing";
 import {
   buildMonthlyPacingRow,
-  computeMonthPacingMetrics,
+  computePeriodPacingMetrics,
+  formatRangeLabel,
+  monthEndIso,
   monthLabel,
   monthStartIso,
   monthYearFromIso,
   resolveMonthlyRollupDay,
+  resolvePeriodRollupDay,
   type MonthlyPacingReport,
 } from "@/lib/monthly-pacing";
+import { clampRange } from "@/lib/time-dashboard-range";
 
 function weekStartSundayIso(day: string): string {
   return timeDoctorPacingWeekStartSunday(day);
@@ -283,27 +287,48 @@ export async function buildWeeklyPacingReport(args?: {
   };
 }
 
-/** Month-to-date pacing: same row model as weekly, target = workdays in month × 7h. */
+/** Month-to-date or custom-range pacing: same row model, target = workdays in period × 7h. */
 export async function buildMonthlyPacingReport(args?: {
   month?: string;
   day?: string;
+  start?: string;
+  end?: string;
 }): Promise<MonthlyPacingReport> {
   const today = timeDoctorTodayIso();
-  const monthYear = args?.month?.trim() || monthYearFromIso(today);
-  if (!/^\d{4}-\d{2}$/.test(monthYear)) {
-    throw new Error("Invalid month — use YYYY-MM");
-  }
-  const rollupDay = args?.day ?? resolveMonthlyRollupDay(monthYear, today);
-  const monthStart = monthStartIso(monthYear);
-  const company = await timeDoctorPacingGetCompany();
   const warnings: string[] = [];
+  let periodStart: string;
+  let periodEnd: string;
+  let rollupDay: string;
+  let periodLabel: string;
+
+  if (args?.start?.trim() && args?.end?.trim()) {
+    const clamped = clampRange(args.start.trim(), args.end.trim());
+    periodStart = clamped.start;
+    periodEnd = clamped.end;
+    if (clamped.clipped) {
+      warnings.push(`Range clipped to ${periodStart} – ${periodEnd} (max window)`);
+    }
+    rollupDay = args.day?.trim() || resolvePeriodRollupDay(periodStart, periodEnd, today);
+    periodLabel = formatRangeLabel(periodStart, periodEnd);
+  } else {
+    const monthYear = args?.month?.trim() || monthYearFromIso(today);
+    if (!/^\d{4}-\d{2}$/.test(monthYear)) {
+      throw new Error("Invalid month — use YYYY-MM");
+    }
+    periodStart = monthStartIso(monthYear);
+    periodEnd = monthEndIso(monthYear);
+    rollupDay = args?.day ?? resolveMonthlyRollupDay(monthYear, today);
+    periodLabel = monthLabel(monthYear);
+  }
+
+  const company = await timeDoctorPacingGetCompany();
   const rangeCache = new Map<string, Map<string, number>>();
 
   let periodSeconds = new Map<string, number>();
   try {
     periodSeconds = await timeDoctorPacingLoadRangeSeconds(
       company.id,
-      monthStart,
+      periodStart,
       rollupDay,
       rangeCache,
     );
@@ -318,7 +343,7 @@ export async function buildMonthlyPacingReport(args?: {
     warnings.push(`users: ${String(e)}`);
   }
 
-  const metrics = computeMonthPacingMetrics({ monthYear, rollupDay });
+  const metrics = computePeriodPacingMetrics({ periodStart, periodEnd, rollupDay });
   const sampleDays = metrics.pacingSampleDays;
 
   await Promise.all(
@@ -340,11 +365,11 @@ export async function buildMonthlyPacingReport(args?: {
     lookup: { byEmployeeId: new Map(), byEmail: new Map() },
     teamLeaves: [],
     employees: {},
-    rangeStart: monthStart,
+    rangeStart: periodStart,
     rangeEnd: metrics.monthEnd,
   };
   try {
-    leaveCtx = await loadPacingLeaveContext(monthStart, metrics.monthEnd);
+    leaveCtx = await loadPacingLeaveContext(periodStart, metrics.monthEnd);
   } catch (e) {
     warnings.push(`leave-ledger: ${String(e)}`);
   }
@@ -410,7 +435,7 @@ export async function buildMonthlyPacingReport(args?: {
   const leaveSummary = buildLeaveSummaryFromRows(rows);
   leaveSummary.teamLeaveEvents = summarizeTeamLeavesForWeek(
     leaveCtx.teamLeaves,
-    monthStart,
+    periodStart,
     metrics.monthEnd,
   );
 
@@ -420,7 +445,7 @@ export async function buildMonthlyPacingReport(args?: {
     timeZone: company.timeZone ?? "America/Chicago",
     timeZoneLabel: company.timeZoneLabel ?? getTimeDoctorTimezoneLabel(),
     today: rollupDay,
-    month: { start: monthStart, end: metrics.monthEnd, label: monthLabel(monthYear) },
+    month: { start: periodStart, end: periodEnd, label: periodLabel },
     pacingSampleDays: metrics.pacingSampleDays,
     elapsedWorkDays: metrics.elapsedWorkDays,
     totalWorkDays: metrics.totalWorkDays,

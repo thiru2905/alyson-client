@@ -10,6 +10,7 @@ export type S3CostModule =
   | "leave-email"
   | "onboarding"
   | "bonus"
+  | "payroll"
   | "orgchart"
   | "handover"
   | "weekly-pacing"
@@ -52,6 +53,7 @@ export function s3CostModuleFromObjectKey(key: string): S3CostModule {
   if (k.startsWith("leave/")) return "leave";
   if (k.startsWith("onboarding/")) return "onboarding";
   if (k.startsWith("bonus/")) return "bonus";
+  if (k.startsWith("payroll/")) return "payroll";
   if (k.startsWith("orgchart") || k.startsWith("alyson-orgchart")) return "orgchart";
   if (k.startsWith("alyson-hr-handover") || k.startsWith("handover")) return "handover";
   if (k.startsWith("pacing/")) return "weekly-pacing";
