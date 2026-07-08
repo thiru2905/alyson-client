@@ -34,3 +34,15 @@ export const finalizeAndPersistNotetakerSession = createServerFn({ method: "POST
     };
   });
 
+/** Pull full transcript from Recall post-meeting artifact when live capture was partial. */
+export const syncNotetakerTranscriptFromRecall = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    const { backfillTranscriptFromRecall, inspectRecallTranscriptBackfill } = await import(
+      "@/lib/recall/recall-transcript-backfill.server"
+    );
+    const inspect = await inspectRecallTranscriptBackfill(data.botId);
+    const result = await backfillTranscriptFromRecall(data.botId);
+    return { inspect, result };
+  });
+

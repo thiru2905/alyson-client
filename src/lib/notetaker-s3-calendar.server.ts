@@ -3,6 +3,11 @@ import type { Readable } from "node:stream";
 import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import { buildS3Metadata } from "@/lib/s3-metadata.server";
 import { isGenericMeetingTitle } from "@/lib/notetaker-session-title.server";
+import {
+  dedupeMeetingsByBotId,
+  parseS3MeetingPrefix,
+  resolveMeetingSchedule,
+} from "@/lib/notetaker-meeting-schedule.server";
 
 function requireEnv(name: string) {
   const v = process.env[name];
@@ -31,21 +36,19 @@ async function streamToString(stream: any) {
 }
 
 function parsePrefix(prefix: string) {
-  // Expected: <MeetingName>_<YYYY-MM-DD>_<HH-MM-SS>
-  // MeetingName itself may contain underscores due to sanitization; we parse from the end.
-  const parts = prefix.split("_");
-  const time = parts.pop() || "";
-  const date = parts.pop() || "";
-  const name = parts.join("_") || "meeting";
-  const iso = `${date}T${time.replaceAll("-", ":")}Z`;
-  const startedAt = isFinite(Date.parse(iso)) ? iso : null;
-  return { title: name.replaceAll("-", " "), date, time, startedAt };
+  const parsed = parseS3MeetingPrefix(prefix);
+  return {
+    title: parsed.displayName || "meeting",
+    date: parsed.folderDate,
+    time: parsed.time,
+    startedAt: parsed.folderStartedAt,
+  };
 }
 
 export type S3Meeting = {
   prefix: string;
   botId: string | null;
-  day: string; // YYYY-MM-DD
+  day: string; // YYYY-MM-DD (canonical meeting day)
   title: string;
   notesKey: string | null;
   transcriptKey: string | null;
@@ -55,6 +58,8 @@ export type S3Meeting = {
   hasTranscript: boolean;
   hasTasks: boolean;
 };
+
+type S3MeetingBuildRow = S3Meeting & { folderDate: string };
 
 type BotIndexDoc = {
   version: number;
@@ -200,42 +205,40 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
     listMeetingAssetPrefixes(client, bucket, tasksBase, "tasks.json", { minSize: 1 }),
   ]);
 
-  const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes])).filter((p) => {
-    const parts = p.split("_");
-    const date = parts.length >= 2 ? parts[parts.length - 2] : "";
-    return date && date >= start && date <= end;
-  });
+  const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]));
 
   const botIndexDocs = await getBotIndexDocs(client, bucket);
   const botIndexByPrefix = new Map(botIndexDocs.map((d) => [String(d.prefix), d]));
   const titleByPrefix = await loadTitleByPrefix(botIndexDocs);
 
-  const rows: S3Meeting[] = [];
+  const rows: S3MeetingBuildRow[] = [];
   for (const p of prefixes) {
-    const parsed = parsePrefix(p);
-    const day = parsed.date;
-    if (!day || day < start || day > end) continue;
-
     const idx = botIndexByPrefix.get(p);
+    const parsed = parsePrefix(p);
     const title = titleByPrefix.get(p) || idx?.title || parsed.title || "Meeting";
+    const schedule = resolveMeetingSchedule({ title, prefix: p });
+    const day = schedule.day;
+    if (!day || day < start || day > end) continue;
 
     rows.push({
       prefix: p,
       botId: idx?.botId ? String(idx.botId) : null,
       day,
       title,
-      startedAt: parsed.startedAt,
+      startedAt: schedule.startedAt,
       notesKey: `${notesBase}${p}/notes.md`,
       transcriptKey: `${transcriptBase}${p}/transcript.txt`,
       tasksKey: `${tasksBase}${p}/tasks.json`,
       hasNotes: notesPrefixes.has(p),
       hasTranscript: transcriptPrefixes.has(p),
       hasTasks: tasksPrefixes.has(p),
+      folderDate: schedule.folderDate,
     });
   }
 
-  rows.sort((a, b) => (b.startedAt || b.day).localeCompare(a.startedAt || a.day));
-  return rows;
+  const deduped = dedupeMeetingsByBotId(rows);
+  deduped.sort((a, b) => (b.startedAt || b.day).localeCompare(a.startedAt || a.day));
+  return deduped.map(({ folderDate: _folderDate, ...row }) => row);
 }
 
 export type NotesCoverageReport = {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
+import { parseLeadingDdMmYyyy } from "@/lib/notetaker-meeting-schedule.server";
 import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
 import { buildS3Metadata } from "@/lib/s3-metadata.server";
 import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
@@ -18,24 +19,40 @@ export type NotetakerBotIndexDoc = {
   wordCount?: number;
   transcriptHash?: string;
   notesHash?: string | null;
-  /** Two consecutive cron runs with the same hash → stop polling this bot. */
+  /** Two consecutive cron runs with the same hash → stop polling this bot (after call ended). */
   cronLastHash?: string;
   cronStablePasses?: number;
   cronFinalized?: boolean;
   cronFinalizedAt?: string;
+  recallCallEndedAt?: string | null;
   /** Recall delete_media succeeded — safe to stop polling Recall storage for this bot. */
   recallMediaDeletedAt?: string;
 };
 
-/** Two consecutive 5-min cron runs with identical transcript hash (~10 min stable). */
+/** Consecutive 5-min cron runs with identical hash after Recall call_ended (~15–20 min stable). */
+export function cronStablePassesRequired(): number {
+  const n = Number(process.env.NOTETAKER_CRON_STABLE_PASSES_REQUIRED ?? "2");
+  return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 6) : 2;
+}
+
 export function nextCronStabilityState(args: {
   cronLastHash?: string;
   cronStablePasses?: number;
   currentHash: string;
+  callEnded?: boolean;
 }) {
+  if (!args.callEnded) {
+    return {
+      cronLastHash: args.currentHash,
+      cronStablePasses: 0,
+      cronFinalized: false,
+      cronFinalizedAt: undefined as string | undefined,
+    };
+  }
+
   const matched = Boolean(args.cronLastHash) && args.cronLastHash === args.currentHash;
-  const cronStablePasses = matched ? (args.cronStablePasses ?? 0) + 1 : 0;
-  const cronFinalized = cronStablePasses >= 1;
+  const cronStablePasses = matched ? (args.cronStablePasses ?? 0) + 1 : 1;
+  const cronFinalized = cronStablePasses >= cronStablePassesRequired();
   return {
     cronLastHash: args.currentHash,
     cronStablePasses,
@@ -93,8 +110,10 @@ function utcStamp(iso: string) {
 
 function buildS3Prefix(session: NotetakerSession) {
   const name = sanitizeMeetingName(session.title || "Meeting");
+  const titleDay = parseLeadingDdMmYyyy(session.title || "");
   const startedAt = session.createdAt || new Date().toISOString();
-  const { date, time } = utcStamp(startedAt);
+  const { date: createdDate, time } = utcStamp(startedAt);
+  const date = titleDay || createdDate;
   return `${name}_${date}_${time}`;
 }
 
@@ -335,9 +354,9 @@ export async function writeNotesMdForMeetingPrefix(prefix: string, notesMd: stri
 export async function patchBotIndexCronStability(
   botId: string,
   currentHash: string,
-  existing?: NotetakerBotIndexDoc | null,
+  options?: { callEnded?: boolean; recallCallEndedAt?: string | null; existing?: NotetakerBotIndexDoc | null },
 ): Promise<{ cronFinalized: boolean; cronStablePasses: number; newlyFinalized: boolean }> {
-  const index = existing ?? (await loadBotIndexDoc(botId));
+  const index = options?.existing ?? (await loadBotIndexDoc(botId));
   if (!index?.prefix) {
     return { cronFinalized: false, cronStablePasses: 0, newlyFinalized: false };
   }
@@ -347,6 +366,7 @@ export async function patchBotIndexCronStability(
     cronLastHash: index.cronLastHash,
     cronStablePasses: index.cronStablePasses,
     currentHash,
+    callEnded: options?.callEnded,
   });
 
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
@@ -360,6 +380,7 @@ export async function patchBotIndexCronStability(
         {
           ...index,
           ...next,
+          recallCallEndedAt: options?.recallCallEndedAt ?? index.recallCallEndedAt ?? null,
           cronFinalizedAt: next.cronFinalized
             ? index.cronFinalizedAt || next.cronFinalizedAt
             : undefined,

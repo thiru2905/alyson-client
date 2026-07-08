@@ -1,5 +1,6 @@
 import { linkBotToNotetakerSession } from "@/lib/notetaker-bot-dispatch.server";
 import { isNotetakerSessionActivationDue } from "@/lib/notetaker-bot-join-timing.server";
+import { patchRecallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
 import {
   isActiveUnifiedScheduledStatus,
   patchUnifiedScheduledByBotId,
@@ -15,6 +16,14 @@ export type ScheduledBotActivationResult = {
   skipped: number;
   errors: string[];
 };
+
+const WEBHOOK_PREP_BEFORE_JOIN_MS = 10 * 60 * 1000;
+
+function isWebhookPrepDue(botJoinAt: string): boolean {
+  const joinMs = new Date(botJoinAt).getTime();
+  if (!Number.isFinite(joinMs)) return false;
+  return Date.now() >= joinMs - WEBHOOK_PREP_BEFORE_JOIN_MS;
+}
 
 /**
  * Deferred Recall bots are scheduled with join_at but Notetaker session wake is skipped
@@ -53,6 +62,13 @@ export async function activateDueScheduledBotSessions(): Promise<ScheduledBotAct
       continue;
     }
     if (!isNotetakerSessionActivationDue(row.botJoinAt)) {
+      if (isWebhookPrepDue(row.botJoinAt)) {
+        try {
+          await patchRecallBotRecordingConfig(botId);
+        } catch {
+          // best-effort — ensures Recall transcript webhooks before join
+        }
+      }
       result.skipped += 1;
       continue;
     }

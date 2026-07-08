@@ -71,6 +71,7 @@ type BotIndexDoc = {
   cronStablePasses?: number;
   cronFinalized?: boolean;
   cronFinalizedAt?: string;
+  recallCallEndedAt?: string | null;
   recallMediaDeletedAt?: string;
 };
 

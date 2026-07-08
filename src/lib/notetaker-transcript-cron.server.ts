@@ -7,6 +7,7 @@ import {
   listPersistedSessionsFromS3,
   mergeSessionsIndexToS3,
   invalidatePersistedSessionsS3Cache,
+  listAllBotIndexDocs,
 } from "@/lib/notetaker-sessions-history.server";
 import { listAllUnifiedScheduledBotSessions } from "@/lib/unifiedMeetingsService";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
@@ -68,6 +69,16 @@ async function collectBotIds(): Promise<{ botIds: Set<string>; warnings: string[
   return { botIds, warnings };
 }
 
+const MAX_RECALL_BACKFILLS_PER_CRON = 8;
+
+function isCronFinalizedBot(
+  botId: string,
+  indexByBotId: Map<string, { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string }>,
+): boolean {
+  const index = indexByBotId.get(botId);
+  return Boolean(index?.cronFinalized && index.transcriptKey && index.transcriptHash);
+}
+
 /**
  * Cron-safe transcript dump: scans every known bot, fetches upstream lines,
  * writes to S3 only when content hash changes (no duplicate dumps).
@@ -102,6 +113,15 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
 
   const { botIds, warnings: collectWarnings } = await collectBotIds();
   warnings.push(...collectWarnings);
+
+  let indexByBotId = new Map<string, { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string }>();
+  try {
+    const docs = await listAllBotIndexDocs();
+    indexByBotId = new Map(docs.map((doc) => [String(doc.botId || "").trim(), doc]));
+  } catch (e) {
+    warnings.push(`bot_index_prefetch: ${String(e)}`);
+  }
+
   let written = 0;
   let notesWritten = 0;
   let skippedUnchanged = 0;
@@ -110,10 +130,15 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
   let skippedEmpty = 0;
   let upstreamUnavailable = 0;
   let errors = 0;
+  let recallBackfillsAttempted = 0;
 
   for (const botId of botIds) {
     try {
-      const driveResult = await driveSessionPersistToS3(botId, { bypassThrottle: true });
+      const skipRecall = isCronFinalizedBot(botId, indexByBotId);
+      const driveResult = await driveSessionPersistToS3(botId, {
+        bypassThrottle: true,
+        skipRecallFetch: skipRecall,
+      });
       if (driveResult === "written") {
         written += 1;
         const notes = await ensureMeetingNotesInS3(botId);
@@ -129,6 +154,21 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
         if (driveResult === "skipped_complete") skippedFinalized += 1;
       } else if (driveResult === "empty") {
         skippedEmpty += 1;
+        if (!skipRecall && recallBackfillsAttempted < MAX_RECALL_BACKFILLS_PER_CRON) {
+          recallBackfillsAttempted += 1;
+          try {
+            const { backfillTranscriptFromRecall } = await import("@/lib/recall/recall-transcript-backfill.server");
+            const backfill = await backfillTranscriptFromRecall(botId);
+            if (backfill.ok && backfill.persisted) {
+              written += 1;
+              skippedEmpty -= 1;
+              const notes = await ensureMeetingNotesInS3(botId);
+              if (notes.ok && notes.notesMd?.trim()) notesWritten += 1;
+            }
+          } catch {
+            // backfill is best-effort
+          }
+        }
       } else if (driveResult === "unavailable") {
         upstreamUnavailable += 1;
       } else {

@@ -125,6 +125,35 @@ export function addMonths(d: Date, delta: number) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + delta, 1));
 }
 
+export function formatMeetingDayHeading(day: string) {
+  const d = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return day;
+  const label = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return label;
+}
+
+export function groupMeetingsByDay(meetings: NotetakerMeetingRow[]) {
+  const groups = new Map<string, NotetakerMeetingRow[]>();
+  for (const meeting of meetings) {
+    const arr = groups.get(meeting.day) ?? [];
+    arr.push(meeting);
+    groups.set(meeting.day, arr);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([day, items]) => ({
+      day,
+      label: formatMeetingDayHeading(day),
+      meetings: items.sort((a, b) => (b.startedAt || b.day).localeCompare(a.startedAt || a.day)),
+    }));
+}
+
 export function monthLabel(d: Date) {
   return d.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }

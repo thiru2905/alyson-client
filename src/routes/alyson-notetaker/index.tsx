@@ -12,7 +12,7 @@ import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-fu
 import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X, Bot, Pencil, Check } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
-import { finalizeAndPersistNotetakerSession } from "@/lib/notetaker-persistence-functions";
+import { finalizeAndPersistNotetakerSession, syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
 import { syncNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3-functions";
 import { deleteNotetakerSessionFromS3 } from "@/lib/notetaker-delete-functions";
 import { generateSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
@@ -680,6 +680,23 @@ function SessionPanel({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to persist meeting"),
   });
 
+  const syncRecallM = useMutation({
+    mutationFn: async () => syncNotetakerTranscriptFromRecall({ data: { botId: botId! } }),
+    onSuccess: (res) => {
+      if (res.result.ok && res.result.persisted) {
+        toast.success(
+          `Synced ${res.result.recallLineCount ?? "?"} lines from Recall (was ${res.result.s3LineCountBefore ?? 0})`,
+        );
+        void q.refetch();
+        void qc.invalidateQueries({ queryKey: ["alyson-notetaker", "sessions"] });
+        onSessionsChange?.();
+        return;
+      }
+      toast.error(res.result.reason || "Recall did not have a richer transcript to save");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Recall sync failed"),
+  });
+
   const emailPreviewM = useMutation({
     mutationFn: async () =>
       previewMeetingNotesEmailFn({
@@ -910,6 +927,14 @@ function SessionPanel({
             className="h-8 px-3 rounded-md border border-border bg-background text-xs flex items-center gap-1.5 disabled:opacity-50"
           >
             <Sparkles className="h-3.5 w-3.5" /> Generate notes
+          </button>
+          <button
+            onClick={() => syncRecallM.mutate()}
+            disabled={syncRecallM.isPending || !botId}
+            className="h-8 px-3 rounded-md border border-border bg-background text-xs flex items-center gap-1.5 disabled:opacity-50"
+            title="Pull full transcript from Recall if live capture was partial"
+          >
+            Sync Recall
           </button>
           <button
             onClick={() => persistM.mutate()}

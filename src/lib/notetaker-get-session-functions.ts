@@ -151,8 +151,14 @@ export const getNotetakerSession = createServerFn({ method: "POST" })
         }
       }
 
-      const st = String(typed.session?.status || "").toLowerCase();
-      const ended = ["ended", "completed", "disconnected", "left", "finished"].includes(st);
+      const { inferMeetingEnded } = await import("@/lib/notetaker-session-persist-drive.server");
+      const sessionStatus = String(typed.session?.status || "").toLowerCase();
+      const inCall = ["recording", "in_call", "in_call_recording", "joined", "joining", "waiting_room", "in_waiting_room"].some(
+        (s) => sessionStatus.includes(s) || sessionStatus === s,
+      );
+      const { ended } = await inferMeetingEnded(typed.session, typed.lines, data.botId, {
+        allowRecallFetch: !inCall && !typed.persistedInS3,
+      });
 
       if (typed.session?.botId && typed.lines.length > 0 && ended) {
         const existing = await getPersistedSession(typed.session.botId);

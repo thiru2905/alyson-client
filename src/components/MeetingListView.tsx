@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Captions, CheckSquare, ChevronDown, Copy, FileText, Loader2, Users } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Captions, CheckSquare, ChevronDown, Copy, FileText, Loader2, RefreshCw, Users } from "lucide-react";
 import {
   getMeetingNotesMdFromS3,
   getMeetingParticipantsFromS3,
@@ -9,9 +9,11 @@ import {
 } from "@/lib/notetaker-s3-calendar-functions";
 import { saveMeetingParticipantsCache } from "@/lib/meeting-list-participants-cache";
 import { getCachedMeetingTasks, saveMeetingTasksCache } from "@/lib/meeting-list-tasks-cache";
+import { syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import {
   formatMeetingListWhen,
+  groupMeetingsByDay,
   meetingNotesKey,
   meetingTasksKey,
   meetingTranscriptKey,
@@ -44,6 +46,7 @@ function MeetingListCard({
   openPanel: PanelKind | null;
   onTogglePanel: (kind: PanelKind) => void;
 }) {
+  const qc = useQueryClient();
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
   const tasksKey = meetingTasksKey(meeting);
@@ -110,6 +113,22 @@ function MeetingListCard({
     enabled: openPanel === "transcript",
     staleTime: 10 * 60_000,
     retry: false,
+  });
+
+  const syncRecallM = useMutation({
+    mutationFn: () => syncNotetakerTranscriptFromRecall({ data: { botId: meeting.botId! } }),
+    onSuccess: async (res) => {
+      if (res.result.ok && res.result.persisted) {
+        toast.success(
+          `Synced ${res.result.recallLineCount ?? "?"} lines from Recall (was ${res.result.s3LineCountBefore ?? 0})`,
+        );
+        await transcriptQ.refetch();
+        void qc.invalidateQueries({ queryKey: ["meeting-list-transcript", transcriptKey] });
+        return;
+      }
+      toast.error(res.result.reason || "Recall did not have a richer transcript to save");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Recall sync failed"),
   });
 
   const participants = (participantsQ.data?.participants ?? []) as MeetingListParticipant[];
@@ -216,16 +235,30 @@ function MeetingListCard({
               {openPanel === "tasks" && "Tasks by participant"}
             </div>
             {(openPanel === "notes" || openPanel === "transcript") && (
-              <button
-                type="button"
-                onClick={() => void copyPanelContent()}
-                disabled={panelLoading || panelError || !copyableText}
-                className="h-7 w-7 shrink-0 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40"
-                title="Copy"
-                aria-label={openPanel === "notes" ? "Copy notes" : "Copy transcript"}
-              >
-                <Copy className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {openPanel === "transcript" && meeting.botId && (
+                  <button
+                    type="button"
+                    onClick={() => syncRecallM.mutate()}
+                    disabled={syncRecallM.isPending || panelLoading}
+                    className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40 inline-flex items-center gap-1"
+                    title="Pull full transcript from Recall if live capture was partial"
+                  >
+                    <RefreshCw className={"h-3 w-3 " + (syncRecallM.isPending ? "animate-spin" : "")} />
+                    Sync Recall
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void copyPanelContent()}
+                  disabled={panelLoading || panelError || !copyableText}
+                  className="h-7 w-7 shrink-0 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40"
+                  title="Copy"
+                  aria-label={openPanel === "notes" ? "Copy notes" : "Copy transcript"}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )}
           </div>
 
@@ -346,17 +379,31 @@ export function MeetingListView({
     );
   }
 
+  const grouped = groupMeetingsByDay(meetings);
+
   return (
-    <div className="flex flex-col gap-3 font-sans">
-      {meetings.map((m) => (
-        <MeetingListCard
-          key={m.prefix}
-          meeting={m}
-          prefetchedParticipants={participantsByPrefix[m.prefix]}
-          participantsBatchLoading={participantsBatchLoading}
-          openPanel={openByPrefix[m.prefix] ?? null}
-          onTogglePanel={(kind) => togglePanel(m.prefix, kind)}
-        />
+    <div className="flex flex-col gap-4 font-sans">
+      {grouped.map((group) => (
+        <section key={group.day} className="flex flex-col gap-2">
+          <div className="px-1 text-[12px] font-medium text-foreground">
+            {group.label}
+            <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+              · {group.meetings.length} meeting{group.meetings.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-3">
+            {group.meetings.map((m) => (
+              <MeetingListCard
+                key={m.prefix}
+                meeting={m}
+                prefetchedParticipants={participantsByPrefix[m.prefix]}
+                participantsBatchLoading={participantsBatchLoading}
+                openPanel={openByPrefix[m.prefix] ?? null}
+                onTogglePanel={(kind) => togglePanel(m.prefix, kind)}
+              />
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );

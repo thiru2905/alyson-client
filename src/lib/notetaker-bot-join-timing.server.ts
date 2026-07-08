@@ -9,7 +9,7 @@ export const LATE_GRACE_SECONDS = 2 * 60;
 export const DEFERRED_BOT_JOIN_MIN_AHEAD_MS = 90 * 1000;
 
 /** Wake Notetaker session this close to join_at (after Recall deferred schedule). */
-export const NOTETAKER_ACTIVATION_BEFORE_JOIN_MS = 60 * 1000;
+export const NOTETAKER_ACTIVATION_BEFORE_JOIN_MS = 3 * 60 * 1000;
 
 /** True when join_at is far enough ahead that Recall should create the bot (Notetaker may join immediately). */
 export function isDeferredBotJoin(

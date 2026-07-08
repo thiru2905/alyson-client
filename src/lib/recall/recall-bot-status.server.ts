@@ -24,6 +24,8 @@ export type RecallBotLifecycle = {
   joinedMeeting: boolean;
   stuckInWaitingRoom: boolean;
   finalStatusCode: string;
+  /** Parsed from the same GET /api/v1/bot/{id}/ response — avoids a second Retrieve Bot call. */
+  transcriptDownloadUrl?: string | null;
   fetchError?: string;
 };
 
@@ -47,10 +49,30 @@ const lifecycleCache = new Map<string, { at: number; lifecycle: RecallBotLifecyc
 /** Throttle individual GET /api/v1/bot/{id} calls (Recall limit ~300/min). */
 const BOT_FETCH_DELAY_MS = 400;
 const MAX_INDIVIDUAL_BOT_FETCHES = 40;
-const LIFECYCLE_CACHE_TERMINAL_MS = 30 * 60_000;
-const LIFECYCLE_CACHE_ACTIVE_MS = 3 * 60_000;
+const LIFECYCLE_CACHE_TERMINAL_MS = 24 * 60 * 60_000;
+const LIFECYCLE_CACHE_ACTIVE_MS = 10 * 60_000;
+const LIFECYCLE_CACHE_FAILED_MS = 90_000;
+const MIN_BOT_GET_INTERVAL_MS = 250;
+
+let lastBotGetAt = 0;
+
+function recallBotGetMinIntervalMs(): number {
+  const n = Number(process.env.RECALL_BOT_GET_MIN_INTERVAL_MS ?? String(MIN_BOT_GET_INTERVAL_MS));
+  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 5000) : MIN_BOT_GET_INTERVAL_MS;
+}
+
+async function throttledRecallBotGet(path: string, init?: { timeoutMs?: number; maxRetries?: number }) {
+  const minInterval = recallBotGetMinIntervalMs();
+  if (minInterval > 0) {
+    const wait = lastBotGetAt + minInterval - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastBotGetAt = Date.now();
+  }
+  return recallFetchWithRetry(path, init);
+}
 
 function cacheTtlMs(lifecycle: RecallBotLifecycle): number {
+  if (lifecycle.fetchError) return LIFECYCLE_CACHE_FAILED_MS;
   return TERMINAL_STATUS.has(lifecycle.finalStatusCode)
     ? LIFECYCLE_CACHE_TERMINAL_MS
     : LIFECYCLE_CACHE_ACTIVE_MS;
@@ -135,6 +157,19 @@ function normalizeStatusChanges(raw: unknown): RecallBotStatusChange[] {
   return changes.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 }
 
+export function extractTranscriptDownloadUrl(bot: unknown): string | null {
+  const o = (bot && typeof bot === "object" ? bot : {}) as Record<string, unknown>;
+  const recordings = Array.isArray(o.recordings) ? o.recordings : [];
+  for (const rec of recordings) {
+    const row = rec as {
+      media_shortcuts?: { transcript?: { data?: { download_url?: string } } };
+    };
+    const url = row?.media_shortcuts?.transcript?.data?.download_url;
+    if (typeof url === "string" && url.trim()) return url.trim();
+  }
+  return null;
+}
+
 export function parseRecallBotLifecycle(botId: string, bot: unknown): RecallBotLifecycle {
   const o = (bot && typeof bot === "object" ? bot : {}) as Record<string, unknown>;
   const resolvedId = String(o.id || o.bot_id || botId || "").trim();
@@ -184,6 +219,7 @@ export function parseRecallBotLifecycle(botId: string, bot: unknown): RecallBotL
     joinedMeeting,
     stuckInWaitingRoom,
     finalStatusCode: lastCode,
+    transcriptDownloadUrl: extractTranscriptDownloadUrl(o),
   };
 }
 
@@ -221,7 +257,7 @@ export async function fetchRecallBotLifecycle(botId: string): Promise<RecallBotL
   if (cached) return cached;
 
   try {
-    const bot = await recallFetchWithRetry(`/api/v1/bot/${encodeURIComponent(id)}/`, {
+    const bot = await throttledRecallBotGet(`/api/v1/bot/${encodeURIComponent(id)}/`, {
       timeoutMs: 20_000,
       maxRetries: 2,
     });
@@ -230,7 +266,9 @@ export async function fetchRecallBotLifecycle(botId: string): Promise<RecallBotL
     return lifecycle;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return emptyLifecycle(id, message);
+    const failed = emptyLifecycle(id, message);
+    setCachedLifecycle(failed);
+    return failed;
   }
 }
 
