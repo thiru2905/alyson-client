@@ -46,3 +46,19 @@ export const syncNotetakerTranscriptFromRecall = createServerFn({ method: "POST"
     return { inspect, result };
   });
 
+const IntegrityInput = z
+  .object({
+    repair: z.boolean().optional(),
+  })
+  .optional();
+
+/** Run automated meeting calendar integrity audit (+ optional auto-repair). */
+export const runNotetakerMeetingIntegrityFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => IntegrityInput.parse(data) ?? {})
+  .handler(async ({ data }) => {
+    const { runNotetakerMeetingIntegrityCheck } = await import(
+      "@/lib/notetaker-meeting-integrity.server"
+    );
+    return runNotetakerMeetingIntegrityCheck({ repair: data?.repair ?? true });
+  });
+

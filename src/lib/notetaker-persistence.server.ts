@@ -3,6 +3,10 @@ import { CreateBucketCommand, HeadBucketCommand, PutObjectCommand, S3Client } fr
 import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { parseLeadingDdMmYyyy } from "@/lib/notetaker-meeting-schedule.server";
+import {
+  assertPersistPrefixIntegrity,
+  computeAuthenticMeetingDay,
+} from "@/lib/notetaker-meeting-integrity.server";
 import { loadBotIndexDoc } from "@/lib/notetaker-sessions-history.server";
 import { buildS3Metadata } from "@/lib/s3-metadata.server";
 import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
@@ -27,6 +31,12 @@ export type NotetakerBotIndexDoc = {
   recallCallEndedAt?: string | null;
   /** Recall delete_media succeeded — safe to stop polling Recall storage for this bot. */
   recallMediaDeletedAt?: string;
+  /** Authentic calendar day (integrity / listing). */
+  meetingDay?: string | null;
+  meetingStartedAt?: string | null;
+  integrityCheckedAt?: string | null;
+  supersededByBotId?: string | null;
+  supersededAt?: string | null;
 };
 
 /** Consecutive 5-min cron runs with identical hash after Recall call_ended (~15–20 min stable). */
@@ -178,10 +188,28 @@ export async function persistMeetingToS3({
   await ensureBucketExists(bucket);
   session = await withResolvedMeetingTitle(session);
 
-  const prefix =
+  let prefix =
     existingIndex?.prefix && String(existingIndex.prefix).trim()
       ? String(existingIndex.prefix)
       : buildS3Prefix(session);
+
+  // Persist-time integrity: if we are creating a NEW folder and title DDMMYYYY
+  // disagrees with createdAt day, force the title day into the prefix.
+  if (!existingIndex?.prefix) {
+    const check = assertPersistPrefixIntegrity({
+      title: session.title || "Meeting",
+      prefix,
+      createdAt: session.createdAt,
+    });
+    if (!check.ok) prefix = check.prefix;
+  }
+
+  const authentic = computeAuthenticMeetingDay({
+    title: session.title,
+    prefix,
+    eventAt: session.createdAt,
+  });
+
   const transcriptKey =
     existingIndex?.transcriptKey ||
     `alyson-notetaker/transcripts/${prefix}/transcript.txt`;
@@ -275,6 +303,12 @@ export async function persistMeetingToS3({
           cronFinalized: existingIndex?.cronFinalized,
           cronFinalizedAt: existingIndex?.cronFinalizedAt,
           recallMediaDeletedAt: existingIndex?.recallMediaDeletedAt,
+          recallCallEndedAt: existingIndex?.recallCallEndedAt ?? null,
+          meetingDay: authentic.meetingDay,
+          meetingStartedAt: authentic.meetingStartedAt || session.createdAt || null,
+          integrityCheckedAt: endedAt,
+          supersededByBotId: existingIndex?.supersededByBotId ?? null,
+          supersededAt: existingIndex?.supersededAt ?? null,
         },
         null,
         2,

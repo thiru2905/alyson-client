@@ -17,6 +17,7 @@
     "export:org-roster": "dotenv -e .env -- npx tsx scripts/export-org-roster-sheet.ts",
     "export:workspace-users": "dotenv -e .env -- npx tsx scripts/export-workspace-users-sheet.ts",
     "cron:notetaker-transcripts": "node scripts/cron-notetaker-transcripts.mjs",
+    "cron:notetaker-meeting-integrity": "node scripts/cron-notetaker-meeting-integrity.mjs",
     "audit:notetaker-notes": "dotenv -e .env -- node scripts/audit-notetaker-s3-notes.mjs",
     "backfill:notetaker-notes": "dotenv -e .env -- npx tsx scripts/backfill-notetaker-notes.ts"
   },

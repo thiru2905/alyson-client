@@ -1,8 +1,12 @@
 /**
- * Canonical meeting day/time for S3 calendar + meeting list.
+ * Canonical meeting schedule for calendar + meeting list.
  *
- * Prefer: title DDMMYYYY → earliest historical folder → session start → folder stamp.
- * Re-persists often rewrite folder/finalize stamps to "today"; those must not win.
+ * Rules (intentionally strict — no cross-meeting title guessing):
+ * 1. Leading DDMMYYYY in title/prefix wins (e.g. 08072026 … → 2026-07-08).
+ * 2. Otherwise use THIS meeting's own S3 folder date.
+ * 3. Session createdAt may refine time, but cannot move the day earlier/later than
+ *    the folder day unless it matches the folder day.
+ * 4. Never remap "test"/"rev"/etc. onto some other meeting's older folder.
  */
 
 export function parseLeadingDdMmYyyy(text: string): string | null {
@@ -46,6 +50,7 @@ export function normalizeMeetingTitleKey(title: string): string {
     .trim();
 }
 
+/** Only untitled system defaults — never hide real names like "test". */
 export function isGenericNormalizedTitle(titleKey: string): boolean {
   return (
     !titleKey ||
@@ -70,13 +75,11 @@ export function resolveMeetingSchedule(args: {
   title: string;
   prefix: string;
   eventAt?: string | null;
-  /** Oldest S3 folder date seen for this normalized title (non-generic). */
-  earliestFolderDay?: string | null;
 }): {
   day: string;
   startedAt: string | null;
   folderDate: string;
-  daySource: "title" | "history" | "event" | "folder";
+  daySource: "title" | "event" | "folder";
 } {
   const parsed = parseS3MeetingPrefix(args.prefix);
   const fromTitle = parseLeadingDdMmYyyy(args.title);
@@ -84,41 +87,32 @@ export function resolveMeetingSchedule(args: {
     parseLeadingDdMmYyyy(parsed.displayName) || parseLeadingDdMmYyyy(parsed.name.replaceAll("-", " "));
   const titledDay = fromTitle || fromName;
   const eventDay = isoDayFromTimestamp(args.eventAt);
-  const historyDay =
-    args.earliestFolderDay && /^\d{4}-\d{2}-\d{2}$/.test(args.earliestFolderDay)
-      ? args.earliestFolderDay
-      : null;
+  const folderDay = /^\d{4}-\d{2}-\d{2}$/.test(parsed.folderDate) ? parsed.folderDate : "";
 
-  // Title date always wins. Then older historical folder beats corrupted "today" event/folder stamps.
-  let day = titledDay || null;
-  let daySource: "title" | "history" | "event" | "folder" = "folder";
+  let day: string;
+  let daySource: "title" | "event" | "folder";
 
   if (titledDay) {
     day = titledDay;
     daySource = "title";
-  } else if (historyDay && (!parsed.folderDate || historyDay < parsed.folderDate)) {
-    day = historyDay;
-    daySource = "history";
-  } else if (historyDay && eventDay && historyDay < eventDay) {
-    day = historyDay;
-    daySource = "history";
-  } else if (eventDay && parsed.folderDate && eventDay > parsed.folderDate) {
-    // Sessions index / finalize stamp rewrote "now" — trust older folder.
-    day = parsed.folderDate;
+  } else if (folderDay) {
+    // This meeting's folder stamp is authoritative for undated titles ("test", "Rev", …).
+    day = folderDay;
     daySource = "folder";
   } else if (eventDay) {
     day = eventDay;
     daySource = "event";
   } else {
-    day = parsed.folderDate;
+    day = "";
     daySource = "folder";
   }
 
   let startedAt = parsed.folderStartedAt;
-  if (args.eventAt && Number.isFinite(Date.parse(args.eventAt)) && daySource === "event") {
+  // Use event time only when it falls on the same resolved day (avoids "finalize now" moving day).
+  if (args.eventAt && eventDay && eventDay === day && Number.isFinite(Date.parse(args.eventAt))) {
     startedAt = new Date(args.eventAt).toISOString();
   }
-  if (day && parsed.time && (daySource === "title" || daySource === "history")) {
+  if (day && parsed.time && daySource === "title" && day !== folderDay) {
     const candidate = `${day}T${parsed.time.replaceAll("-", ":")}Z`;
     if (Number.isFinite(Date.parse(candidate))) startedAt = candidate;
   }
@@ -137,7 +131,7 @@ export type MeetingScheduleRow = {
   hasTranscript?: boolean;
   hasTasks?: boolean;
   isCanonical?: boolean;
-  daySource?: "title" | "history" | "event" | "folder";
+  daySource?: "title" | "event" | "folder";
 };
 
 function contentScore(row: MeetingScheduleRow): number {
@@ -146,7 +140,7 @@ function contentScore(row: MeetingScheduleRow): number {
     (row.hasNotes ? 2 : 0) +
     (row.hasTasks ? 1 : 0) +
     (row.isCanonical ? 8 : 0) +
-    (row.daySource === "title" ? 3 : row.daySource === "history" ? 2 : row.daySource === "event" ? 1 : 0)
+    (row.daySource === "title" ? 2 : 0)
   );
 }
 
@@ -164,7 +158,7 @@ export function pickPreferredMeetingRow<T extends MeetingScheduleRow>(a: T, b: T
   const bStart = b.startedAt || "";
   if (aStart && bStart && aStart !== bStart) return aStart <= bStart ? a : b;
 
-  return a.folderDate <= b.folderDate ? a : b;
+  return a.prefix <= b.prefix ? a : b;
 }
 
 export function dedupeMeetingsByBotId<T extends MeetingScheduleRow>(rows: T[]): T[] {
@@ -185,29 +179,46 @@ export function dedupeMeetingsByBotId<T extends MeetingScheduleRow>(rows: T[]): 
 }
 
 /**
- * Hard collapse: one row per (day, normalized title), including case variants
- * and near-duplicate re-persist bot IDs ("Rev"/"rev", "Meeting"/"meeting").
+ * Collapse only near-duplicates: same day + same title (case-insensitive) +
+ * started within 15 minutes. Separate "test" meetings hours apart are kept.
  */
 export function dedupeMeetingsByTitleDay<T extends MeetingScheduleRow>(rows: T[]): T[] {
-  const byTitleDay = new Map<string, T>();
+  const NEAR_MS = 15 * 60_000;
+  const kept: T[] = [];
 
-  for (const row of rows) {
+  const sorted = [...rows].sort((a, b) => (a.startedAt || a.day).localeCompare(b.startedAt || b.day));
+
+  for (const row of sorted) {
     const titleKey = normalizeMeetingTitleKey(row.title) || "meeting";
-    const key = `${row.day}|${titleKey}`;
-    const prev = byTitleDay.get(key);
-    byTitleDay.set(key, prev ? pickPreferredMeetingRow(prev, row) : row);
+    const rowMs = Date.parse(String(row.startedAt || ""));
+    let merged = false;
+
+    for (let i = 0; i < kept.length; i++) {
+      const prev = kept[i]!;
+      if (prev.day !== row.day) continue;
+      const prevKey = normalizeMeetingTitleKey(prev.title) || "meeting";
+      if (prevKey !== titleKey) continue;
+
+      const prevMs = Date.parse(String(prev.startedAt || ""));
+      const close =
+        Number.isFinite(prevMs) && Number.isFinite(rowMs)
+          ? Math.abs(prevMs - rowMs) <= NEAR_MS
+          : !row.startedAt || !prev.startedAt;
+
+      if (close) {
+        kept[i] = pickPreferredMeetingRow(prev, row);
+        merged = true;
+        break;
+      }
+    }
+
+    if (!merged) kept.push(row);
   }
 
-  return [...byTitleDay.values()];
+  return kept;
 }
 
-/**
- * Generic untitled rows are almost always re-persist junk / test bots.
- * Keep them out of calendar + meeting list so they cannot inflate "today".
- */
+/** Drop only untitled system defaults — keep "test", "Rev", named meetings. */
 export function filterGenericMeetingClutter<T extends MeetingScheduleRow>(rows: T[]): T[] {
-  return rows.filter((row) => {
-    const titleKey = normalizeMeetingTitleKey(row.title);
-    return !isGenericNormalizedTitle(titleKey);
-  });
+  return rows.filter((row) => !isGenericNormalizedTitle(normalizeMeetingTitleKey(row.title)));
 }

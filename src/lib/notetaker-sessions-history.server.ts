@@ -73,6 +73,11 @@ type BotIndexDoc = {
   cronFinalizedAt?: string;
   recallCallEndedAt?: string | null;
   recallMediaDeletedAt?: string;
+  meetingDay?: string | null;
+  meetingStartedAt?: string | null;
+  integrityCheckedAt?: string | null;
+  supersededByBotId?: string | null;
+  supersededAt?: string | null;
 };
 
 function linesFromPlainTranscript(transcriptText: string) {

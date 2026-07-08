@@ -155,48 +155,72 @@ export function groupMeetingsByDay(meetings: NotetakerMeetingRow[]) {
     }));
 }
 
-/** Client-side integrity: collapse case/title duplicates shown on the same calendar day. */
+/** Client-side: collapse near-duplicates only (same day + title + ~15 min). Keep "test". */
 export function dedupeMeetingRowsForDisplay(meetings: NotetakerMeetingRow[]): NotetakerMeetingRow[] {
-  const byKey = new Map<string, NotetakerMeetingRow>();
-  for (const meeting of meetings) {
-    const titleKey = String(meeting.title || "")
+  const NEAR_MS = 15 * 60_000;
+  const normalize = (title: string) =>
+    String(title || "")
       .trim()
       .toLowerCase()
       .replace(/^\d{8}[\s\-_]*/, "")
       .replace(/[^a-z0-9]+/g, " ")
       .replace(/\s+/g, " ")
-      .trim() || "meeting";
+      .trim();
 
-    // Hide generic untitled clutter on the client too.
-    if (
-      !titleKey ||
-      titleKey === "meeting" ||
-      titleKey === "live meeting" ||
-      titleKey === "untitled meeting"
-    ) {
-      continue;
+  const isUntitled = (key: string) =>
+    !key ||
+    key === "meeting" ||
+    key === "live meeting" ||
+    key === "untitled meeting" ||
+    key === "live unified meeting" ||
+    key === "scheduled meeting" ||
+    key === "unified meeting";
+
+  const sorted = [...meetings].sort((a, b) =>
+    (a.startedAt || a.day).localeCompare(b.startedAt || b.day),
+  );
+  const kept: NotetakerMeetingRow[] = [];
+
+  for (const meeting of sorted) {
+    const titleKey = normalize(meeting.title);
+    if (isUntitled(titleKey)) continue;
+
+    const rowMs = Date.parse(String(meeting.startedAt || ""));
+    let merged = false;
+
+    for (let i = 0; i < kept.length; i++) {
+      const prev = kept[i]!;
+      if (prev.day !== meeting.day) continue;
+      if (normalize(prev.title) !== titleKey) continue;
+
+      const prevMs = Date.parse(String(prev.startedAt || ""));
+      const close =
+        Number.isFinite(prevMs) && Number.isFinite(rowMs)
+          ? Math.abs(prevMs - rowMs) <= NEAR_MS
+          : !meeting.startedAt || !prev.startedAt;
+
+      if (!close) continue;
+
+      const prevScore =
+        (prev.hasTranscript ? 4 : 0) + (prev.hasNotes ? 2 : 0) + (prev.hasTasks ? 1 : 0);
+      const nextScore =
+        (meeting.hasTranscript ? 4 : 0) + (meeting.hasNotes ? 2 : 0) + (meeting.hasTasks ? 1 : 0);
+      if (nextScore > prevScore) kept[i] = meeting;
+      else if (
+        nextScore === prevScore &&
+        meeting.startedAt &&
+        (!prev.startedAt || meeting.startedAt < prev.startedAt)
+      ) {
+        kept[i] = meeting;
+      }
+      merged = true;
+      break;
     }
 
-    const key = `${meeting.day}|${titleKey}`;
-    const prev = byKey.get(key);
-    if (!prev) {
-      byKey.set(key, meeting);
-      continue;
-    }
-    const prevScore =
-      (prev.hasTranscript ? 4 : 0) + (prev.hasNotes ? 2 : 0) + (prev.hasTasks ? 1 : 0);
-    const nextScore =
-      (meeting.hasTranscript ? 4 : 0) + (meeting.hasNotes ? 2 : 0) + (meeting.hasTasks ? 1 : 0);
-    if (nextScore > prevScore) {
-      byKey.set(key, meeting);
-      continue;
-    }
-    if (nextScore < prevScore) continue;
-    const prevStart = prev.startedAt || "";
-    const nextStart = meeting.startedAt || "";
-    if (nextStart && (!prevStart || nextStart < prevStart)) byKey.set(key, meeting);
+    if (!merged) kept.push(meeting);
   }
-  return [...byKey.values()];
+
+  return kept;
 }
 
 export function monthLabel(d: Date) {

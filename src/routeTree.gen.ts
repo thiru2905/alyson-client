@@ -64,6 +64,7 @@ import { Route as ApiCronTimeDoctorTokenRouteImport } from './routes/api/cron/ti
 import { Route as ApiCronScheduledBotActivationRouteImport } from './routes/api/cron/scheduled-bot-activation'
 import { Route as ApiCronRecallCalendarSyncRouteImport } from './routes/api/cron/recall-calendar-sync'
 import { Route as ApiCronNotetakerTranscriptsRouteImport } from './routes/api/cron/notetaker-transcripts'
+import { Route as ApiCronNotetakerMeetingIntegrityRouteImport } from './routes/api/cron/notetaker-meeting-integrity'
 import { Route as ApiCronLeaveEmailSyncRouteImport } from './routes/api/cron/leave-email-sync'
 import { Route as ApiCronDailyReportsRouteImport } from './routes/api/cron/daily-reports'
 import { Route as ApiAnalyticsWorkspaceActivityRouteImport } from './routes/api/analytics/workspace-activity'
@@ -368,6 +369,12 @@ const ApiCronNotetakerTranscriptsRoute =
     path: '/api/cron/notetaker-transcripts',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCronNotetakerMeetingIntegrityRoute =
+  ApiCronNotetakerMeetingIntegrityRouteImport.update({
+    id: '/api/cron/notetaker-meeting-integrity',
+    path: '/api/cron/notetaker-meeting-integrity',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCronLeaveEmailSyncRoute = ApiCronLeaveEmailSyncRouteImport.update({
   id: '/api/cron/leave-email-sync',
   path: '/api/cron/leave-email-sync',
@@ -527,6 +534,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
+  '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -597,6 +605,7 @@ export interface FileRoutesByTo {
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
+  '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -672,6 +681,7 @@ export interface FileRoutesById {
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
+  '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -748,6 +758,7 @@ export interface FileRouteTypes {
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
+    | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -818,6 +829,7 @@ export interface FileRouteTypes {
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
+    | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -892,6 +904,7 @@ export interface FileRouteTypes {
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
     | '/api/cron/notetaker-transcripts'
+    | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -939,6 +952,7 @@ export interface RootRouteChildren {
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
   ApiCronLeaveEmailSyncRoute: typeof ApiCronLeaveEmailSyncRoute
   ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
+  ApiCronNotetakerMeetingIntegrityRoute: typeof ApiCronNotetakerMeetingIntegrityRoute
   ApiCronRecallCalendarSyncRoute: typeof ApiCronRecallCalendarSyncRoute
   ApiCronScheduledBotActivationRoute: typeof ApiCronScheduledBotActivationRoute
   ApiCronTimeDoctorTokenRoute: typeof ApiCronTimeDoctorTokenRoute
@@ -1335,6 +1349,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronNotetakerTranscriptsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/notetaker-meeting-integrity': {
+      id: '/api/cron/notetaker-meeting-integrity'
+      path: '/api/cron/notetaker-meeting-integrity'
+      fullPath: '/api/cron/notetaker-meeting-integrity'
+      preLoaderRoute: typeof ApiCronNotetakerMeetingIntegrityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/leave-email-sync': {
       id: '/api/cron/leave-email-sync'
       path: '/api/cron/leave-email-sync'
@@ -1683,6 +1704,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
   ApiCronLeaveEmailSyncRoute: ApiCronLeaveEmailSyncRoute,
   ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
+  ApiCronNotetakerMeetingIntegrityRoute: ApiCronNotetakerMeetingIntegrityRoute,
   ApiCronRecallCalendarSyncRoute: ApiCronRecallCalendarSyncRoute,
   ApiCronScheduledBotActivationRoute: ApiCronScheduledBotActivationRoute,
   ApiCronTimeDoctorTokenRoute: ApiCronTimeDoctorTokenRoute,

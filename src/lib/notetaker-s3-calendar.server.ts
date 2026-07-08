@@ -7,8 +7,6 @@ import {
   dedupeMeetingsByBotId,
   dedupeMeetingsByTitleDay,
   filterGenericMeetingClutter,
-  isGenericNormalizedTitle,
-  normalizeMeetingTitleKey,
   parseS3MeetingPrefix,
   resolveMeetingSchedule,
 } from "@/lib/notetaker-meeting-schedule.server";
@@ -66,7 +64,7 @@ export type S3Meeting = {
 type S3MeetingBuildRow = S3Meeting & {
   folderDate: string;
   isCanonical?: boolean;
-  daySource?: "title" | "history" | "event" | "folder";
+  daySource?: "title" | "event" | "folder";
 };
 
 type BotIndexDoc = {
@@ -77,6 +75,9 @@ type BotIndexDoc = {
   finalizedAt?: string;
   transcriptKey?: string;
   notesKey?: string | null;
+  meetingDay?: string | null;
+  meetingStartedAt?: string | null;
+  supersededByBotId?: string | null;
 };
 
 let botIndexCache: { at: number; docs: BotIndexDoc[] } | null = null;
@@ -222,8 +223,9 @@ async function loadMeetingCatalogMeta(botIndexDocs: BotIndexDoc[]): Promise<Sess
 
 /**
  * List meetings in range.
- * Uses bot-index prefixes as primary rows, but recovers the real calendar day from
- * older orphan folders with the same title when a re-persist rewrote the prefix to "today".
+ *
+ * Source of truth: bot-index prefixes that still have transcript/notes/tasks.
+ * Day = title DDMMYYYY if present, else THIS folder's date (never another meeting's history).
  */
 export async function listMeetingsFromS3({ start, end }: { start: string; end: string }) {
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
@@ -242,29 +244,17 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
 
   const catalog = await loadMeetingCatalogMeta(botIndexDocs);
   const canonicalPrefixes = new Set(
-    botIndexDocs.map((d) => String(d.prefix || "").trim()).filter(Boolean),
+    botIndexDocs
+      .filter((d) => !d.supersededByBotId)
+      .map((d) => String(d.prefix || "").trim())
+      .filter(Boolean),
   );
   const botIndexByPrefix = new Map(
-    botIndexDocs.map((d) => [String(d.prefix || "").trim(), d] as const).filter(([p]) => p),
+    botIndexDocs
+      .filter((d) => !d.supersededByBotId)
+      .map((d) => [String(d.prefix || "").trim(), d] as const)
+      .filter(([p]) => p),
   );
-
-  const allAssetPrefixes = Array.from(
-    new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]),
-  );
-
-  // Earliest folder date per normalized title — recovers day after a bad re-persist.
-  const earliestFolderByTitle = new Map<string, string>();
-  for (const p of allAssetPrefixes) {
-    const parsed = parsePrefix(p);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) continue;
-    const titleKey =
-      normalizeMeetingTitleKey(parsed.title) ||
-      normalizeMeetingTitleKey(catalog.titleByPrefix.get(p) || "") ||
-      "";
-    if (isGenericNormalizedTitle(titleKey)) continue;
-    const prev = earliestFolderByTitle.get(titleKey);
-    if (!prev || parsed.date < prev) earliestFolderByTitle.set(titleKey, parsed.date);
-  }
 
   const prefixes = [...canonicalPrefixes].filter(
     (p) => notesPrefixes.has(p) || transcriptPrefixes.has(p) || tasksPrefixes.has(p),
@@ -281,20 +271,22 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
       idx?.title ||
       parsed.title ||
       "Meeting";
-    const eventAt = (botId && catalog.eventAtByBotId.get(botId)) || null;
-    const titleKey = normalizeMeetingTitleKey(title) || "";
-    const earliestFolderDay = !isGenericNormalizedTitle(titleKey)
-      ? earliestFolderByTitle.get(titleKey) || null
-      : null;
+    const eventAt =
+      (idx?.meetingStartedAt ? String(idx.meetingStartedAt) : null) ||
+      (botId && catalog.eventAtByBotId.get(botId)) ||
+      null;
 
     const schedule = resolveMeetingSchedule({
       title,
       prefix: p,
       eventAt,
-      earliestFolderDay,
     });
 
-    const day = schedule.day;
+    // Prefer integrity-stamped meetingDay when present.
+    const day =
+      (idx?.meetingDay && /^\d{4}-\d{2}-\d{2}$/.test(String(idx.meetingDay))
+        ? String(idx.meetingDay)
+        : null) || schedule.day;
     if (!day || day < start || day > end) continue;
 
     rows.push({
@@ -302,7 +294,7 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
       botId,
       day,
       title,
-      startedAt: schedule.startedAt,
+      startedAt: idx?.meetingStartedAt || schedule.startedAt,
       notesKey: `${notesBase}${p}/notes.md`,
       transcriptKey: `${transcriptBase}${p}/transcript.txt`,
       tasksKey: `${tasksBase}${p}/tasks.json`,

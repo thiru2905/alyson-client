@@ -30,6 +30,12 @@ export type NotetakerTranscriptCronResult = {
   warnings: string[];
   recallMediaCleanup?: RecallMediaCleanupResult;
   scheduledBotActivation?: Awaited<ReturnType<typeof activateDueScheduledBotSessions>>;
+  meetingIntegrity?: {
+    scanned: number;
+    repaired: number;
+    superseded: number;
+    issueCount: number;
+  };
 };
 
 async function collectBotIds(): Promise<{ botIds: Set<string>; warnings: string[] }> {
@@ -232,6 +238,27 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     warnings.push(`leave_email: ${String(e)}`);
   }
 
+  let meetingIntegrity: NotetakerTranscriptCronResult["meetingIntegrity"];
+  try {
+    const { runNotetakerMeetingIntegrityCheck } = await import(
+      "@/lib/notetaker-meeting-integrity.server"
+    );
+    const integrity = await runNotetakerMeetingIntegrityCheck({ repair: true });
+    meetingIntegrity = {
+      scanned: integrity.scanned,
+      repaired: integrity.repaired,
+      superseded: integrity.superseded,
+      issueCount: integrity.issues.length,
+    };
+    if (integrity.repaired > 0 || integrity.superseded > 0) {
+      warnings.push(
+        `meeting_integrity: repaired=${integrity.repaired} superseded=${integrity.superseded} issues=${integrity.issues.length}`,
+      );
+    }
+  } catch (e) {
+    warnings.push(`meeting_integrity: ${String(e)}`);
+  }
+
   return {
     ok: errors === 0,
     ranAt,
@@ -245,8 +272,9 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     skippedEmpty,
     upstreamUnavailable,
     errors,
-    warnings: warnings.slice(0, 12),
+    warnings: warnings.slice(0, 16),
     recallMediaCleanup,
     scheduledBotActivation,
+    meetingIntegrity,
   };
 }
