@@ -103,11 +103,19 @@ export function mergeNotetakerSessions(...lists: NotetakerSession[][]): Notetake
         byId.set(id, s);
         continue;
       }
+      const a = Date.parse(String(prev.createdAt || ""));
+      const b = Date.parse(String(s.createdAt || ""));
+      const earliestCreatedAt =
+        Number.isFinite(a) && Number.isFinite(b)
+          ? a <= b
+            ? prev.createdAt
+            : s.createdAt
+          : s.createdAt || prev.createdAt;
       byId.set(id, {
         ...prev,
         ...s,
         title: s.title || prev.title,
-        createdAt: s.createdAt || prev.createdAt,
+        createdAt: earliestCreatedAt,
         status: s.status || prev.status,
         meetingUrl: s.meetingUrl || prev.meetingUrl,
         botName: s.botName || prev.botName,
@@ -165,7 +173,8 @@ async function listSessionsFromBotIndex(): Promise<NotetakerSession[]> {
     out.push({
       botId: String(parsed.botId),
       title: storedTitle || meta.title,
-      createdAt: String(parsed.finalizedAt || meta.startedAt || ""),
+      // Prefer S3 folder stamp (meeting start) over finalizedAt (often re-persist "now").
+      createdAt: String(meta.startedAt || parsed.finalizedAt || ""),
       status: "persisted",
     });
   }
@@ -296,12 +305,12 @@ export async function loadPersistedSessionPayloadFromS3(botId: string): Promise<
     session: {
       botId,
       title,
-      createdAt: String(idx?.finalizedAt || meta.startedAt || new Date().toISOString()),
+      createdAt: String(meta.startedAt || idx?.finalizedAt || new Date().toISOString()),
       status: "persisted",
     },
     lines,
     participantCount: speakers.size,
-    startedLabel: String(idx?.finalizedAt || meta.startedAt || ""),
+    startedLabel: String(meta.startedAt || idx?.finalizedAt || ""),
     hasRecallConfig: true,
     hasGroqConfig: true,
     notesMd,

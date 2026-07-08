@@ -8,6 +8,7 @@ import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
 import { toast } from "sonner";
 import { z } from "zod";
+import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
 
 type MeetingRow = {
   prefix: string;
@@ -175,7 +176,10 @@ function CalendarPage() {
     staleTime: 60_000,
   });
 
-  const meetings = (q.data?.meetings ?? []) as MeetingRow[];
+  const meetings = useMemo(
+    () => dedupeMeetingRowsForDisplay((q.data?.meetings ?? []) as NotetakerMeetingRow[]),
+    [q.data?.meetings],
+  );
 
   const byDay = useMemo(() => {
     const m = new Map<string, MeetingRow[]>();

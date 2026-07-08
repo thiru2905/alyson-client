@@ -12,6 +12,7 @@ import {
 } from "@/lib/meeting-list-participants-cache";
 import {
   addMonths,
+  dedupeMeetingRowsForDisplay,
   endOfMonth,
   isoDay,
   monthLabel,
@@ -40,7 +41,10 @@ function MeetingListPage() {
     staleTime: 60_000,
   });
 
-  const meetings = (q.data?.meetings ?? []) as NotetakerMeetingRow[];
+  const meetings = useMemo(
+    () => dedupeMeetingRowsForDisplay((q.data?.meetings ?? []) as NotetakerMeetingRow[]),
+    [q.data?.meetings],
+  );
 
   const meetingFingerPrint = meetings.map((m) => m.prefix).join("|");
 

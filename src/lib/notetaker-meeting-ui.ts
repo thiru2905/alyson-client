@@ -139,8 +139,9 @@ export function formatMeetingDayHeading(day: string) {
 }
 
 export function groupMeetingsByDay(meetings: NotetakerMeetingRow[]) {
+  const deduped = dedupeMeetingRowsForDisplay(meetings);
   const groups = new Map<string, NotetakerMeetingRow[]>();
-  for (const meeting of meetings) {
+  for (const meeting of deduped) {
     const arr = groups.get(meeting.day) ?? [];
     arr.push(meeting);
     groups.set(meeting.day, arr);
@@ -152,6 +153,50 @@ export function groupMeetingsByDay(meetings: NotetakerMeetingRow[]) {
       label: formatMeetingDayHeading(day),
       meetings: items.sort((a, b) => (b.startedAt || b.day).localeCompare(a.startedAt || a.day)),
     }));
+}
+
+/** Client-side integrity: collapse case/title duplicates shown on the same calendar day. */
+export function dedupeMeetingRowsForDisplay(meetings: NotetakerMeetingRow[]): NotetakerMeetingRow[] {
+  const byKey = new Map<string, NotetakerMeetingRow>();
+  for (const meeting of meetings) {
+    const titleKey = String(meeting.title || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^\d{8}[\s\-_]*/, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || "meeting";
+
+    // Hide generic untitled clutter on the client too.
+    if (
+      !titleKey ||
+      titleKey === "meeting" ||
+      titleKey === "live meeting" ||
+      titleKey === "untitled meeting"
+    ) {
+      continue;
+    }
+
+    const key = `${meeting.day}|${titleKey}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, meeting);
+      continue;
+    }
+    const prevScore =
+      (prev.hasTranscript ? 4 : 0) + (prev.hasNotes ? 2 : 0) + (prev.hasTasks ? 1 : 0);
+    const nextScore =
+      (meeting.hasTranscript ? 4 : 0) + (meeting.hasNotes ? 2 : 0) + (meeting.hasTasks ? 1 : 0);
+    if (nextScore > prevScore) {
+      byKey.set(key, meeting);
+      continue;
+    }
+    if (nextScore < prevScore) continue;
+    const prevStart = prev.startedAt || "";
+    const nextStart = meeting.startedAt || "";
+    if (nextStart && (!prevStart || nextStart < prevStart)) byKey.set(key, meeting);
+  }
+  return [...byKey.values()];
 }
 
 export function monthLabel(d: Date) {

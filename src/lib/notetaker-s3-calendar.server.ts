@@ -5,6 +5,10 @@ import { buildS3Metadata } from "@/lib/s3-metadata.server";
 import { isGenericMeetingTitle } from "@/lib/notetaker-session-title.server";
 import {
   dedupeMeetingsByBotId,
+  dedupeMeetingsByTitleDay,
+  filterGenericMeetingClutter,
+  isGenericNormalizedTitle,
+  normalizeMeetingTitleKey,
   parseS3MeetingPrefix,
   resolveMeetingSchedule,
 } from "@/lib/notetaker-meeting-schedule.server";
@@ -59,13 +63,20 @@ export type S3Meeting = {
   hasTasks: boolean;
 };
 
-type S3MeetingBuildRow = S3Meeting & { folderDate: string };
+type S3MeetingBuildRow = S3Meeting & {
+  folderDate: string;
+  isCanonical?: boolean;
+  daySource?: "title" | "history" | "event" | "folder";
+};
 
 type BotIndexDoc = {
   version: number;
   botId: string;
   title?: string;
   prefix: string;
+  finalizedAt?: string;
+  transcriptKey?: string;
+  notesKey?: string | null;
 };
 
 let botIndexCache: { at: number; docs: BotIndexDoc[] } | null = null;
@@ -161,14 +172,25 @@ async function listBotIndexDocs(client: S3Client, bucket: string): Promise<BotIn
   return out;
 }
 
-/** Map S3 folder prefix → display title from bot-index + sessions catalog. */
-async function loadTitleByPrefix(botIndexDocs: BotIndexDoc[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
+type SessionCatalogMeta = {
+  titleByPrefix: Map<string, string>;
+  eventAtByBotId: Map<string, string>;
+  titleByBotId: Map<string, string>;
+};
+
+/** Titles + real event times from bot-index + sessions catalog. */
+async function loadMeetingCatalogMeta(botIndexDocs: BotIndexDoc[]): Promise<SessionCatalogMeta> {
+  const titleByPrefix = new Map<string, string>();
+  const eventAtByBotId = new Map<string, string>();
+  const titleByBotId = new Map<string, string>();
 
   for (const parsed of botIndexDocs) {
     const prefix = String(parsed.prefix || "").trim();
     const title = String(parsed.title || "").trim();
-    if (prefix && title && !isGenericMeetingTitle(title)) out.set(prefix, title);
+    const botId = String(parsed.botId || "").trim();
+    if (prefix && title && !isGenericMeetingTitle(title)) titleByPrefix.set(prefix, title);
+    if (botId && title && !isGenericMeetingTitle(title)) titleByBotId.set(botId, title);
+    // Do NOT use finalizedAt here — re-persists stamp it as "now" and mis-date old meetings.
   }
 
   try {
@@ -179,18 +201,30 @@ async function loadTitleByPrefix(botIndexDocs: BotIndexDoc[]): Promise<Map<strin
     for (const s of idx.sessions ?? []) {
       const botId = String(s.botId || "").trim();
       const title = String(s.title || "").trim();
-      if (!botId || !title || isGenericMeetingTitle(title)) continue;
-      const doc = byBotId.get(botId);
-      const prefix = String(doc?.prefix || "").trim();
-      if (prefix && !out.has(prefix)) out.set(prefix, title);
+      const createdAt = String(s.createdAt || "").trim();
+      if (botId && createdAt) {
+        eventAtByBotId.set(botId, createdAt);
+      }
+      if (!botId || !title) continue;
+      if (!isGenericMeetingTitle(title)) {
+        titleByBotId.set(botId, title);
+        const doc = byBotId.get(botId);
+        const prefix = String(doc?.prefix || "").trim();
+        if (prefix && !titleByPrefix.has(prefix)) titleByPrefix.set(prefix, title);
+      }
     }
   } catch {
     // sessions index optional
   }
 
-  return out;
+  return { titleByPrefix, eventAtByBotId, titleByBotId };
 }
 
+/**
+ * List meetings in range.
+ * Uses bot-index prefixes as primary rows, but recovers the real calendar day from
+ * older orphan folders with the same title when a re-persist rewrote the prefix to "today".
+ */
 export async function listMeetingsFromS3({ start, end }: { start: string; end: string }) {
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
   const client = s3();
@@ -199,30 +233,73 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
   const transcriptBase = "alyson-notetaker/transcripts/";
   const tasksBase = "alyson-notetaker/meetingtasks/";
 
-  const [notesPrefixes, transcriptPrefixes, tasksPrefixes] = await Promise.all([
+  const [notesPrefixes, transcriptPrefixes, tasksPrefixes, botIndexDocs] = await Promise.all([
     listMeetingAssetPrefixes(client, bucket, notesBase, "notes.md", { minSize: 1 }),
     listMeetingAssetPrefixes(client, bucket, transcriptBase, "transcript.txt", { minSize: 1 }),
     listMeetingAssetPrefixes(client, bucket, tasksBase, "tasks.json", { minSize: 1 }),
+    getBotIndexDocs(client, bucket),
   ]);
 
-  const prefixes = Array.from(new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]));
+  const catalog = await loadMeetingCatalogMeta(botIndexDocs);
+  const canonicalPrefixes = new Set(
+    botIndexDocs.map((d) => String(d.prefix || "").trim()).filter(Boolean),
+  );
+  const botIndexByPrefix = new Map(
+    botIndexDocs.map((d) => [String(d.prefix || "").trim(), d] as const).filter(([p]) => p),
+  );
 
-  const botIndexDocs = await getBotIndexDocs(client, bucket);
-  const botIndexByPrefix = new Map(botIndexDocs.map((d) => [String(d.prefix), d]));
-  const titleByPrefix = await loadTitleByPrefix(botIndexDocs);
+  const allAssetPrefixes = Array.from(
+    new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]),
+  );
+
+  // Earliest folder date per normalized title — recovers day after a bad re-persist.
+  const earliestFolderByTitle = new Map<string, string>();
+  for (const p of allAssetPrefixes) {
+    const parsed = parsePrefix(p);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) continue;
+    const titleKey =
+      normalizeMeetingTitleKey(parsed.title) ||
+      normalizeMeetingTitleKey(catalog.titleByPrefix.get(p) || "") ||
+      "";
+    if (isGenericNormalizedTitle(titleKey)) continue;
+    const prev = earliestFolderByTitle.get(titleKey);
+    if (!prev || parsed.date < prev) earliestFolderByTitle.set(titleKey, parsed.date);
+  }
+
+  const prefixes = [...canonicalPrefixes].filter(
+    (p) => notesPrefixes.has(p) || transcriptPrefixes.has(p) || tasksPrefixes.has(p),
+  );
 
   const rows: S3MeetingBuildRow[] = [];
   for (const p of prefixes) {
     const idx = botIndexByPrefix.get(p);
+    const botId = idx?.botId ? String(idx.botId) : null;
     const parsed = parsePrefix(p);
-    const title = titleByPrefix.get(p) || idx?.title || parsed.title || "Meeting";
-    const schedule = resolveMeetingSchedule({ title, prefix: p });
+    const title =
+      (botId && catalog.titleByBotId.get(botId)) ||
+      catalog.titleByPrefix.get(p) ||
+      idx?.title ||
+      parsed.title ||
+      "Meeting";
+    const eventAt = (botId && catalog.eventAtByBotId.get(botId)) || null;
+    const titleKey = normalizeMeetingTitleKey(title) || "";
+    const earliestFolderDay = !isGenericNormalizedTitle(titleKey)
+      ? earliestFolderByTitle.get(titleKey) || null
+      : null;
+
+    const schedule = resolveMeetingSchedule({
+      title,
+      prefix: p,
+      eventAt,
+      earliestFolderDay,
+    });
+
     const day = schedule.day;
     if (!day || day < start || day > end) continue;
 
     rows.push({
       prefix: p,
-      botId: idx?.botId ? String(idx.botId) : null,
+      botId,
       day,
       title,
       startedAt: schedule.startedAt,
@@ -233,12 +310,16 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
       hasTranscript: transcriptPrefixes.has(p),
       hasTasks: tasksPrefixes.has(p),
       folderDate: schedule.folderDate,
+      isCanonical: true,
+      daySource: schedule.daySource,
     });
   }
 
-  const deduped = dedupeMeetingsByBotId(rows);
+  const deduped = filterGenericMeetingClutter(
+    dedupeMeetingsByTitleDay(dedupeMeetingsByBotId(rows)),
+  );
   deduped.sort((a, b) => (b.startedAt || b.day).localeCompare(a.startedAt || a.day));
-  return deduped.map(({ folderDate: _folderDate, ...row }) => row);
+  return deduped.map(({ folderDate: _folderDate, isCanonical: _c, daySource: _d, ...row }) => row);
 }
 
 export type NotesCoverageReport = {
@@ -280,7 +361,7 @@ export async function auditNotesCoverageFromS3(): Promise<NotesCoverageReport> {
   const allPrefixes = new Set([...notesPrefixes, ...transcriptPrefixes]);
   const botIndexDocs = await getBotIndexDocs(client, bucket);
   const botIndexByPrefix = new Map(botIndexDocs.map((d) => [String(d.prefix), d]));
-  const titleByPrefix = await loadTitleByPrefix(botIndexDocs);
+  const catalog = await loadMeetingCatalogMeta(botIndexDocs);
 
   const missingNotes: NotesCoverageReport["missingNotes"] = [];
   let withBoth = 0;
@@ -293,11 +374,23 @@ export async function auditNotesCoverageFromS3(): Promise<NotesCoverageReport> {
     }
     const parsed = parsePrefix(p);
     const idx = botIndexByPrefix.get(p);
+    const botId = idx?.botId ? String(idx.botId) : null;
+    const title =
+      (botId && catalog.titleByBotId.get(botId)) ||
+      catalog.titleByPrefix.get(p) ||
+      idx?.title ||
+      parsed.title ||
+      "Meeting";
+    const schedule = resolveMeetingSchedule({
+      title,
+      prefix: p,
+      eventAt: (botId && catalog.eventAtByBotId.get(botId)) || null,
+    });
     missingNotes.push({
       prefix: p,
-      botId: idx?.botId ? String(idx.botId) : null,
-      day: parsed.date,
-      title: titleByPrefix.get(p) || idx?.title || parsed.title || "Meeting",
+      botId,
+      day: schedule.day,
+      title,
     });
   }
 
@@ -329,7 +422,7 @@ export async function auditTasksCoverageFromS3(): Promise<TasksCoverageReport> {
   const allPrefixes = new Set([...notesPrefixes, ...transcriptPrefixes, ...tasksPrefixes]);
   const botIndexDocs = await getBotIndexDocs(client, bucket);
   const botIndexByPrefix = new Map(botIndexDocs.map((d) => [String(d.prefix), d]));
-  const titleByPrefix = await loadTitleByPrefix(botIndexDocs);
+  const catalog = await loadMeetingCatalogMeta(botIndexDocs);
 
   const missingTasks: TasksCoverageReport["missingTasks"] = [];
   let withBoth = 0;
@@ -342,11 +435,23 @@ export async function auditTasksCoverageFromS3(): Promise<TasksCoverageReport> {
 
     const parsed = parsePrefix(p);
     const idx = botIndexByPrefix.get(p);
+    const botId = idx?.botId ? String(idx.botId) : null;
+    const title =
+      (botId && catalog.titleByBotId.get(botId)) ||
+      catalog.titleByPrefix.get(p) ||
+      idx?.title ||
+      parsed.title ||
+      "Meeting";
+    const schedule = resolveMeetingSchedule({
+      title,
+      prefix: p,
+      eventAt: (botId && catalog.eventAtByBotId.get(botId)) || null,
+    });
     missingTasks.push({
       prefix: p,
-      botId: idx?.botId ? String(idx.botId) : null,
-      day: parsed.date,
-      title: titleByPrefix.get(p) || idx?.title || parsed.title || "Meeting",
+      botId,
+      day: schedule.day,
+      title,
       notesKey: `${notesBase}${p}/notes.md`,
       transcriptKey: `${transcriptBase}${p}/transcript.txt`,
     });
