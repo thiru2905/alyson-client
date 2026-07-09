@@ -248,6 +248,6 @@ export function buildMonthlyPacingRow(args: {
   };
 }
 
-/** Monthly target = workdays × 7h (equivalent to {WEEKLY_HOURS_TARGET}h/week). */
+/** Monthly target = workdays × PACING_LEAVE_HOURS_PER_DAY (aligned with daily leave credit). */
 export const MONTHLY_HOURS_PER_WORKDAY = PACING_LEAVE_HOURS_PER_DAY;
 export const WEEKLY_EQUIVALENT_TARGET = WEEKLY_HOURS_TARGET;

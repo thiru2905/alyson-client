@@ -172,7 +172,7 @@ function isWeekdayOnLeave(ranges: LeaveDateRange[], day: string): boolean {
   return ranges.some((r) => day >= r.startDate && day <= r.endDate);
 }
 
-/** Per Mon–Thu sample day: +7h credit when that weekday is on personal or team leave. */
+/** Per Mon–Thu sample day: leave-hour credit when that weekday is on personal or team leave. */
 export function resolveDailyLeaveHoursForSample(
   ctx: PacingLeaveContext,
   args: {

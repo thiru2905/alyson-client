@@ -3,7 +3,7 @@ import { emailLookupKeys } from "@/lib/cintara-email";
 export const WEEKLY_HOURS_TARGET = 35;
 
 /** Hours credited per leave workday toward weekly pacing (counts as worked time). */
-export const PACING_LEAVE_HOURS_PER_DAY = 7;
+export const PACING_LEAVE_HOURS_PER_DAY = 8;
 
 export function formatActiveLabel(active: boolean): "Yes" | "No" {
   return active ? "Yes" : "No";
@@ -28,7 +28,7 @@ export type WeeklyPacingRow = {
   leaveDaysPersonal: number;
   /** Team/location leave workdays this week. */
   leaveDaysTeam: number;
-  /** Leave credit applied to pacing (leaveDays × 7h). */
+  /** Leave credit applied to pacing (leaveDays × PACING_LEAVE_HOURS_PER_DAY). */
   leaveHoursCredit: number;
   /** Logged hours + leave credit — used for target / status / remaining. */
   hoursWorked: number;

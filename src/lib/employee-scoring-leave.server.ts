@@ -18,7 +18,7 @@ export function leaveDaysForEmail(ctx: PacingLeaveContext, email: string): numbe
   return ctx.lookup.byEmail.get(normalizeEmail(email)) ?? 0;
 }
 
-/** Apply +7h per approved leave workday to scored work hours (matches pacing). */
+/** Apply leave-hour credit per approved leave workday to scored work hours (matches pacing). */
 export function applyLeaveCreditToScoreInputs(
   inputs: EmployeeScoreInput[],
   ctx: PacingLeaveContext,
