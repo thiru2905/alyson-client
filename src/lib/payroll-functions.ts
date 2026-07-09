@@ -58,18 +58,20 @@ const markPaidSchema = clerkTokenSchema.extend({
   actor: z.string().email().optional().nullable(),
 });
 
-export const getPayrollReport = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => reportInputSchema.parse(data ?? {}))
+export const getPayrollReport = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => reportInputSchema.parse(data))
   .handler(async ({ data }) => {
     await requirePayrollAccess(data.clerkToken);
-    return buildPayrollReport(data);
+    const { clerkToken: _token, ...reportArgs } = data;
+    return buildPayrollReport(reportArgs);
   });
 
-export const getPayrollAnalytics = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => reportInputSchema.parse(data ?? {}))
+export const getPayrollAnalytics = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => reportInputSchema.parse(data))
   .handler(async ({ data }) => {
     await requirePayrollAccess(data.clerkToken);
-    const report = await buildPayrollReport(data);
+    const { clerkToken: _token, ...reportArgs } = data;
+    const report = await buildPayrollReport(reportArgs);
     return buildPayrollAnalyticsReport(report.rows);
   });
 
@@ -139,16 +141,16 @@ export const unmarkPayrollPaid = createServerFn({ method: "POST" })
     return result;
   });
 
-export const getPayrollMeta = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => clerkTokenSchema.parse(data ?? {}))
+export const getPayrollMeta = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => clerkTokenSchema.parse(data))
   .handler(async ({ data }) => {
     await requirePayrollAccess(data.clerkToken);
     const file = await ensurePayrollOnS3();
     return { bucket: file.bucket, key: file.key, logKey: file.logKey, updatedAt: file.updatedAt };
   });
 
-export const getPayrollLog = createServerFn({ method: "GET" })
-  .inputValidator((data: unknown) => clerkTokenSchema.parse(data ?? {}))
+export const getPayrollLog = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => clerkTokenSchema.parse(data))
   .handler(async ({ data }) => {
     await requirePayrollAccess(data.clerkToken);
     const file = await ensurePayrollOnS3();

@@ -4,6 +4,7 @@ import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { Cloud, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { getPayrollLog } from "@/lib/payroll-functions";
+import { useAuth } from "@/lib/auth";
 import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import { payCycleLabel, type PayrollPayCycle } from "@/lib/payroll-schema";
@@ -31,12 +32,15 @@ function opLabel(op: string) {
 }
 
 function PayrollLogPage() {
+  const { canAccessPayroll } = useAuth();
   const clerkAuth = useClerkAuth();
   const q = useQuery({
     queryKey: ["payroll-log"],
     queryFn: async () =>
       getPayrollLog({ data: { clerkToken: await payrollClerkToken(() => clerkAuth.getToken()) } }),
     staleTime: 10_000,
+    enabled: clerkAuth.isSignedIn && canAccessPayroll,
+    retry: 1,
   });
 
   const entries = q.data?.entries ?? [];

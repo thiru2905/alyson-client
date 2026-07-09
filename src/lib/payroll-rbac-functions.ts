@@ -8,7 +8,7 @@ const clerkTokenSchema = z.object({
   clerkToken: z.string().min(1),
 });
 
-export const checkPayrollAccess = createServerFn({ method: "GET" })
+export const checkPayrollAccess = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => clerkTokenSchema.parse(data))
   .handler(async ({ data }): Promise<PayrollAccessCheckResult> => {
     const { checkPayrollAccessForToken } = await import("@/lib/payroll-rbac.server");

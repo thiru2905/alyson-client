@@ -30,12 +30,14 @@ function currentMonth() {
 
 function PayrollBoardPage() {
   const auth = useAuth();
+  const { canAccessPayroll } = auth;
   const clerkAuth = useClerkAuth();
   const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
 
   const clerkToken = () => payrollClerkToken(() => clerkAuth.getToken());
+  const queryEnabled = clerkAuth.isSignedIn && canAccessPayroll;
 
   const [month, setMonth] = useState(currentMonth);
   const [payCycleFilter, setPayCycleFilter] = useState<"all" | PayrollPayCycle>("all");
@@ -53,12 +55,23 @@ function PayrollBoardPage() {
       getPayrollReport({
         data: { month, payCycleFilter, activeOnly, clerkToken: await clerkToken() },
       }),
+    enabled: queryEnabled,
+    retry: 1,
   });
 
   const metaQ = useQuery({
     queryKey: ["payroll-meta"],
     queryFn: async () => getPayrollMeta({ data: { clerkToken: await clerkToken() } }),
+    enabled: queryEnabled,
+    retry: 1,
   });
+
+  useEffect(() => {
+    if (q.isError) {
+      const msg = q.error instanceof Error ? q.error.message : "Failed to load payroll report";
+      toast.error("Payroll data unavailable", { description: msg });
+    }
+  }, [q.isError, q.error]);
 
   const report = q.data;
   const rows = report?.rows ?? [];
@@ -320,57 +333,73 @@ function PayrollBoardPage() {
         )}
       </div>
 
+      {q.isError ? (
+        <div className="text-[13px] text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-3">
+          Could not load payroll data: {q.error instanceof Error ? q.error.message : "Unknown error"}
+        </div>
+      ) : null}
+
+      {q.isLoading ? (
+        <div className="surface-ops p-10 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : null}
+
       {report?.warnings?.length ? (
         <div className="text-[12px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
           {report.warnings.join(" · ")}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <MiniStat label="Employees" value={String(filtered.length)} />
-        <MiniStat label="India (INR)" value={String(indiaRows.length)} />
-        <MiniStat label="Pakistan (PKR)" value={String(pakistanRows.length)} />
-        <MiniStat label="Paid" value={String(filtered.filter((r) => r.paidAt).length)} />
-        <MiniStat
-          label="Total INR"
-          value={fmtCurrency(
-            filtered.filter((r) => r.localCurrency === "INR").reduce((s, r) => s + r.totalLocal, 0),
-            { currency: "INR" },
-          )}
-        />
-        <MiniStat
-          label="Total PKR"
-          value={fmtCurrency(
-            filtered.filter((r) => r.localCurrency === "PKR").reduce((s, r) => s + r.totalLocal, 0),
-            { currency: "PKR" },
-          )}
-        />
-      </div>
-
-      {payCycleFilter === "all" ? (
+      {!q.isLoading && !q.isError && report ? (
         <>
-          <PayrollTable
-            title="India — pay 15th · TD hours 15th prior month → 15th"
-            rows={indiaRows}
-            onRowClick={openRow}
-          />
-          <PayrollTable
-            title="Pakistan — pay month end · TD hours calendar month"
-            rows={pakistanRows}
-            onRowClick={openRow}
-          />
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+            <MiniStat label="Employees" value={String(filtered.length)} />
+            <MiniStat label="India (INR)" value={String(indiaRows.length)} />
+            <MiniStat label="Pakistan (PKR)" value={String(pakistanRows.length)} />
+            <MiniStat label="Paid" value={String(filtered.filter((r) => r.paidAt).length)} />
+            <MiniStat
+              label="Total INR"
+              value={fmtCurrency(
+                filtered.filter((r) => r.localCurrency === "INR").reduce((s, r) => s + r.totalLocal, 0),
+                { currency: "INR" },
+              )}
+            />
+            <MiniStat
+              label="Total PKR"
+              value={fmtCurrency(
+                filtered.filter((r) => r.localCurrency === "PKR").reduce((s, r) => s + r.totalLocal, 0),
+                { currency: "PKR" },
+              )}
+            />
+          </div>
+
+          {payCycleFilter === "all" ? (
+            <>
+              <PayrollTable
+                title="India — pay 15th · TD hours 15th prior month → 15th"
+                rows={indiaRows}
+                onRowClick={openRow}
+              />
+              <PayrollTable
+                title="Pakistan — pay month end · TD hours calendar month"
+                rows={pakistanRows}
+                onRowClick={openRow}
+              />
+            </>
+          ) : (
+            <PayrollTable
+              title={
+                payCycleFilter === "india_15th"
+                  ? "India — pay 15th · TD hours 15th prior month → 15th"
+                  : "Pakistan — pay month end · TD hours calendar month"
+              }
+              rows={filtered}
+              onRowClick={openRow}
+            />
+          )}
         </>
-      ) : (
-        <PayrollTable
-          title={
-            payCycleFilter === "india_15th"
-              ? "India — pay 15th · TD hours 15th prior month → 15th"
-              : "Pakistan — pay month end · TD hours calendar month"
-          }
-          rows={filtered}
-          onRowClick={openRow}
-        />
-      )}
+      ) : null}
 
       <PayrollEmployeeDrawer
         open={drawerOpen}

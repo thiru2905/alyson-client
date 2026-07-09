@@ -19,6 +19,7 @@ import { BarChart3, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { filterPayrollAnalytics } from "@/lib/payroll-analytics";
 import { getPayrollAnalytics } from "@/lib/payroll-functions";
+import { useAuth } from "@/lib/auth";
 import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
 import { fmtCurrency } from "@/lib/format";
 
@@ -34,6 +35,7 @@ function currentMonth() {
 }
 
 function PayrollAnalyticsPage() {
+  const { canAccessPayroll } = useAuth();
   const clerkAuth = useClerkAuth();
   const [month, setMonth] = useState(currentMonth);
   const [teamFilter, setTeamFilter] = useState("__all__");
@@ -48,6 +50,8 @@ function PayrollAnalyticsPage() {
         data: { month, payCycleFilter: "all", activeOnly: false, clerkToken: await payrollClerkToken(() => clerkAuth.getToken()) },
       }),
     staleTime: 15_000,
+    enabled: clerkAuth.isSignedIn && canAccessPayroll,
+    retry: 1,
   });
 
   const base = q.data;
