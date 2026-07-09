@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { BarChart3, Calendar, FileText, Mail } from "lucide-react";
 import { SuperAccessGate } from "@/components/SuperAccessGate";
-import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 
 export const Route = createFileRoute("/leave")({
   head: () => ({ meta: [{ title: "Leave — Alyson HR" }] }),
@@ -22,7 +21,7 @@ function LeaveLayout() {
               </h1>
             </div>
             <p className="mt-1.5 text-[13px] md:text-[14px] text-muted-foreground max-w-2xl leading-relaxed">
-              Per-employee leave ledger and team calendar. Personal leave is recorded per employee; team blocks and individual leave both appear on the calendar — +{PACING_LEAVE_HOURS_PER_DAY}h/workday in Weekly Pacing.
+              Per-employee leave ledger and team calendar. Personal leave is recorded per employee; team blocks and individual leave both appear on the calendar — +7h/workday in Weekly Pacing.
             </p>
           </div>
 

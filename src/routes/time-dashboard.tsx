@@ -22,7 +22,6 @@ import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
-import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 
 export const Route = createFileRoute("/time-dashboard")({
   head: () => ({ meta: [{ title: "Time Dashboard — Alyson HR" }] }),
@@ -395,7 +394,7 @@ function TimeDashboardPage() {
                   to="/time-dashboard/monthly-pacing"
                   search={{ month: undefined, start: undefined, end: undefined }}
                   className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
-                  title={`Month-to-date pacing — workdays in month × ${PACING_LEAVE_HOURS_PER_DAY}h target`}
+                  title="Month-to-date pacing — workdays in month × 7h target"
                 >
                   <Calendar className="h-3.5 w-3.5" />
                   Monthly Pacing

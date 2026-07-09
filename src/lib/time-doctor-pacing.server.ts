@@ -288,7 +288,7 @@ export async function buildWeeklyPacingReport(args?: {
   };
 }
 
-/** Month-to-date or custom-range pacing: same row model, target = workdays in period × leave credit hours. */
+/** Month-to-date or custom-range pacing: same row model, target = workdays in period × 7h. */
 export async function buildMonthlyPacingReport(args?: {
   month?: string;
   day?: string;
