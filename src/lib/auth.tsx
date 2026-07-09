@@ -1,13 +1,20 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { ClerkProvider, useAuth as useClerkAuth, useClerk, useUser as useClerkUser } from "@clerk/clerk-react";
+import {
+  PAYROLL_CODE,
+  PAYROLL_UNLOCK_KEY,
+  readModuleUnlocked,
+  TIME_DASHBOARD_CODE,
+  TIME_DASHBOARD_UNLOCK_KEY,
+  tryUnlockModuleCode,
+  writeModuleUnlocked,
+} from "@/lib/module-access-lock";
 
 export type AppRole = "super_admin" | "ceo" | "finance" | "hr" | "manager" | "employee";
 
 const DEMO_ROLE_KEY = "alyson-demo-role";
 const SUPER_ADMIN_UNLOCK_KEY = "alyson-super-admin-unlocked";
 const SUPER_ADMIN_CODE = "75391";
-const TIME_DASHBOARD_UNLOCK_KEY = "alyson-time-dashboard-unlocked";
-const TIME_DASHBOARD_CODE = "111111";
 
 type AppSession = { userId: string } | null;
 type AppUser = { id: string; email: string | null } | null;
@@ -25,6 +32,10 @@ type AuthContextValue = {
   timeDashboardUnlocked: boolean;
   tryUnlockTimeDashboard: (code: string) => boolean;
   lockTimeDashboard: () => void;
+  payrollUnlocked: boolean;
+  tryUnlockPayroll: (code: string) => boolean;
+  lockPayroll: () => void;
+  canAccessPayroll: boolean;
   /** True after entering the Time Dashboard access code (111111) — all roles including super admin. */
   canAccessTimeDashboard: boolean;
   /** Effective roles after demo override */
@@ -55,6 +66,7 @@ function AuthInner({ children }: { children: ReactNode }) {
   const [demoRole, setDemoRoleState] = useState<AppRole | null>(null);
   const [superAdminUnlocked, setSuperAdminUnlocked] = useState(false);
   const [timeDashboardUnlocked, setTimeDashboardUnlocked] = useState(false);
+  const [payrollUnlocked, setPayrollUnlocked] = useState(false);
 
   // Load demo role from storage
   useEffect(() => {
@@ -66,7 +78,8 @@ function AuthInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setSuperAdminUnlocked(sessionStorage.getItem(SUPER_ADMIN_UNLOCK_KEY) === "1");
-    setTimeDashboardUnlocked(sessionStorage.getItem(TIME_DASHBOARD_UNLOCK_KEY) === "1");
+    setTimeDashboardUnlocked(readModuleUnlocked(TIME_DASHBOARD_UNLOCK_KEY));
+    setPayrollUnlocked(readModuleUnlocked(PAYROLL_UNLOCK_KEY));
   }, []);
 
   const setDemoRole = useCallback((role: AppRole | null) => {
@@ -88,15 +101,27 @@ function AuthInner({ children }: { children: ReactNode }) {
   }, []);
 
   const tryUnlockTimeDashboard = useCallback((code: string) => {
-    if (code.trim() !== TIME_DASHBOARD_CODE) return false;
+    if (!tryUnlockModuleCode(code, TIME_DASHBOARD_CODE)) return false;
     setTimeDashboardUnlocked(true);
-    if (typeof window !== "undefined") sessionStorage.setItem(TIME_DASHBOARD_UNLOCK_KEY, "1");
+    writeModuleUnlocked(TIME_DASHBOARD_UNLOCK_KEY, true);
     return true;
   }, []);
 
   const lockTimeDashboard = useCallback(() => {
     setTimeDashboardUnlocked(false);
-    if (typeof window !== "undefined") sessionStorage.removeItem(TIME_DASHBOARD_UNLOCK_KEY);
+    writeModuleUnlocked(TIME_DASHBOARD_UNLOCK_KEY, false);
+  }, []);
+
+  const tryUnlockPayroll = useCallback((code: string) => {
+    if (!tryUnlockModuleCode(code, PAYROLL_CODE)) return false;
+    setPayrollUnlocked(true);
+    writeModuleUnlocked(PAYROLL_UNLOCK_KEY, true);
+    return true;
+  }, []);
+
+  const lockPayroll = useCallback(() => {
+    setPayrollUnlocked(false);
+    writeModuleUnlocked(PAYROLL_UNLOCK_KEY, false);
   }, []);
 
   useEffect(() => {
@@ -120,13 +145,15 @@ function AuthInner({ children }: { children: ReactNode }) {
   const hasRole = useCallback((r: AppRole) => roles.includes(r), [roles]);
   const hasAnyRole = useCallback((rs: AppRole[]) => rs.some((r) => roles.includes(r)), [roles]);
   const canAccessTimeDashboard = timeDashboardUnlocked;
+  const canAccessPayroll = payrollUnlocked;
 
   const signOut = useCallback(async () => {
     await clerk.signOut();
     setDemoRole(null);
     lockSuperAdmin();
     lockTimeDashboard();
-  }, [clerk, setDemoRole, lockSuperAdmin, lockTimeDashboard]);
+    lockPayroll();
+  }, [clerk, setDemoRole, lockSuperAdmin, lockTimeDashboard, lockPayroll]);
 
   const session: AppSession = clerkAuth.isSignedIn && clerkAuth.userId ? { userId: clerkAuth.userId } : null;
   const user: AppUser = clerkUser.user
@@ -147,6 +174,10 @@ function AuthInner({ children }: { children: ReactNode }) {
         timeDashboardUnlocked,
         tryUnlockTimeDashboard,
         lockTimeDashboard,
+        payrollUnlocked,
+        tryUnlockPayroll,
+        lockPayroll,
+        canAccessPayroll,
         canAccessTimeDashboard,
         roles,
         primaryRole,

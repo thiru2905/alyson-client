@@ -1,4 +1,5 @@
 import { verifyToken, createClerkClient } from "@clerk/backend";
+import { isPayrollBootstrapEmail } from "@/lib/payroll-rbac-constants";
 import {
   ensurePayrollAccessOnS3,
   findPayrollAccessMember,
@@ -38,22 +39,35 @@ async function clerkIdentityFromToken(sessionToken: string): Promise<{ email: st
 
 export async function checkPayrollAccessForToken(sessionToken: string): Promise<PayrollAccessCheckResult> {
   const { email, userId } = await clerkIdentityFromToken(sessionToken);
-  const members = await loadPayrollAccessMembers();
-  const member = findPayrollAccessMember(members, email, userId);
 
-  if (member) {
-    await linkPayrollAccessClerkUser(email, userId);
+  try {
+    const members = await loadPayrollAccessMembers();
+    const member = findPayrollAccessMember(members, email, userId);
+
+    if (member) {
+      await linkPayrollAccessClerkUser(email, userId);
+    }
+
+    const allowed = Boolean(member) || isPayrollBootstrapEmail(email);
+    const meta = await ensurePayrollAccessOnS3();
+    return {
+      allowed,
+      email,
+      memberId: member?.id,
+      clerkUserId: member?.clerkUserId ?? userId,
+      bucket: meta.bucket,
+      key: meta.key,
+    };
+  } catch {
+    const allowed = isPayrollBootstrapEmail(email);
+    return {
+      allowed,
+      email,
+      clerkUserId: userId,
+      bucket: payrollRbacBucketName(),
+      key: payrollRbacAccessKey(),
+    };
   }
-
-  const meta = await ensurePayrollAccessOnS3();
-  return {
-    allowed: Boolean(member),
-    email,
-    memberId: member?.id,
-    clerkUserId: member?.clerkUserId ?? userId,
-    bucket: meta.bucket,
-    key: meta.key,
-  };
 }
 
 export async function requirePayrollAccess(sessionToken: string): Promise<PayrollAccessCheckResult> {

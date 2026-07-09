@@ -8,25 +8,28 @@ import {
 import type { Readable } from "node:stream";
 import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
 import type { PayrollAccessFile, PayrollAccessMember } from "@/lib/payroll-rbac.schema";
+import { PAYROLL_BOOTSTRAP_EMAILS } from "@/lib/payroll-rbac-constants";
 
-const BOOTSTRAP_MEMBERS: Omit<PayrollAccessMember, "grantedAt">[] = [
-  {
-    id: "pay-acc-mohita-yadav",
-    email: "mohita@cintara.ai",
-    displayName: "Mohita Yadav",
-    grantedBy: "bootstrap",
-    active: true,
-    note: "People Ops — payroll module access",
-  },
-  {
+const BOOTSTRAP_MEMBERS: Omit<PayrollAccessMember, "grantedAt">[] = PAYROLL_BOOTSTRAP_EMAILS.map((email) => {
+  if (email === "mohita@cintara.ai") {
+    return {
+      id: "pay-acc-mohita-yadav",
+      email,
+      displayName: "Mohita Yadav",
+      grantedBy: "bootstrap",
+      active: true,
+      note: "People Ops — payroll module access",
+    };
+  }
+  return {
     id: "pay-acc-thirumalai",
-    email: "thirumalai@cintara.ai",
+    email,
     displayName: "Thirumalai",
     grantedBy: "bootstrap",
     active: true,
     note: "Payroll module access",
-  },
-];
+  };
+});
 
 function requireEnv(name: string) {
   const v = process.env[name];

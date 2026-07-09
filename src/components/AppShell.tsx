@@ -12,7 +12,7 @@ import { NotificationsPopover } from "@/components/NotificationsPopover";
 import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
-import { usePayrollAccess } from "@/lib/payroll-rbac-hooks";
+import { usePayrollNavVisible } from "@/lib/payroll-rbac-hooks";
 import { toast } from "sonner";
 
 declare const __BUILD_SHA__: string;
@@ -121,7 +121,7 @@ function isNavItemActive(pathname: string, item: NavItem): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
-  const payrollAccessQ = usePayrollAccess();
+  const payrollNavVisible = usePayrollNavVisible();
   const { theme, toggle, palette, setPalette } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -136,7 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const prevPathRef = useRef<string | null>(null);
 
   const visible = NAV.filter((n) => {
-    if (n.payrollAccess) return payrollAccessQ.data?.allowed === true;
+    if (n.payrollAccess) return payrollNavVisible;
     return !n.roles || hasAnyRole(n.roles);
   });
   const grouped = useMemo(() => groupBy(visible, (n) => n.group), [visible]);

@@ -1,6 +1,9 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { BarChart3, DollarSign, FileText, Loader2 } from "lucide-react";
+import { PayrollGate } from "@/components/PayrollGate";
+import { useAuth } from "@/lib/auth";
 import { usePayrollAccess } from "@/lib/payroll-rbac-hooks";
+import { isPayrollBootstrapEmail } from "@/lib/payroll-rbac-constants";
 
 export const Route = createFileRoute("/payroll")({
   head: () => ({ meta: [{ title: "Payroll — Alyson HR" }] }),
@@ -8,8 +11,10 @@ export const Route = createFileRoute("/payroll")({
 });
 
 function PayrollLayout() {
+  const { canAccessPayroll, user } = useAuth();
   const accessQ = usePayrollAccess();
-  const canView = accessQ.data?.allowed === true;
+  const canViewRbac =
+    accessQ.data?.allowed === true || isPayrollBootstrapEmail(user?.email);
 
   if (accessQ.isLoading) {
     return (
@@ -19,7 +24,9 @@ function PayrollLayout() {
     );
   }
 
-  if (!canView) return <AccessDenied />;
+  if (!canViewRbac) return <AccessDenied />;
+
+  if (!canAccessPayroll) return <PayrollGate />;
 
   return (
     <div className="ops-dense">
