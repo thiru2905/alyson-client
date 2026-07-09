@@ -20,6 +20,28 @@ function collectOnboardingEmailKeys(rows: OnboardingRow[]): Set<string> {
   return keys;
 }
 
+function normPersonName(name: string): string {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPlaceholderOfficialEmail(email: string): boolean {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e || !e.includes("@")) return true;
+  if (e === "no email found") return true;
+  return /^user\d+@(?:revcloud\.com|cintara\.ai)$/.test(e);
+}
+
+function findOnboardingRowByName(rows: OnboardingRow[], name: string): OnboardingRow | undefined {
+  const target = normPersonName(name);
+  if (!target) return undefined;
+  return rows.find((r) => normPersonName(String(r.Name ?? "")) === target);
+}
+
 function employeeIdForEmail(email: string): string {
   const local = email.split("@")[0]?.replace(/\./g, "_") ?? "employee";
   return `cint_${local}_cintara_ai`;
@@ -30,7 +52,8 @@ function employeeIdForEmail(email: string): string {
  * Append missing Indian workforce rows so they appear on the India pay cycle board.
  */
 export function mergePayrollRosterWithOrgChart(onboardingRows: OnboardingRow[]): OnboardingRow[] {
-  const seen = collectOnboardingEmailKeys(onboardingRows);
+  const merged = [...onboardingRows];
+  const seen = collectOnboardingEmailKeys(merged);
   const supplemental: OnboardingRow[] = [];
 
   for (const entry of parseOrgChartRosterCsv(BUNDLED_ORG_CHART_ROSTER_CSV)) {
@@ -48,6 +71,18 @@ export function mergePayrollRosterWithOrgChart(onboardingRows: OnboardingRow[]):
       (k) => k.includes("@") && seen.has(k.toLowerCase()),
     );
     if (alreadyListed) continue;
+
+    const existingByName = findOnboardingRowByName(merged, entry.name);
+    if (existingByName) {
+      const existingEmail = String(existingByName["Official Email"] ?? "");
+      if (isPlaceholderOfficialEmail(existingEmail)) {
+        existingByName["Official Email"] = email;
+        for (const k of emailLookupKeys(email)) {
+          if (k.includes("@")) seen.add(k.toLowerCase());
+        }
+      }
+      continue;
+    }
 
     for (const k of emailLookupKeys(email)) {
       if (k.includes("@")) seen.add(k.toLowerCase());
@@ -67,6 +102,6 @@ export function mergePayrollRosterWithOrgChart(onboardingRows: OnboardingRow[]):
     supplemental.push(row);
   }
 
-  if (!supplemental.length) return onboardingRows;
-  return [...onboardingRows, ...supplemental];
+  if (!supplemental.length) return merged;
+  return [...merged, ...supplemental];
 }

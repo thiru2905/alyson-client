@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import {
   Bar,
   BarChart,
@@ -18,6 +19,7 @@ import { BarChart3, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { filterPayrollAnalytics } from "@/lib/payroll-analytics";
 import { getPayrollAnalytics } from "@/lib/payroll-functions";
+import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
 import { fmtCurrency } from "@/lib/format";
 
 export const Route = createFileRoute("/payroll/analytics")({
@@ -32,6 +34,7 @@ function currentMonth() {
 }
 
 function PayrollAnalyticsPage() {
+  const clerkAuth = useClerkAuth();
   const [month, setMonth] = useState(currentMonth);
   const [teamFilter, setTeamFilter] = useState("__all__");
   const [locationFilter, setLocationFilter] = useState("__all__");
@@ -40,7 +43,10 @@ function PayrollAnalyticsPage() {
 
   const q = useQuery({
     queryKey: ["payroll-analytics", month],
-    queryFn: () => getPayrollAnalytics({ data: { month, payCycleFilter: "all", activeOnly: false } }),
+    queryFn: async () =>
+      getPayrollAnalytics({
+        data: { month, payCycleFilter: "all", activeOnly: false, clerkToken: await payrollClerkToken(() => clerkAuth.getToken()) },
+      }),
     staleTime: 15_000,
   });
 

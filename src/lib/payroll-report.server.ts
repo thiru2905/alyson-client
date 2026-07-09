@@ -35,6 +35,38 @@ function employeeIdFromRow(row: OnboardingRow): string {
   return String(row["Employee ID"] ?? row._rowId ?? "").trim();
 }
 
+function normPayrollName(name: string): string {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function payrollRowScore(row: PayrollReportRow): number {
+  let score = 0;
+  const email = row.officialEmail.toLowerCase();
+  if (email.endsWith("@cintara.ai") && !/^user\d+@cintara\.ai$/.test(email)) score += 10;
+  if (row.effectiveHours > 0) score += 3;
+  if (row.startingBaseSalaryLocal > 0) score += 2;
+  if (!row.employeeId.startsWith("cint_")) score += 1;
+  return score;
+}
+
+/** Same person can appear twice when onboarding has a placeholder email and org chart supplements. */
+function dedupePayrollRows(rows: PayrollReportRow[]): PayrollReportRow[] {
+  const byKey = new Map<string, PayrollReportRow>();
+  for (const row of rows) {
+    const key = `${row.payCycle}|${normPayrollName(row.employeeName) || row.employeeId}`;
+    const prev = byKey.get(key);
+    if (!prev || payrollRowScore(row) > payrollRowScore(prev)) {
+      byKey.set(key, row);
+    }
+  }
+  return [...byKey.values()];
+}
+
 function bonusInPeriod(
   events: { paidOn: string; amountUsd: number }[],
   periodStart: string,
@@ -200,7 +232,8 @@ export async function buildPayrollReport(args: {
     });
   }
 
-  rows.sort((a, b) => {
+  const dedupedRows = dedupePayrollRows(rows);
+  dedupedRows.sort((a, b) => {
     if (a.payCycle !== b.payCycle) return a.payCycle.localeCompare(b.payCycle);
     return a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: "base" });
   });
@@ -221,7 +254,7 @@ export async function buildPayrollReport(args: {
     usdToInrRate,
     usdToPkrRate,
     rateAsOf,
-    rows,
+    rows: dedupedRows,
     warnings: warnings.slice(0, 6),
   };
 }

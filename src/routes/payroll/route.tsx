@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { BarChart3, DollarSign, FileText } from "lucide-react";
-import { useAuth } from "@/lib/auth";
+import { BarChart3, DollarSign, FileText, Loader2 } from "lucide-react";
+import { usePayrollAccess } from "@/lib/payroll-rbac-hooks";
 
 export const Route = createFileRoute("/payroll")({
   head: () => ({ meta: [{ title: "Payroll — Alyson HR" }] }),
@@ -8,8 +8,16 @@ export const Route = createFileRoute("/payroll")({
 });
 
 function PayrollLayout() {
-  const { hasAnyRole } = useAuth();
-  const canView = hasAnyRole(["super_admin", "ceo", "finance", "hr"]);
+  const accessQ = usePayrollAccess();
+  const canView = accessQ.data?.allowed === true;
+
+  if (accessQ.isLoading) {
+    return (
+      <div className="px-5 md:px-8 py-16 flex justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!canView) return <AccessDenied />;
 
@@ -72,7 +80,7 @@ function AccessDenied() {
       <div className="surface-card p-10 text-center">
         <div className="font-medium text-[15px]">Access denied</div>
         <div className="text-[13px] text-muted-foreground mt-1 max-w-md mx-auto">
-          Payroll is restricted to Finance, HR, CEO, and Super Admin.
+          Payroll is restricted to users listed in the S3 payroll access table. Contact an admin if you need access.
         </div>
       </div>
     </div>

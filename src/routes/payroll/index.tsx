@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cloud, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import {
   updatePayrollEmployee,
   updatePayrollPeriodFx,
 } from "@/lib/payroll-functions";
+import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
 import { payCycleLabel, type PayrollLocalCurrency, type PayrollPayCycle, type PayrollReportRow } from "@/lib/payroll-schema";
 
 export const Route = createFileRoute("/payroll/")({
@@ -28,9 +30,12 @@ function currentMonth() {
 
 function PayrollBoardPage() {
   const auth = useAuth();
-  const canEdit = auth.hasAnyRole(["super_admin", "ceo", "finance"]);
+  const clerkAuth = useClerkAuth();
+  const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
+
+  const clerkToken = () => payrollClerkToken(() => clerkAuth.getToken());
 
   const [month, setMonth] = useState(currentMonth);
   const [payCycleFilter, setPayCycleFilter] = useState<"all" | PayrollPayCycle>("all");
@@ -44,12 +49,15 @@ function PayrollBoardPage() {
 
   const q = useQuery({
     queryKey: ["payroll-report", month, payCycleFilter, activeOnly],
-    queryFn: () => getPayrollReport({ data: { month, payCycleFilter, activeOnly } }),
+    queryFn: async () =>
+      getPayrollReport({
+        data: { month, payCycleFilter, activeOnly, clerkToken: await clerkToken() },
+      }),
   });
 
   const metaQ = useQuery({
     queryKey: ["payroll-meta"],
-    queryFn: () => getPayrollMeta(),
+    queryFn: async () => getPayrollMeta({ data: { clerkToken: await clerkToken() } }),
   });
 
   const report = q.data;
@@ -77,7 +85,7 @@ function PayrollBoardPage() {
   const pakistanRows = filtered.filter((r) => r.payCycle === "pakistan_month_end");
 
   const saveEmployeeM = useMutation({
-    mutationFn: (patch: {
+    mutationFn: async (patch: {
       employeeId: string;
       startingDate?: string | null;
       lastSalaryRevisionDate?: string | null;
@@ -88,7 +96,9 @@ function PayrollBoardPage() {
       reimbursementLocal?: number | null;
       meetingCreditsHours?: number | null;
       additionalCreditsHours?: number | null;
-    }) => updatePayrollEmployee({ data: { ...patch, actor } }),
+    }) => {
+      return updatePayrollEmployee({ data: { ...patch, actor, clerkToken: await clerkToken() } });
+    },
     onSuccess: () => {
       toast.success("Payroll fields saved");
       setDrawerOpen(false);
@@ -98,7 +108,7 @@ function PayrollBoardPage() {
   });
 
   const saveFxM = useMutation({
-    mutationFn: () =>
+    mutationFn: async () =>
       updatePayrollPeriodFx({
         data: {
           month,
@@ -106,6 +116,7 @@ function PayrollBoardPage() {
           usdToPkrRate: Number(fxPkr) || null,
           rateAsOf: fxDate || null,
           actor,
+          clerkToken: await clerkToken(),
         },
       }),
     onSuccess: () => {
@@ -116,7 +127,7 @@ function PayrollBoardPage() {
   });
 
   const markPaidM = useMutation({
-    mutationFn: (payload: { row: PayrollReportRow; note?: string }) =>
+    mutationFn: async (payload: { row: PayrollReportRow; note?: string }) =>
       markPayrollPaid({
         data: {
           employeeId: payload.row.employeeId,
@@ -128,6 +139,7 @@ function PayrollBoardPage() {
           amountUsd: payload.row.totalUsd,
           note: payload.note,
           actor,
+          clerkToken: await clerkToken(),
         },
       }),
     onSuccess: () => {
@@ -141,7 +153,7 @@ function PayrollBoardPage() {
   });
 
   const unmarkPaidM = useMutation({
-    mutationFn: (row: PayrollReportRow) =>
+    mutationFn: async (row: PayrollReportRow) =>
       unmarkPayrollPaid({
         data: {
           employeeId: row.employeeId,
@@ -149,6 +161,7 @@ function PayrollBoardPage() {
           payMonth: row.payMonth,
           payCycle: row.payCycle,
           actor,
+          clerkToken: await clerkToken(),
         },
       }),
     onSuccess: () => {

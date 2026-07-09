@@ -12,6 +12,7 @@ import { NotificationsPopover } from "@/components/NotificationsPopover";
 import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
+import { usePayrollAccess } from "@/lib/payroll-rbac-hooks";
 import { toast } from "sonner";
 
 declare const __BUILD_SHA__: string;
@@ -23,6 +24,7 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   end?: boolean;
   roles?: AppRole[];
+  payrollAccess?: boolean;
   group: "Workspace" | "People" | "Money" | "Ops" | "Admin";
 };
 
@@ -57,7 +59,7 @@ const NAV: NavItem[] = [
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },
   { to: "/leave", label: "Leave", icon: Calendar, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/attendance", label: "Attendance", icon: Clock, group: "People" },
-  { to: "/payroll", label: "Payroll", icon: DollarSign, group: "Money", roles: ["super_admin", "ceo", "finance", "hr"] },
+  { to: "/payroll", label: "Payroll", icon: DollarSign, group: "Money", payrollAccess: true },
   { to: "/bonus", label: "Bonus", icon: Gift, group: "Money", roles: ["super_admin", "ceo", "finance", "hr", "manager"] },
   { to: "/equity", label: "Equity", icon: PieChart, group: "Money" },
   { to: "/workflows", label: "Workflows", icon: GitBranch, group: "Ops" },
@@ -119,6 +121,7 @@ function isNavItemActive(pathname: string, item: NavItem): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
+  const payrollAccessQ = usePayrollAccess();
   const { theme, toggle, palette, setPalette } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -132,7 +135,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [groupsCollapsed, setGroupsCollapsed] = useState<Partial<Record<NavGroup, boolean>>>({});
   const prevPathRef = useRef<string | null>(null);
 
-  const visible = NAV.filter((n) => !n.roles || hasAnyRole(n.roles));
+  const visible = NAV.filter((n) => {
+    if (n.payrollAccess) return payrollAccessQ.data?.allowed === true;
+    return !n.roles || hasAnyRole(n.roles);
+  });
   const grouped = useMemo(() => groupBy(visible, (n) => n.group), [visible]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
