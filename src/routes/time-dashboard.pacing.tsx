@@ -8,12 +8,10 @@ import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { WeeklyPacingWeekPicker } from "@/components/WeeklyPacingWeekPicker";
 import { WeeklyPacingActiveCell } from "@/components/WeeklyPacingActiveCell";
 import {
-  fetchWeeklyHoursTrendScoped,
-  fetchWeeklyPacingReportScoped,
-  setWeeklyPacingActiveOverrideScoped,
-} from "@/lib/time-dashboard-scoped-functions";
-import {
+  fetchWeeklyHoursTrend,
+  fetchWeeklyPacingReport,
   getWeeklyPacingInsights,
+  setWeeklyPacingActiveOverride,
 } from "@/lib/time-doctor-pacing-functions";
 import { WeeklyPacingTrendPanel } from "@/components/WeeklyPacingTrendPanel";
 import { formatRangeLabel, isIsoDate } from "@/lib/time-dashboard-range";
@@ -40,7 +38,7 @@ import { fmtDate } from "@/lib/format";
 import { downloadCSV } from "@/lib/csv";
 import { downloadWeeklyPacingPdf } from "@/lib/weekly-pacing-pdf";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import { toast } from "sonner";
 import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Calendar, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
 import { z } from "zod";
@@ -83,7 +81,6 @@ function WeeklyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
-  const getTimeDashboardAuth = useTimeDashboardAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
@@ -113,12 +110,7 @@ function WeeklyPacingPage() {
 
   const q = useQuery({
     queryKey: ["weekly-pacing-report", rollupDay],
-    queryFn: async () => {
-      const tdAuth = await getTimeDashboardAuth();
-      return fetchWeeklyPacingReportScoped({
-        data: { ...tdAuth, targetHours: 35, day: rollupDay },
-      });
-    },
+    queryFn: () => fetchWeeklyPacingReport({ data: { targetHours: 35, day: rollupDay } }),
     enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
@@ -127,19 +119,16 @@ function WeeklyPacingPage() {
 
   const trendQ = useQuery({
     queryKey: ["weekly-hours-trend", locationFilter, teamFilter],
-    queryFn: async () => {
-      const tdAuth = await getTimeDashboardAuth();
-      return fetchWeeklyHoursTrendScoped({
+    queryFn: () =>
+      fetchWeeklyHoursTrend({
         data: {
-          ...tdAuth,
           weekCount: 8,
           targetHours: 35,
           location: locationFilter,
           team: teamFilter,
           active: "yes",
         },
-      });
-    },
+      }),
     enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
     staleTime: 120_000,
@@ -278,10 +267,8 @@ function WeeklyPacingPage() {
   });
 
   const activeOverrideM = useMutation({
-    mutationFn: async (vars: { employeeId: string; email: string; name: string; active: boolean }) => {
-      const tdAuth = await getTimeDashboardAuth();
-      return setWeeklyPacingActiveOverrideScoped({ data: { ...tdAuth, ...vars } });
-    },
+    mutationFn: (vars: { employeeId: string; email: string; name: string; active: boolean }) =>
+      setWeeklyPacingActiveOverride({ data: vars }),
     onSuccess: (_r, vars) => {
       void queryClient.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
       void queryClient.invalidateQueries({ queryKey: ["weekly-hours-trend"] });

@@ -4,8 +4,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PageHeader, TableScroll, EmptyState } from "@/components/AppShell";
 import { FetchingBar, TimeDashboardTableSkeleton } from "@/components/Skeleton";
 import { TimeDashboardRangePicker } from "@/components/TimeDashboardRangePicker";
-import { fetchTimeDoctorEmployeesTableScoped, fetchTimeDoctorMonthlyUnderHoursReportScoped } from "@/lib/time-dashboard-scoped-functions";
-import { type TimeDoctorEmployeeRow } from "@/lib/time-doctor-functions";
+import { fetchTimeDoctorEmployeesTable, fetchTimeDoctorMonthlyUnderHoursReport, type TimeDoctorEmployeeRow } from "@/lib/time-doctor-functions";
 import { downloadTimeDoctorUnderHoursPdf } from "@/lib/time-doctor-under-hours-pdf";
 import {
   defaultListRange,
@@ -19,7 +18,7 @@ import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
-import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
 
@@ -52,7 +51,6 @@ function TimeDashboardPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
-  const getTimeDashboardAuth = useTimeDashboardAuth();
 
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState<TimeDashboardSortField>("range");
@@ -80,12 +78,10 @@ function TimeDashboardPage() {
 
   const table = useQuery({
     queryKey: ["time-doctor-employees-table", appliedStart, appliedEnd],
-    queryFn: async () => {
-      const tdAuth = await getTimeDashboardAuth();
-      return fetchTimeDoctorEmployeesTableScoped({
-        data: { ...tdAuth, start: appliedStart, end: appliedEnd },
-      });
-    },
+    queryFn: () =>
+      fetchTimeDoctorEmployeesTable({
+        data: { start: appliedStart, end: appliedEnd },
+      }),
     enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
@@ -230,9 +226,8 @@ function TimeDashboardPage() {
     if (!underHoursMonth) return toast.error("Pick a month");
     setUnderHoursPdfLoading(true);
     try {
-      const tdAuth = await getTimeDashboardAuth();
-      const report = await fetchTimeDoctorMonthlyUnderHoursReportScoped({
-        data: { ...tdAuth, month: underHoursMonth, thresholdHours: 35 },
+      const report = await fetchTimeDoctorMonthlyUnderHoursReport({
+        data: { month: underHoursMonth, thresholdHours: 35 },
       });
       downloadTimeDoctorUnderHoursPdf(report);
       toast.success(`Under 35h weekly PDF downloaded (${report.monthLabel})`);

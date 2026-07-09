@@ -29,7 +29,7 @@ import { isIsoDate } from "@/lib/time-dashboard-range";
 import { pacingTodayIso } from "@/lib/weekly-pacing";
 import { monthStartIso, monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import {
   buildLeaveSummaryFromRows,
   filterPacingRows,
@@ -45,9 +45,9 @@ import {
   type WeeklyPacingStatus,
 } from "@/lib/weekly-pacing";
 import {
-  fetchMonthlyPacingReportScoped,
-  setWeeklyPacingActiveOverrideScoped,
-} from "@/lib/time-dashboard-scoped-functions";
+  fetchMonthlyPacingReport,
+  setWeeklyPacingActiveOverride,
+} from "@/lib/time-doctor-pacing-functions";
 
 export const Route = createFileRoute("/time-dashboard/monthly-pacing")({
   head: () => ({ meta: [{ title: "Monthly Pacing — Alyson HR" }] }),
@@ -119,7 +119,6 @@ function MonthlyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
-  const getTimeDashboardAuth = useTimeDashboardAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
@@ -166,12 +165,10 @@ function MonthlyPacingPage() {
     queryKey: hasCustomRange
       ? ["monthly-pacing-report", "range", appliedStart, appliedEnd]
       : ["monthly-pacing-report", "month", appliedMonth],
-    queryFn: async () => {
-      const tdAuth = await getTimeDashboardAuth();
-      return hasCustomRange
-        ? fetchMonthlyPacingReportScoped({ data: { ...tdAuth, start: appliedStart, end: appliedEnd } })
-        : fetchMonthlyPacingReportScoped({ data: { ...tdAuth, month: appliedMonth } });
-    },
+    queryFn: () =>
+      hasCustomRange
+        ? fetchMonthlyPacingReport({ data: { start: appliedStart, end: appliedEnd } })
+        : fetchMonthlyPacingReport({ data: { month: appliedMonth } }),
     enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
     staleTime: 120_000,
@@ -179,15 +176,12 @@ function MonthlyPacingPage() {
   });
 
   const activeM = useMutation({
-    mutationFn: async (payload: {
+    mutationFn: (payload: {
       employeeId: string;
       email: string;
       name: string;
       active: boolean;
-    }) => {
-      const tdAuth = await getTimeDashboardAuth();
-      return setWeeklyPacingActiveOverrideScoped({ data: { ...tdAuth, ...payload } });
-    },
+    }) => setWeeklyPacingActiveOverride({ data: payload }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["monthly-pacing-report"] });
       void queryClient.invalidateQueries({ queryKey: ["weekly-pacing-report"] });

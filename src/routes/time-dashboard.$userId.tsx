@@ -4,12 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader, TableScroll, EmptyState } from "@/components/AppShell";
 import { FetchingBar, TableSkeleton } from "@/components/Skeleton";
 import { TimeDashboardRangePicker } from "@/components/TimeDashboardRangePicker";
-import { fetchTimeDoctorUserDetailScoped } from "@/lib/time-dashboard-scoped-functions";
-import { type TimeDoctorUserDetail } from "@/lib/time-doctor-functions";
+import { fetchTimeDoctorUserDetail, type TimeDoctorUserDetail } from "@/lib/time-doctor-functions";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import {
   defaultDetailRange,
   formatMonthLabel,
@@ -65,7 +64,6 @@ function TimeDoctorEmployeePage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
-  const getTimeDashboardAuth = useTimeDashboardAuth();
   const [tab, setTab] = useState<TabKey>("overview");
 
   const search = Route.useSearch();
@@ -106,10 +104,7 @@ function TimeDoctorEmployeePage() {
 
   const q = useQuery({
     queryKey: ["time-doctor-user", userId, start, end, tab],
-    queryFn: async () => {
-      const tdAuth = await getTimeDashboardAuth();
-      return fetchTimeDoctorUserDetailScoped({ data: { ...tdAuth, userId, start, end, tab } });
-    },
+    queryFn: () => fetchTimeDoctorUserDetail({ data: { userId, start, end, tab } }),
     enabled: !!userId && canAccess && timeDashboardNavVisible,
     placeholderData: (previousData, previousQuery) => {
       if (!previousData || !previousQuery) return undefined;
