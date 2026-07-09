@@ -1,4 +1,5 @@
 import { verifyToken, createClerkClient } from "@clerk/backend";
+import { isDevClerkBypass } from "@/lib/clerk-auth.server";
 import { isPayrollBootstrapEmail } from "@/lib/payroll-rbac-constants";
 import {
   ensurePayrollAccessOnS3,
@@ -10,10 +11,47 @@ import {
 } from "@/lib/payroll-rbac-s3.server";
 import type { PayrollAccessCheckResult } from "@/lib/payroll-rbac.schema";
 
+const MISSING_CLERK_SECRET_MSG =
+  "Missing CLERK_SECRET_KEY — add CLERK_SECRET_KEY=sk_... to .env (Clerk Dashboard → API Keys), then restart npm run dev.";
+
 function clerkSecretKey() {
   const key = process.env.CLERK_SECRET_KEY?.trim();
-  if (!key) throw new Error("Missing CLERK_SECRET_KEY — required for payroll access checks.");
+  if (!key) throw new Error(MISSING_CLERK_SECRET_MSG);
   return key;
+}
+
+async function checkPayrollAccessDevBypass(emailHint: string): Promise<PayrollAccessCheckResult> {
+  const email = emailHint.trim().toLowerCase();
+  if (!email) throw new Error(MISSING_CLERK_SECRET_MSG);
+
+  try {
+    const members = await loadPayrollAccessMembers();
+    const member = findPayrollAccessMember(members, email, undefined);
+    const allowed = Boolean(member) || isPayrollBootstrapEmail(email);
+    if (!allowed) {
+      throw new Error(
+        `Forbidden — payroll is restricted to approved users in s3://${payrollRbacBucketName()}/${payrollRbacAccessKey()}`,
+      );
+    }
+    const meta = await ensurePayrollAccessOnS3();
+    return {
+      allowed: true,
+      email,
+      memberId: member?.id,
+      clerkUserId: member?.clerkUserId ?? null,
+      bucket: meta.bucket,
+      key: meta.key,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith("Forbidden")) throw err;
+    if (!isPayrollBootstrapEmail(email)) throw new Error(MISSING_CLERK_SECRET_MSG);
+    return {
+      allowed: true,
+      email,
+      bucket: payrollRbacBucketName(),
+      key: payrollRbacAccessKey(),
+    };
+  }
 }
 
 async function clerkIdentityFromToken(sessionToken: string): Promise<{ email: string; userId: string }> {
@@ -37,7 +75,16 @@ async function clerkIdentityFromToken(sessionToken: string): Promise<{ email: st
   return { email: email.toLowerCase(), userId };
 }
 
-export async function checkPayrollAccessForToken(sessionToken: string): Promise<PayrollAccessCheckResult> {
+export async function checkPayrollAccessForToken(
+  sessionToken: string,
+  emailHint?: string,
+): Promise<PayrollAccessCheckResult> {
+  if (isDevClerkBypass()) {
+    const email = String(emailHint || "").trim().toLowerCase();
+    if (!email) throw new Error(MISSING_CLERK_SECRET_MSG);
+    return checkPayrollAccessDevBypass(email);
+  }
+
   const { email, userId } = await clerkIdentityFromToken(sessionToken);
 
   try {
@@ -70,8 +117,11 @@ export async function checkPayrollAccessForToken(sessionToken: string): Promise<
   }
 }
 
-export async function requirePayrollAccess(sessionToken: string): Promise<PayrollAccessCheckResult> {
-  const result = await checkPayrollAccessForToken(sessionToken);
+export async function requirePayrollAccess(
+  sessionToken: string,
+  emailHint?: string,
+): Promise<PayrollAccessCheckResult> {
+  const result = await checkPayrollAccessForToken(sessionToken, emailHint);
   if (!result.allowed) {
     throw new Error(
       `Forbidden — payroll is restricted to approved users in s3://${payrollRbacBucketName()}/${payrollRbacAccessKey()}`,

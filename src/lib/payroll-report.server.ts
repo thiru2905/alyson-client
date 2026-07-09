@@ -14,6 +14,10 @@ import {
 import {
   ensurePayrollOnS3,
   getPaidRecord,
+  isPastPayMonth,
+  loadPayrollMonthSnapshot,
+  mergePaidStatusIntoSnapshotRows,
+  savePayrollMonthSnapshot,
 } from "@/lib/payroll-s3.server";
 import {
   fxRateForCurrency,
@@ -30,6 +34,51 @@ import {
 } from "@/lib/payroll-schema";
 import { enrichBonusLedgersWithPacingActive } from "@/lib/weekly-pacing-active.server";
 import { mergePayrollRosterWithOrgChart } from "@/lib/payroll-roster.server";
+
+function applyReportFilters(
+  rows: PayrollReportRow[],
+  payCycleFilter: "all" | PayrollPayCycle,
+  activeOnly: boolean,
+): PayrollReportRow[] {
+  return rows.filter((row) => {
+    if (payCycleFilter !== "all" && row.payCycle !== payCycleFilter) return false;
+    if (activeOnly && !row.active) return false;
+    return true;
+  });
+}
+
+function reportFromSnapshot(args: {
+  snapshot: Awaited<ReturnType<typeof loadPayrollMonthSnapshot>>;
+  payMonth: string;
+  payCycleFilter: "all" | PayrollPayCycle;
+  activeOnly: boolean;
+  payrollFile: Awaited<ReturnType<typeof ensurePayrollOnS3>>;
+}): PayrollReport {
+  const { snapshot, payMonth, payCycleFilter, activeOnly, payrollFile } = args;
+  if (!snapshot) throw new Error("Missing snapshot");
+
+  let rows = mergePaidStatusIntoSnapshotRows(snapshot.rows, payrollFile, payMonth);
+  rows = applyReportFilters(rows, payCycleFilter, activeOnly);
+  rows = dedupePayrollRows(rows);
+  rows.sort((a, b) => {
+    if (a.payCycle !== b.payCycle) return a.payCycle.localeCompare(b.payCycle);
+    return a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: "base" });
+  });
+
+  return {
+    payMonth,
+    payMonthLabel: monthLabel(payMonth),
+    payCycleFilter,
+    generatedAt: snapshot.capturedAt,
+    snapshotCapturedAt: snapshot.capturedAt,
+    dataSource: "snapshot",
+    usdToInrRate: snapshot.usdToInrRate,
+    usdToPkrRate: snapshot.usdToPkrRate,
+    rateAsOf: snapshot.rateAsOf,
+    rows,
+    warnings: snapshot.warnings,
+  };
+}
 
 function employeeIdFromRow(row: OnboardingRow): string {
   return String(row["Employee ID"] ?? row._rowId ?? "").trim();
@@ -83,6 +132,67 @@ function bonusInPeriod(
 }
 
 export async function buildPayrollReport(args: {
+  month: string;
+  payCycleFilter?: "all" | PayrollPayCycle;
+  activeOnly?: boolean;
+}): Promise<PayrollReport> {
+  const payMonth = String(args.month || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(payMonth)) {
+    throw new Error("Invalid month — use YYYY-MM");
+  }
+  const payCycleFilter = args.payCycleFilter ?? "all";
+  const activeOnly = args.activeOnly ?? true;
+
+  if (isPastPayMonth(payMonth)) {
+    const existing = await loadPayrollMonthSnapshot(payMonth);
+    if (existing) {
+      const payrollFile = await ensurePayrollOnS3();
+      return reportFromSnapshot({
+        snapshot: existing,
+        payMonth,
+        payCycleFilter,
+        activeOnly,
+        payrollFile,
+      });
+    }
+
+    const fullReport = await buildPayrollReportLive({
+      month: payMonth,
+      payCycleFilter: "all",
+      activeOnly: false,
+    });
+    await savePayrollMonthSnapshot(fullReport);
+    return {
+      ...reportFromSnapshot({
+        snapshot: {
+          version: 1,
+          payMonth,
+          capturedAt: fullReport.generatedAt,
+          usdToInrRate: fullReport.usdToInrRate,
+          usdToPkrRate: fullReport.usdToPkrRate,
+          rateAsOf: fullReport.rateAsOf,
+          rows: fullReport.rows,
+          warnings: fullReport.warnings,
+        },
+        payMonth,
+        payCycleFilter,
+        activeOnly,
+        payrollFile: await ensurePayrollOnS3(),
+      }),
+      dataSource: "live",
+      snapshotCapturedAt: fullReport.generatedAt,
+    };
+  }
+
+  const report = await buildPayrollReportLive(args);
+  return {
+    ...report,
+    dataSource: "live",
+    snapshotCapturedAt: null,
+  };
+}
+
+export async function buildPayrollReportLive(args: {
   month: string;
   payCycleFilter?: "all" | PayrollPayCycle;
   activeOnly?: boolean;
@@ -251,12 +361,40 @@ export async function buildPayrollReport(args: {
     payMonthLabel: monthLabel(payMonth),
     payCycleFilter,
     generatedAt: new Date().toISOString(),
+    dataSource: "live",
+    snapshotCapturedAt: null,
     usdToInrRate,
     usdToPkrRate,
     rateAsOf,
     rows: dedupedRows,
     warnings: warnings.slice(0, 6),
   };
+}
+
+export async function backfillPayrollSnapshots(monthsBack = 12): Promise<{
+  saved: string[];
+  skipped: string[];
+}> {
+  const { listPastPayMonths } = await import("@/lib/payroll-s3.server");
+  const saved: string[] = [];
+  const skipped: string[] = [];
+
+  for (const month of listPastPayMonths(monthsBack)) {
+    const existing = await loadPayrollMonthSnapshot(month);
+    if (existing) {
+      skipped.push(month);
+      continue;
+    }
+    const report = await buildPayrollReportLive({
+      month,
+      payCycleFilter: "all",
+      activeOnly: false,
+    });
+    await savePayrollMonthSnapshot(report);
+    saved.push(month);
+  }
+
+  return { saved, skipped };
 }
 
 export { payCycleLabel };

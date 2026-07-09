@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { downloadCSV } from "@/lib/csv";
 import { fmtCurrency, fmtDate, fmtPct } from "@/lib/format";
 import {
+  backfillPayrollSnapshotsFn,
   getPayrollMeta,
   getPayrollReport,
   markPayrollPaid,
@@ -17,7 +18,7 @@ import {
   updatePayrollEmployee,
   updatePayrollPeriodFx,
 } from "@/lib/payroll-functions";
-import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
+import { payrollAuthPayload } from "@/lib/payroll-rbac-hooks";
 import { payCycleLabel, type PayrollLocalCurrency, type PayrollPayCycle, type PayrollReportRow } from "@/lib/payroll-schema";
 
 export const Route = createFileRoute("/payroll/")({
@@ -36,7 +37,7 @@ function PayrollBoardPage() {
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
 
-  const clerkToken = () => payrollClerkToken(() => clerkAuth.getToken());
+  const payrollAuth = () => payrollAuthPayload(() => clerkAuth.getToken(), auth.user?.email);
   const queryEnabled = clerkAuth.isSignedIn && canAccessPayroll;
 
   const [month, setMonth] = useState(currentMonth);
@@ -53,7 +54,7 @@ function PayrollBoardPage() {
     queryKey: ["payroll-report", month, payCycleFilter, activeOnly],
     queryFn: async () =>
       getPayrollReport({
-        data: { month, payCycleFilter, activeOnly, clerkToken: await clerkToken() },
+        data: { month, payCycleFilter, activeOnly, ...(await payrollAuth()) },
       }),
     enabled: queryEnabled,
     retry: 1,
@@ -61,9 +62,20 @@ function PayrollBoardPage() {
 
   const metaQ = useQuery({
     queryKey: ["payroll-meta"],
-    queryFn: async () => getPayrollMeta({ data: { clerkToken: await clerkToken() } }),
+    queryFn: async () => getPayrollMeta({ data: { ...(await payrollAuth()) } }),
     enabled: queryEnabled,
     retry: 1,
+  });
+
+  useQuery({
+    queryKey: ["payroll-snapshot-backfill"],
+    queryFn: async () =>
+      backfillPayrollSnapshotsFn({
+        data: { ...(await payrollAuth()), monthsBack: 12 },
+      }),
+    enabled: queryEnabled,
+    staleTime: Infinity,
+    retry: 0,
   });
 
   useEffect(() => {
@@ -110,7 +122,7 @@ function PayrollBoardPage() {
       meetingCreditsHours?: number | null;
       additionalCreditsHours?: number | null;
     }) => {
-      return updatePayrollEmployee({ data: { ...patch, actor, clerkToken: await clerkToken() } });
+      return updatePayrollEmployee({ data: { ...patch, actor, ...(await payrollAuth()) } });
     },
     onSuccess: () => {
       toast.success("Payroll fields saved");
@@ -129,7 +141,7 @@ function PayrollBoardPage() {
           usdToPkrRate: Number(fxPkr) || null,
           rateAsOf: fxDate || null,
           actor,
-          clerkToken: await clerkToken(),
+          ...(await payrollAuth()),
         },
       }),
     onSuccess: () => {
@@ -152,7 +164,7 @@ function PayrollBoardPage() {
           amountUsd: payload.row.totalUsd,
           note: payload.note,
           actor,
-          clerkToken: await clerkToken(),
+          ...(await payrollAuth()),
         },
       }),
     onSuccess: () => {
@@ -174,7 +186,7 @@ function PayrollBoardPage() {
           payMonth: row.payMonth,
           payCycle: row.payCycle,
           actor,
-          clerkToken: await clerkToken(),
+          ...(await payrollAuth()),
         },
       }),
     onSuccess: () => {
@@ -239,6 +251,16 @@ function PayrollBoardPage() {
             className="mt-1 block h-9 rounded-md border border-border bg-background px-2 text-[13px]"
           />
         </label>
+
+        {report?.dataSource === "snapshot" && report.snapshotCapturedAt ? (
+          <div className="text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2.5 py-1.5">
+            Frozen snapshot · saved {fmtDate(report.snapshotCapturedAt)}
+          </div>
+        ) : report && month < currentMonth() ? (
+          <div className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-1.5">
+            First view captured to S3 for this month
+          </div>
+        ) : null}
 
         <label className="text-[12px] text-muted-foreground">
           Pay cycle
@@ -329,6 +351,7 @@ function PayrollBoardPage() {
           <div className="text-[11px] text-muted-foreground flex items-center gap-1 ml-auto">
             <Cloud className="h-3.5 w-3.5" />
             s3://{metaQ.data.bucket}/{metaQ.data.key}
+            <span className="text-muted-foreground/60">· snapshots payroll/snapshots/YYYY-MM.json</span>
           </div>
         )}
       </div>

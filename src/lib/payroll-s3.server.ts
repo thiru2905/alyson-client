@@ -11,9 +11,13 @@ import type {
   PayrollDataFile,
   PayrollEmployeeOverrides,
   PayrollLogEntry,
+  PayrollMonthSnapshot,
   PayrollOperation,
   PayrollPaidRecord,
+  PayrollPayCycle,
   PayrollPeriodSettings,
+  PayrollReport,
+  PayrollReportRow,
 } from "@/lib/payroll-schema";
 import { paidRecordKey } from "@/lib/payroll-schema";
 
@@ -50,6 +54,29 @@ function dataKey() {
 
 function logKey() {
   return process.env.ALYSON_HR_PAYROLL_LOG_S3_KEY || "payroll/operations.log.jsonl";
+}
+
+function snapshotKey(payMonth: string) {
+  const prefix = process.env.ALYSON_HR_PAYROLL_SNAPSHOT_S3_PREFIX?.trim() || "payroll/snapshots";
+  return `${prefix.replace(/\/$/, "")}/${payMonth}.json`;
+}
+
+export function currentPayMonth(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+export function isPastPayMonth(payMonth: string): boolean {
+  return /^\d{4}-\d{2}$/.test(payMonth) && payMonth < currentPayMonth();
+}
+
+export function listPastPayMonths(monthsBack: number): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = 1; i <= monthsBack; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    months.push(d.toISOString().slice(0, 7));
+  }
+  return months;
 }
 
 async function ensureBucketExists(bucket: string) {
@@ -250,6 +277,13 @@ export async function markPayrollEmployeePaid(args: {
     amountUsd: args.record.amountUsd,
     note: args.record.note ?? undefined,
   });
+  await updatePayrollSnapshotPaidStatus({
+    payMonth: args.record.payMonth,
+    employeeId: args.record.employeeId,
+    payCycle: args.record.payCycle,
+    paidAt: args.record.paidAt,
+    paidBy: args.record.paidBy ?? null,
+  });
   return file.paid[key]!;
 }
 
@@ -276,6 +310,13 @@ export async function unmarkPayrollEmployeePaid(args: {
     amountLocal: prev?.amountLocal,
     amountUsd: prev?.amountUsd,
   });
+  await updatePayrollSnapshotPaidStatus({
+    payMonth: args.payMonth,
+    employeeId: args.employeeId,
+    payCycle: args.payCycle,
+    paidAt: null,
+    paidBy: null,
+  });
   return { removed: Boolean(prev) };
 }
 
@@ -293,4 +334,102 @@ export async function logPayrollOperation(
   entry: Omit<PayrollLogEntry, "ts" | "operation">,
 ) {
   await appendLogEntry({ ts: new Date().toISOString(), operation, ...entry });
+}
+
+export async function loadPayrollMonthSnapshot(payMonth: string): Promise<PayrollMonthSnapshot | null> {
+  const bucket = bucketName();
+  const key = snapshotKey(payMonth);
+  try {
+    const r = await s3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!r.Body) return null;
+    const parsed = JSON.parse(await streamToString(r.Body)) as PayrollMonthSnapshot;
+    if (!parsed || parsed.version !== 1 || parsed.payMonth !== payMonth) return null;
+    parsed.rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+    parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+    return parsed;
+  } catch (e) {
+    if (isMissingObjectError(e)) return null;
+    throw e;
+  }
+}
+
+export async function savePayrollMonthSnapshot(report: PayrollReport, actor?: string | null) {
+  const bucket = bucketName();
+  const key = snapshotKey(report.payMonth);
+  await ensureBucketExists(bucket);
+  const snapshot: PayrollMonthSnapshot = {
+    version: 1,
+    payMonth: report.payMonth,
+    capturedAt: report.generatedAt,
+    usdToInrRate: report.usdToInrRate,
+    usdToPkrRate: report.usdToPkrRate,
+    rateAsOf: report.rateAsOf,
+    rows: report.rows,
+    warnings: report.warnings,
+  };
+  await s3().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: JSON.stringify(snapshot, null, 2),
+      ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("payroll", "snapshot"),
+    }),
+  );
+  await appendLogEntry({
+    ts: new Date().toISOString(),
+    operation: "save_snapshot",
+    actor: actor ?? null,
+    payMonth: report.payMonth,
+    detailsJson: JSON.stringify({ key, rowCount: report.rows.length, capturedAt: snapshot.capturedAt }),
+  });
+  return { bucket, key, snapshot };
+}
+
+export function mergePaidStatusIntoSnapshotRows(
+  rows: PayrollReportRow[],
+  file: PayrollDataFile,
+  payMonth: string,
+): PayrollReportRow[] {
+  return rows.map((row) => {
+    const paid = getPaidRecord(file, row.employeeId, payMonth, row.payCycle);
+    if (!paid) return { ...row, paidAt: null, paidBy: null };
+    return { ...row, paidAt: paid.paidAt, paidBy: paid.paidBy ?? null };
+  });
+}
+
+export async function updatePayrollSnapshotPaidStatus(args: {
+  payMonth: string;
+  employeeId: string;
+  payCycle: PayrollPayCycle;
+  paidAt: string | null;
+  paidBy?: string | null;
+}) {
+  const snapshot = await loadPayrollMonthSnapshot(args.payMonth);
+  if (!snapshot) return { updated: false };
+
+  let changed = false;
+  snapshot.rows = snapshot.rows.map((row) => {
+    if (row.employeeId !== args.employeeId || row.payCycle !== args.payCycle) return row;
+    changed = true;
+    return {
+      ...row,
+      paidAt: args.paidAt,
+      paidBy: args.paidBy ?? null,
+    };
+  });
+  if (!changed) return { updated: false };
+
+  const bucket = bucketName();
+  const key = snapshotKey(args.payMonth);
+  await s3().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: JSON.stringify(snapshot, null, 2),
+      ContentType: "application/json; charset=utf-8",
+      Tagging: s3CostAllocationTagging("payroll", "snapshot"),
+    }),
+  );
+  return { updated: true };
 }

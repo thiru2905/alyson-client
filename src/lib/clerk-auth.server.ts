@@ -4,6 +4,14 @@ import {
   MEETING_TASKS_BACKFILL_ADMIN_EMAIL,
 } from "@/lib/notetaker-tasks-backfill-auth";
 
+export function clerkServerConfigured(): boolean {
+  return Boolean(process.env.CLERK_SECRET_KEY?.trim());
+}
+
+export function isDevClerkBypass(): boolean {
+  return process.env.NODE_ENV === "development" && !clerkServerConfigured();
+}
+
 function clerkSecretKey() {
   const key = process.env.CLERK_SECRET_KEY?.trim();
   if (!key) {

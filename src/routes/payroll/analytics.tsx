@@ -20,7 +20,7 @@ import { FetchingBar } from "@/components/Skeleton";
 import { filterPayrollAnalytics } from "@/lib/payroll-analytics";
 import { getPayrollAnalytics } from "@/lib/payroll-functions";
 import { useAuth } from "@/lib/auth";
-import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
+import { payrollAuthPayload } from "@/lib/payroll-rbac-hooks";
 import { fmtCurrency } from "@/lib/format";
 
 export const Route = createFileRoute("/payroll/analytics")({
@@ -35,7 +35,7 @@ function currentMonth() {
 }
 
 function PayrollAnalyticsPage() {
-  const { canAccessPayroll } = useAuth();
+  const { canAccessPayroll, user } = useAuth();
   const clerkAuth = useClerkAuth();
   const [month, setMonth] = useState(currentMonth);
   const [teamFilter, setTeamFilter] = useState("__all__");
@@ -47,7 +47,12 @@ function PayrollAnalyticsPage() {
     queryKey: ["payroll-analytics", month],
     queryFn: async () =>
       getPayrollAnalytics({
-        data: { month, payCycleFilter: "all", activeOnly: false, clerkToken: await payrollClerkToken(() => clerkAuth.getToken()) },
+        data: {
+          month,
+          payCycleFilter: "all",
+          activeOnly: false,
+          ...(await payrollAuthPayload(() => clerkAuth.getToken(), user?.email)),
+        },
       }),
     staleTime: 15_000,
     enabled: clerkAuth.isSignedIn && canAccessPayroll,

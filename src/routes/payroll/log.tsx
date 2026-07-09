@@ -5,7 +5,7 @@ import { Cloud, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { getPayrollLog } from "@/lib/payroll-functions";
 import { useAuth } from "@/lib/auth";
-import { payrollClerkToken } from "@/lib/payroll-rbac-hooks";
+import { payrollAuthPayload } from "@/lib/payroll-rbac-hooks";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 import { payCycleLabel, type PayrollPayCycle } from "@/lib/payroll-schema";
 
@@ -26,18 +26,22 @@ function opLabel(op: string) {
       return "FX rate updated";
     case "bootstrap":
       return "Bootstrap";
+    case "save_snapshot":
+      return "Snapshot saved";
+    case "backfill_snapshots":
+      return "Snapshots backfill";
     default:
       return op.replace(/_/g, " ");
   }
 }
 
 function PayrollLogPage() {
-  const { canAccessPayroll } = useAuth();
+  const { canAccessPayroll, user } = useAuth();
   const clerkAuth = useClerkAuth();
   const q = useQuery({
     queryKey: ["payroll-log"],
     queryFn: async () =>
-      getPayrollLog({ data: { clerkToken: await payrollClerkToken(() => clerkAuth.getToken()) } }),
+      getPayrollLog({ data: { ...(await payrollAuthPayload(() => clerkAuth.getToken(), user?.email)) } }),
     staleTime: 10_000,
     enabled: clerkAuth.isSignedIn && canAccessPayroll,
     retry: 1,

@@ -26,7 +26,9 @@ export function usePayrollAccess() {
       const token = await clerkAuth.getToken();
       if (!token) return fallbackAccess(emailHint);
       try {
-        return await checkPayrollAccess({ data: { clerkToken: token } });
+        return await checkPayrollAccess({
+          data: { clerkToken: token, emailHint: user?.email?.toLowerCase() },
+        });
       } catch {
         return fallbackAccess(emailHint);
       }
@@ -38,10 +40,25 @@ export function usePayrollAccess() {
   });
 }
 
-export async function payrollClerkToken(getToken: () => Promise<string | null>): Promise<string> {
+export type PayrollAuthPayload = {
+  clerkToken: string;
+  emailHint?: string;
+};
+
+export async function payrollAuthPayload(
+  getToken: () => Promise<string | null>,
+  email?: string | null,
+): Promise<PayrollAuthPayload> {
   const token = await getToken();
   if (!token) throw new Error("Sign in with Clerk to access payroll");
-  return token;
+  const emailHint = email?.trim().toLowerCase() || undefined;
+  return emailHint ? { clerkToken: token, emailHint } : { clerkToken: token };
+}
+
+/** @deprecated Use payrollAuthPayload */
+export async function payrollClerkToken(getToken: () => Promise<string | null>): Promise<string> {
+  const { clerkToken } = await payrollAuthPayload(getToken);
+  return clerkToken;
 }
 
 export function usePayrollNavVisible() {

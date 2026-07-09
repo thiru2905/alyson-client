@@ -49,7 +49,9 @@ export type PayrollOperation =
   | "update_employee"
   | "update_period_fx"
   | "mark_paid"
-  | "unmark_paid";
+  | "unmark_paid"
+  | "save_snapshot"
+  | "backfill_snapshots";
 
 export type PayrollLogEntry = {
   ts: string;
@@ -124,6 +126,22 @@ export type PayrollReport = {
   payMonthLabel: string;
   payCycleFilter: "all" | PayrollPayCycle;
   generatedAt: string;
+  /** ISO timestamp when a frozen S3 snapshot was captured (past months). */
+  snapshotCapturedAt?: string | null;
+  /** `snapshot` = historical frozen data from S3; `live` = computed now. */
+  dataSource?: "live" | "snapshot";
+  usdToInrRate: number;
+  usdToPkrRate: number;
+  rateAsOf: string | null;
+  rows: PayrollReportRow[];
+  warnings: string[];
+};
+
+/** Frozen monthly payroll report stored in S3 for historical review. */
+export type PayrollMonthSnapshot = {
+  version: 1;
+  payMonth: string;
+  capturedAt: string;
   usdToInrRate: number;
   usdToPkrRate: number;
   rateAsOf: string | null;

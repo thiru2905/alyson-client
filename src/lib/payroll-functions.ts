@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { buildPayrollAnalyticsReport } from "@/lib/payroll-analytics";
-import { buildPayrollReport } from "@/lib/payroll-report.server";
+import { backfillPayrollSnapshots, buildPayrollReport } from "@/lib/payroll-report.server";
 import { requirePayrollAccess } from "@/lib/payroll-rbac.server";
 import {
   ensurePayrollOnS3,
@@ -14,6 +14,7 @@ import {
 
 const clerkTokenSchema = z.object({
   clerkToken: z.string().min(1),
+  emailHint: z.string().email().optional(),
 });
 
 const monthSchema = z.string().regex(/^\d{4}-\d{2}$/);
@@ -61,7 +62,7 @@ const markPaidSchema = clerkTokenSchema.extend({
 export const getPayrollReport = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => reportInputSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const { clerkToken: _token, ...reportArgs } = data;
     return buildPayrollReport(reportArgs);
   });
@@ -69,7 +70,7 @@ export const getPayrollReport = createServerFn({ method: "POST" })
 export const getPayrollAnalytics = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => reportInputSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const { clerkToken: _token, ...reportArgs } = data;
     const report = await buildPayrollReport(reportArgs);
     return buildPayrollAnalyticsReport(report.rows);
@@ -78,7 +79,7 @@ export const getPayrollAnalytics = createServerFn({ method: "POST" })
 export const updatePayrollEmployee = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => employeePatchSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const { employeeId, actor, clerkToken: _token, ...patch } = data;
     const saved = await upsertPayrollEmployeeOverrides(employeeId, patch, actor ?? null);
     return { employee: saved };
@@ -87,7 +88,7 @@ export const updatePayrollEmployee = createServerFn({ method: "POST" })
 export const updatePayrollPeriodFx = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => periodPatchSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const { month, actor, clerkToken: _token, ...patch } = data;
     const saved = await upsertPayrollPeriodSettings(month, patch, actor ?? null);
     return { period: saved };
@@ -96,7 +97,7 @@ export const updatePayrollPeriodFx = createServerFn({ method: "POST" })
 export const markPayrollPaid = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => markPaidSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const { clerkToken: _token, ...rest } = data;
     const paid = await markPayrollEmployeePaid({
       record: {
@@ -121,6 +122,7 @@ export const unmarkPayrollPaid = createServerFn({ method: "POST" })
     markPaidSchema
       .pick({
         clerkToken: true,
+        emailHint: true,
         employeeId: true,
         payMonth: true,
         payCycle: true,
@@ -130,7 +132,7 @@ export const unmarkPayrollPaid = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const result = await unmarkPayrollEmployeePaid({
       employeeId: data.employeeId,
       payMonth: data.payMonth,
@@ -144,7 +146,7 @@ export const unmarkPayrollPaid = createServerFn({ method: "POST" })
 export const getPayrollMeta = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => clerkTokenSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const file = await ensurePayrollOnS3();
     return { bucket: file.bucket, key: file.key, logKey: file.logKey, updatedAt: file.updatedAt };
   });
@@ -152,8 +154,28 @@ export const getPayrollMeta = createServerFn({ method: "POST" })
 export const getPayrollLog = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => clerkTokenSchema.parse(data))
   .handler(async ({ data }) => {
-    await requirePayrollAccess(data.clerkToken);
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
     const file = await ensurePayrollOnS3();
     const entries = await getPayrollOperationsLog(800);
     return { entries, bucket: file.bucket, logKey: file.logKey };
+  });
+
+export const backfillPayrollSnapshotsFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    clerkTokenSchema
+      .extend({
+        monthsBack: z.number().int().min(1).max(24).optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requirePayrollAccess(data.clerkToken, data.emailHint);
+    const result = await backfillPayrollSnapshots(data.monthsBack ?? 12);
+    const { logPayrollOperation } = await import("@/lib/payroll-s3.server");
+    if (result.saved.length) {
+      await logPayrollOperation("backfill_snapshots", {
+        detailsJson: JSON.stringify(result),
+      });
+    }
+    return result;
   });
