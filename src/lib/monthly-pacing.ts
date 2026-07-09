@@ -1,5 +1,6 @@
 import {
   PACING_LEAVE_HOURS_PER_DAY,
+  PACING_TARGET_HOURS_PER_WORKDAY,
   WEEKLY_HOURS_TARGET,
   addDaysIso,
   countWeekdaysInclusive,
@@ -108,7 +109,7 @@ export function computePeriodPacingMetrics(args: {
 }): MonthPacingMetrics {
   const { periodStart, periodEnd, rollupDay } = args;
   const totalWorkDays = countWeekdaysInclusive(periodStart, periodEnd);
-  const targetHours = totalWorkDays * PACING_LEAVE_HOURS_PER_DAY;
+  const targetHours = totalWorkDays * PACING_TARGET_HOURS_PER_WORKDAY;
   const sampleDays = periodPacingSampleDays(periodStart, rollupDay, periodEnd);
   const elapsedWorkDays = countWeekdaysInclusive(periodStart, rollupDay);
   const tomorrow = addDaysIso(rollupDay, 1);
@@ -249,5 +250,5 @@ export function buildMonthlyPacingRow(args: {
 }
 
 /** Monthly target = workdays × 7h (equivalent to {WEEKLY_HOURS_TARGET}h/week). */
-export const MONTHLY_HOURS_PER_WORKDAY = PACING_LEAVE_HOURS_PER_DAY;
+export const MONTHLY_HOURS_PER_WORKDAY = PACING_TARGET_HOURS_PER_WORKDAY;
 export const WEEKLY_EQUIVALENT_TARGET = WEEKLY_HOURS_TARGET;

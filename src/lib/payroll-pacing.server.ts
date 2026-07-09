@@ -21,6 +21,7 @@ import {
   enumerateDaysIso,
   isWeekdayIso,
   PACING_LEAVE_HOURS_PER_DAY,
+  PACING_TARGET_HOURS_PER_WORKDAY,
   type WeeklyPacingRow,
 } from "@/lib/weekly-pacing";
 import { buildMonthlyPacingRow } from "@/lib/monthly-pacing";
@@ -56,7 +57,7 @@ export async function buildPayPeriodPacingReport(period: PayPeriod): Promise<Pay
   const tomorrow = rollupDay < period.periodEnd ? enumerateDaysIso(rollupDay, period.periodEnd).find((d) => d > rollupDay) : null;
   const remainingWorkDays =
     rollupDay >= period.periodEnd ? 0 : countWeekdaysInclusive(tomorrow ?? rollupDay, period.periodEnd);
-  const targetHours = totalWorkDays * PACING_LEAVE_HOURS_PER_DAY;
+  const targetHours = totalWorkDays * PACING_TARGET_HOURS_PER_WORKDAY;
 
   let periodSeconds = new Map<string, number>();
   try {

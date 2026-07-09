@@ -38,6 +38,7 @@ import {
   pacingFilterExportSlug,
   pacingFilterSummaryLabel,
   PACING_LEAVE_HOURS_PER_DAY,
+  PACING_TARGET_HOURS_PER_WORKDAY,
   PACING_STATUS_LABEL,
   sortPacingRows,
   type WeeklyPacingRow,
@@ -407,7 +408,7 @@ function MonthlyPacingPage() {
         title="Monthly Pacing Report"
         description={
           report
-            ? `${report.company.name} · ${report.month.label} (${report.timeZoneLabel}) · as of ${fmtDate(report.today)} · Target ${report.targetHours}h (${report.totalWorkDays} workdays × ${PACING_LEAVE_HOURS_PER_DAY}h) · ${filteredRows.length}${hasAnyFilters ? `/${allRows.length}` : ""} employees${filterSummary ? ` · ${filterSummary}` : ""} · ${summary.metTarget} met target`
+            ? `${report.company.name} · ${report.month.label} (${report.timeZoneLabel}) · as of ${fmtDate(report.today)} · Target ${report.targetHours}h (${report.totalWorkDays} workdays × ${PACING_TARGET_HOURS_PER_WORKDAY}h) · ${filteredRows.length}${hasAnyFilters ? `/${allRows.length}` : ""} employees${filterSummary ? ` · ${filterSummary}` : ""} · ${summary.metTarget} met target`
             : "Loading monthly pacing from Time Doctor…"
         }
         dense

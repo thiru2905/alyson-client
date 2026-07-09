@@ -2,8 +2,11 @@ import { emailLookupKeys } from "@/lib/cintara-email";
 
 export const WEEKLY_HOURS_TARGET = 35;
 
-/** Hours credited per leave workday toward weekly pacing (counts as worked time). */
+/** Hours credited per personal/team leave workday (added to logged hours). */
 export const PACING_LEAVE_HOURS_PER_DAY = 8;
+
+/** Expected hours per workday for weekly/monthly/payroll targets (35h ÷ 5). */
+export const PACING_TARGET_HOURS_PER_WORKDAY = 7;
 
 export function formatActiveLabel(active: boolean): "Yes" | "No" {
   return active ? "Yes" : "No";
