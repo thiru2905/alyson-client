@@ -13,7 +13,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
-import { useIsManagerOnlyNav, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import { toast } from "sonner";
 
 declare const __BUILD_SHA__: string;
@@ -130,7 +130,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
   const superAccessNavVisible = useSuperAccessNavVisible();
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
-  const managerOnlyNav = useIsManagerOnlyNav();
   const { theme, toggle, palette, setPalette } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -145,9 +144,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const prevPathRef = useRef<string | null>(null);
 
   const visible = NAV.filter((n) => {
-    if (managerOnlyNav) {
-      return n.to === "/time-dashboard" || n.to.startsWith("/time-dashboard/");
-    }
     if (n.superAccess) return superAccessNavVisible;
     if (n.to === "/time-dashboard" || n.to.startsWith("/time-dashboard/")) {
       return timeDashboardNavVisible;

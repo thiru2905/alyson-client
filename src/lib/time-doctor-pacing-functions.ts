@@ -30,6 +30,7 @@ const WeeklyTrendInput = z.object({
   location: z.string().optional(),
   team: z.string().optional(),
   active: z.string().optional(),
+  managerEmail: z.string().optional(),
 });
 
 const PacingRowSchema = z.object({

@@ -18,7 +18,7 @@ import { z } from "zod";
 import { useAuth } from "@/lib/auth";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
-import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible, useTimeDashboardAccess, filterRowsForTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
 
@@ -51,6 +51,7 @@ function TimeDashboardPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
+  const accessQ = useTimeDashboardAccess();
 
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState<TimeDashboardSortField>("range");
@@ -109,7 +110,10 @@ function TimeDashboardPage() {
         employees: TimeDoctorEmployeeRow[];
       }
     | undefined;
-  const employees = data?.employees ?? [];
+  const employees = useMemo(
+    () => filterRowsForTimeDashboardAccess(data?.employees ?? [], accessQ.data),
+    [data?.employees, accessQ.data],
+  );
   const activeRange = data?.range ?? { start: appliedStart, end: appliedEnd };
   const calMonthLabel = data?.rollups?.calendarMonth
     ? formatRangeLabel(data.rollups.calendarMonth.start, data.rollups.calendarMonth.end)

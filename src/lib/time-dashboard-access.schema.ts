@@ -7,7 +7,10 @@ export type TimeDashboardAccessLevel = "full" | "team" | "none";
 
 export type TimeDashboardAccessResult = {
   level: TimeDashboardAccessLevel;
+  /** Signed-in viewer email (lowercase). */
   email: string;
+  /** Manager email used for team filtering (may differ from viewer in dev test aliases). */
+  scopeManagerEmail?: string;
   managerName?: string;
   /** Lowercase official emails for team-scoped viewers. */
   allowedEmployeeEmails?: string[];

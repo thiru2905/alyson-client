@@ -63,7 +63,7 @@ export const fetchWeeklyHoursTrendScoped = createServerFn({ method: "POST" })
     const { buildWeeklyHoursTrendReport } = await import("@/lib/time-doctor-pacing.server");
     const report = await buildWeeklyHoursTrendReport({
       ...query,
-      managerEmail: scope.level === "team" ? scope.email : undefined,
+      managerEmail: scope.level === "team" ? scope.managerEmail : undefined,
     });
     return report;
   });

@@ -1,7 +1,7 @@
 import { useAuth as useClerkAuth } from "@clerk/clerk-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
-import { getManagerTeamForEmail, isManagerRosterEmail } from "@/lib/manager-access-roster";
+import { resolveTimeDashboardTeamScope } from "@/lib/time-dashboard-manager-scope";
 import { BUNDLED_ORG_CHART_ROSTER_CSV } from "@/lib/bundled-data";
 import {
   buildOrgChartRosterLookup,
@@ -14,19 +14,28 @@ import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.sche
 
 const rosterLookup = buildOrgChartRosterLookup(parseOrgChartRosterCsv(BUNDLED_ORG_CHART_ROSTER_CSV));
 
+function timeDashboardManagerTestModeEnabled(): boolean {
+  return import.meta.env.DEV;
+}
+
 function fallbackTimeDashboardAccess(email: string | null | undefined): TimeDashboardAccessResult {
   const normalized = String(email || "").trim().toLowerCase();
   if (isSuperAccessEmail(normalized)) {
     return { level: "full", email: normalized };
   }
-  if (isManagerRosterEmail(normalized, rosterLookup)) {
-    const mgrTeam = getManagerTeamForEmail(normalized, rosterLookup);
+  const teamScope = resolveTimeDashboardTeamScope(
+    normalized,
+    timeDashboardManagerTestModeEnabled(),
+    rosterLookup,
+  );
+  if (teamScope) {
     return {
       level: "team",
-      email: normalized,
-      managerName: mgrTeam?.managerName,
-      allowedEmployeeEmails: mgrTeam?.directReports.map((r) => r.email),
-      directReportCount: mgrTeam?.directReports.length,
+      email: teamScope.viewerEmail,
+      scopeManagerEmail: teamScope.managerEmail,
+      managerName: teamScope.team.managerName,
+      allowedEmployeeEmails: teamScope.team.directReports.map((r) => r.email),
+      directReportCount: teamScope.team.directReports.length,
     };
   }
   return { level: "none", email: normalized };
@@ -70,19 +79,6 @@ export function useTimeDashboardNavVisible() {
   );
 }
 
-export function useIsManagerOnlyNav() {
-  const { user } = useAuth();
-  const accessQ = useTimeDashboardAccess();
-  const superAccessQ = useSuperAccess();
-  const email = user?.email?.toLowerCase() ?? "";
-  const isSuper =
-    isSuperAccessEmail(email) ||
-    superAccessQ.data?.allowed === true ||
-    accessQ.data?.level === "full";
-  const isManager = accessQ.data?.level === "team";
-  return isManager && !isSuper;
-}
-
 export async function timeDashboardAuthPayload(
   getToken: () => Promise<string | null>,
   email?: string | null,
@@ -98,3 +94,8 @@ export function useTimeDashboardAuth() {
   const { user } = useAuth();
   return () => timeDashboardAuthPayload(() => clerkAuth.getToken(), user?.email);
 }
+
+export {
+  filterRowsForTimeDashboardAccess,
+  timeDashboardManagerEmailParam,
+} from "@/lib/time-dashboard-manager-scope";

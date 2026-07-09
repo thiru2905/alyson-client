@@ -38,7 +38,7 @@ import { fmtDate } from "@/lib/format";
 import { downloadCSV } from "@/lib/csv";
 import { downloadWeeklyPacingPdf } from "@/lib/weekly-pacing-pdf";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible, useTimeDashboardAccess, filterRowsForTimeDashboardAccess, timeDashboardManagerEmailParam } from "@/lib/time-dashboard-access-hooks";
 import { toast } from "sonner";
 import { ArrowDownAZ, ArrowLeft, ArrowUpAZ, Calendar, Copy, Download, FileText, RefreshCw, Search, Sparkles, TrendingDown } from "lucide-react";
 import { z } from "zod";
@@ -81,6 +81,8 @@ function WeeklyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
+  const accessQ = useTimeDashboardAccess();
+  const managerEmail = timeDashboardManagerEmailParam(accessQ.data);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
@@ -109,7 +111,7 @@ function WeeklyPacingPage() {
   }, [rollupDay, locationFilter, teamFilter, activeFilter, searchQ]);
 
   const q = useQuery({
-    queryKey: ["weekly-pacing-report", rollupDay],
+    queryKey: ["weekly-pacing-report", rollupDay, managerEmail],
     queryFn: () => fetchWeeklyPacingReport({ data: { targetHours: 35, day: rollupDay } }),
     enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
@@ -118,7 +120,7 @@ function WeeklyPacingPage() {
   });
 
   const trendQ = useQuery({
-    queryKey: ["weekly-hours-trend", locationFilter, teamFilter],
+    queryKey: ["weekly-hours-trend", locationFilter, teamFilter, managerEmail],
     queryFn: () =>
       fetchWeeklyHoursTrend({
         data: {
@@ -127,6 +129,7 @@ function WeeklyPacingPage() {
           location: locationFilter,
           team: teamFilter,
           active: "yes",
+          ...(managerEmail ? { managerEmail } : {}),
         },
       }),
     enabled: canAccess && timeDashboardNavVisible,
@@ -141,7 +144,10 @@ function WeeklyPacingPage() {
   const isTrendLoading = trendQ.isPending && !trendQ.data;
 
   const report = q.data;
-  const allRows = report?.rows ?? [];
+  const allRows = useMemo(
+    () => filterRowsForTimeDashboardAccess(report?.rows ?? [], accessQ.data),
+    [report?.rows, accessQ.data],
+  );
 
   const locationOptions = useMemo(() => {
     const set = new Set<string>();

@@ -29,7 +29,7 @@ import { isIsoDate } from "@/lib/time-dashboard-range";
 import { pacingTodayIso } from "@/lib/weekly-pacing";
 import { monthStartIso, monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible, useTimeDashboardAccess, filterRowsForTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
 import {
   buildLeaveSummaryFromRows,
   filterPacingRows,
@@ -120,6 +120,7 @@ function MonthlyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
+  const accessQ = useTimeDashboardAccess();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
@@ -191,7 +192,10 @@ function MonthlyPacingPage() {
 
   const isBusy = q.isFetching;
   const report = q.data;
-  const allRows = report?.rows ?? [];
+  const allRows = useMemo(
+    () => filterRowsForTimeDashboardAccess(report?.rows ?? [], accessQ.data),
+    [report?.rows, accessQ.data],
+  );
 
   const locationOptions = useMemo(() => {
     const set = new Set<string>();

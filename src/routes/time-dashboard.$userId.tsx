@@ -8,7 +8,8 @@ import { fetchTimeDoctorUserDetail, type TimeDoctorUserDetail } from "@/lib/time
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { useAuth } from "@/lib/auth";
-import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { useTimeDashboardNavVisible, useTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
+import { employeeVisibleToTimeDashboardViewer } from "@/lib/time-dashboard-manager-scope";
 import {
   defaultDetailRange,
   formatMonthLabel,
@@ -64,6 +65,7 @@ function TimeDoctorEmployeePage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
+  const accessQ = useTimeDashboardAccess();
   const [tab, setTab] = useState<TabKey>("overview");
 
   const search = Route.useSearch();
@@ -133,6 +135,9 @@ function TimeDoctorEmployeePage() {
 
   const data = (q.data ?? null) as TimeDoctorUserDetail | null;
   const user = data?.user ?? { id: userId, name: "Employee", email: "", title: "" };
+  const detailForbidden =
+    Boolean(accessQ.data?.level === "team" && data?.user?.email) &&
+    !employeeVisibleToTimeDashboardViewer(data!.user, accessQ.data);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -243,6 +248,29 @@ function TimeDoctorEmployeePage() {
     return (
       <TimeDashboardRbacGate>
         <TimeDashboardGate />
+      </TimeDashboardRbacGate>
+    );
+  }
+
+  if (detailForbidden && q.isSuccess) {
+    return (
+      <TimeDashboardRbacGate>
+        <div className="px-5 md:px-8 py-10">
+          <EmptyState
+            title="Employee not on your team"
+            description="Time Dashboard is limited to your direct reports. Return to the team list to pick someone you manage."
+          />
+          <div className="mt-4 flex justify-center">
+            <Link
+              to="/time-dashboard"
+              search={listSearch}
+              className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Time Dashboard
+            </Link>
+          </div>
+        </div>
       </TimeDashboardRbacGate>
     );
   }

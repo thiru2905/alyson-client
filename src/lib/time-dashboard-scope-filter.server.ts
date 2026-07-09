@@ -18,7 +18,7 @@ export function filterEmployeeRowsForScope<T extends { email: string; name?: str
   if (scope.level === "full") return rows;
   if (scope.level === "none") return [];
   const lookup = getOrgChartRosterLookup();
-  return rows.filter((row) => rowAllowedForManagerScope(row, scope.email, lookup));
+  return rows.filter((row) => rowAllowedForManagerScope(row, scope.managerEmail, lookup));
 }
 
 export function filterEmployeesTableForScope(
