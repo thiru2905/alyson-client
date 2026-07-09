@@ -9,13 +9,15 @@ import {
   voidShareLedgerEvent,
 } from "@/lib/bonus-s3.server";
 import { buildBonusAnalyticsReport } from "@/lib/bonus-analytics";
+import { superAccessInputSchema } from "@/lib/super-access-input";
+import { requireSuperAccess } from "@/lib/super-access-rbac.server";
 import type { EmployeeCompensationLedger } from "@/lib/bonus-schema";
 
-const actorSchema = z.object({
+const actorWithAuthSchema = superAccessInputSchema.extend({
   actor: z.string().email().optional().nullable(),
 });
 
-const appendBonusSchema = actorSchema.extend({
+const appendBonusSchema = actorWithAuthSchema.extend({
   employeeId: z.string().min(1),
   amountUsd: z.number().positive(),
   paidOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -23,13 +25,18 @@ const appendBonusSchema = actorSchema.extend({
   note: z.string().optional(),
 });
 
-const appendShareSchema = actorSchema.extend({
+const appendShareSchema = actorWithAuthSchema.extend({
   employeeId: z.string().min(1),
   eventType: z.enum(["grant", "vest", "adjustment", "note"]),
   shares: z.number(),
   effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   strikePriceUsd: z.number().optional().nullable(),
   note: z.string().optional(),
+});
+
+const voidEventSchema = actorWithAuthSchema.extend({
+  employeeId: z.string().min(1),
+  eventId: z.string().min(1),
 });
 
 function ledgersToArray(employees: Record<string, EmployeeCompensationLedger>) {
@@ -39,22 +46,26 @@ function ledgersToArray(employees: Record<string, EmployeeCompensationLedger>) {
   });
 }
 
-export const getBonusLedger = createServerFn({ method: "GET" }).handler(async () => {
-  const data = await ensureBonusOnS3();
-  return {
-    ledgers: ledgersToArray(data.employees),
-    updatedAt: data.updatedAt,
-    syncedFromOnboardingAt: data.syncedFromOnboardingAt,
-    onboardingUpdatedAt: data.onboardingUpdatedAt,
-    bucket: data.bucket,
-    key: data.key,
-    logKey: data.logKey,
-  };
-});
+export const getBonusLedger = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => superAccessInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const bonusData = await ensureBonusOnS3();
+    return {
+      ledgers: ledgersToArray(bonusData.employees),
+      updatedAt: bonusData.updatedAt,
+      syncedFromOnboardingAt: bonusData.syncedFromOnboardingAt,
+      onboardingUpdatedAt: bonusData.onboardingUpdatedAt,
+      bucket: bonusData.bucket,
+      key: bonusData.key,
+      logKey: bonusData.logKey,
+    };
+  });
 
 export const syncBonusWithOnboarding = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => actorSchema.parse(data))
+  .inputValidator((data: unknown) => actorWithAuthSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     const result = await ensureBonusOnS3(data.actor ?? null);
     return {
       ledgers: ledgersToArray(result.employees),
@@ -68,13 +79,15 @@ export const syncBonusWithOnboarding = createServerFn({ method: "POST" })
 export const recordBonusPayment = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => appendBonusSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const { clerkToken: _t, emailHint: _e, ...rest } = data;
     const result = await appendBonusCashEvent({
-      employeeId: data.employeeId,
-      amountUsd: data.amountUsd,
-      paidOn: data.paidOn,
-      periodLabel: data.periodLabel,
-      note: data.note,
-      actor: data.actor ?? null,
+      employeeId: rest.employeeId,
+      amountUsd: rest.amountUsd,
+      paidOn: rest.paidOn,
+      periodLabel: rest.periodLabel,
+      note: rest.note,
+      actor: rest.actor ?? null,
     });
     return { event: result.event, ledger: result.ledger };
   });
@@ -82,30 +95,29 @@ export const recordBonusPayment = createServerFn({ method: "POST" })
 export const recordShareEvent = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => appendShareSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const { clerkToken: _t, emailHint: _e, ...rest } = data;
     const result = await appendShareLedgerEvent({
-      employeeId: data.employeeId,
-      eventType: data.eventType,
-      shares: data.shares,
-      effectiveDate: data.effectiveDate,
-      strikePriceUsd: data.strikePriceUsd,
-      note: data.note,
-      actor: data.actor ?? null,
+      employeeId: rest.employeeId,
+      eventType: rest.eventType,
+      shares: rest.shares,
+      effectiveDate: rest.effectiveDate,
+      strikePriceUsd: rest.strikePriceUsd,
+      note: rest.note,
+      actor: rest.actor ?? null,
     });
     return { event: result.event, ledger: result.ledger };
   });
 
-const voidEventSchema = actorSchema.extend({
-  employeeId: z.string().min(1),
-  eventId: z.string().min(1),
-});
-
 export const voidBonusPayment = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => voidEventSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const { clerkToken: _t, emailHint: _e, ...rest } = data;
     const result = await voidBonusCashEvent({
-      employeeId: data.employeeId,
-      eventId: data.eventId,
-      actor: data.actor ?? null,
+      employeeId: rest.employeeId,
+      eventId: rest.eventId,
+      actor: rest.actor ?? null,
     });
     return { removed: result.removed, ledger: result.ledger };
   });
@@ -113,25 +125,33 @@ export const voidBonusPayment = createServerFn({ method: "POST" })
 export const voidShareEvent = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => voidEventSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const { clerkToken: _t, emailHint: _e, ...rest } = data;
     const result = await voidShareLedgerEvent({
-      employeeId: data.employeeId,
-      eventId: data.eventId,
-      actor: data.actor ?? null,
+      employeeId: rest.employeeId,
+      eventId: rest.eventId,
+      actor: rest.actor ?? null,
     });
     return { removed: result.removed, ledger: result.ledger };
   });
 
-export const getBonusAnalytics = createServerFn({ method: "GET" }).handler(async () => {
-  const data = await ensureBonusOnS3();
-  const ledgers = ledgersToArray(data.employees);
-  return buildBonusAnalyticsReport(ledgers, data.updatedAt);
-});
+export const getBonusAnalytics = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => superAccessInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const bonusData = await ensureBonusOnS3();
+    const ledgers = ledgersToArray(bonusData.employees);
+    return buildBonusAnalyticsReport(ledgers, bonusData.updatedAt);
+  });
 
-export const getBonusAuditLog = createServerFn({ method: "GET" }).handler(async () => {
-  const log = await getBonusOperationsLog(300);
-  return {
-    entries: log.entries,
-    bucket: log.bucket,
-    key: log.key,
-  };
-});
+export const getBonusAuditLog = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => superAccessInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
+    const log = await getBonusOperationsLog(300);
+    return {
+      entries: log.entries,
+      bucket: log.bucket,
+      key: log.key,
+    };
+  });

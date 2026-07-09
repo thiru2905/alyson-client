@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { BonusEmployeeLedgerDrawer } from "@/components/BonusEmployeeLedgerDrawer";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import {
   getBonusLedger,
   recordBonusPayment,
@@ -26,7 +27,8 @@ const QUERY_KEY = ["bonus-ledger"];
 
 function BonusEmployeesPage() {
   const auth = useAuth();
-  const canEdit = auth.hasAnyRole(["super_admin", "ceo"]);
+  const superAuth = useSuperAccessAuth();
+  const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
 
@@ -37,11 +39,11 @@ function BonusEmployeesPage() {
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getBonusLedger(),
+    queryFn: async () => getBonusLedger({ data: await superAuth() }),
   });
 
   const syncM = useMutation({
-    mutationFn: () => syncBonusWithOnboarding({ data: { actor } }),
+    mutationFn: async () => syncBonusWithOnboarding({ data: { actor, ...(await superAuth()) } }),
     onSuccess: () => {
       toast.success("Synced employee roster from onboarding");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
@@ -51,13 +53,13 @@ function BonusEmployeesPage() {
   });
 
   const bonusM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       employeeId: string;
       amountUsd: number;
       paidOn: string;
       periodLabel?: string;
       note?: string;
-    }) => recordBonusPayment({ data: { ...payload, actor } }),
+    }) => recordBonusPayment({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success(`Recorded ${fmtCurrency(r.event.amountUsd)} bonus`);
       setSelected(r.ledger);
@@ -68,14 +70,14 @@ function BonusEmployeesPage() {
   });
 
   const shareM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       employeeId: string;
       eventType: "grant" | "vest" | "adjustment" | "note";
       shares: number;
       effectiveDate: string;
       strikePriceUsd?: number | null;
       note?: string;
-    }) => recordShareEvent({ data: { ...payload, actor } }),
+    }) => recordShareEvent({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success("Share event recorded");
       setSelected(r.ledger);
@@ -86,8 +88,8 @@ function BonusEmployeesPage() {
   });
 
   const voidBonusM = useMutation({
-    mutationFn: (payload: { employeeId: string; eventId: string }) =>
-      voidBonusPayment({ data: { ...payload, actor } }),
+    mutationFn: async (payload: { employeeId: string; eventId: string }) =>
+      voidBonusPayment({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success(`Removed ${fmtCurrency(r.removed.amountUsd)} bonus`);
       setSelected(r.ledger);
@@ -99,8 +101,8 @@ function BonusEmployeesPage() {
   });
 
   const voidShareM = useMutation({
-    mutationFn: (payload: { employeeId: string; eventId: string }) =>
-      voidShareEvent({ data: { ...payload, actor } }),
+    mutationFn: async (payload: { employeeId: string; eventId: string }) =>
+      voidShareEvent({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success("Share event removed");
       setSelected(r.ledger);

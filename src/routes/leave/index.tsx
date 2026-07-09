@@ -7,6 +7,7 @@ import { LeaveEmployeeLedgerDrawer } from "@/components/LeaveEmployeeLedgerDrawe
 import { LeaveTeamLeavePanel } from "@/components/LeaveTeamLeavePanel";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import {
   getLeaveLedger,
   recordLeave,
@@ -33,7 +34,8 @@ const QUERY_KEY = ["leave-ledger"];
 
 function LeaveEmployeesPage() {
   const auth = useAuth();
-  const canEdit = auth.hasAnyRole(["super_admin", "ceo", "hr"]);
+  const superAuth = useSuperAccessAuth();
+  const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
   const year = new Date().getFullYear();
@@ -44,11 +46,11 @@ function LeaveEmployeesPage() {
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getLeaveLedger(),
+    queryFn: async () => getLeaveLedger({ data: await superAuth() }),
   });
 
   const syncM = useMutation({
-    mutationFn: () => syncLeaveWithTimeDoctor({ data: { actor } }),
+    mutationFn: async () => syncLeaveWithTimeDoctor({ data: { actor, ...(await superAuth()) } }),
     onSuccess: () => {
       toast.success("Synced employee roster from Time Dashboard");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
@@ -58,13 +60,13 @@ function LeaveEmployeesPage() {
   });
 
   const recordM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       employeeId: string;
       leaveType: "annual" | "sick" | "personal" | "unpaid" | "other";
       startDate: string;
       endDate: string;
       note?: string;
-    }) => recordLeave({ data: { ...payload, actor } }),
+    }) => recordLeave({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success(`Recorded ${r.event.days} day(s) leave`);
       setSelected(r.ledger);
@@ -77,8 +79,8 @@ function LeaveEmployeesPage() {
   });
 
   const voidM = useMutation({
-    mutationFn: (payload: { employeeId: string; eventId: string }) =>
-      voidLeave({ data: { ...payload, actor } }),
+    mutationFn: async (payload: { employeeId: string; eventId: string }) =>
+      voidLeave({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success("Leave record removed");
       setSelected(r.ledger);
@@ -90,14 +92,14 @@ function LeaveEmployeesPage() {
   });
 
   const teamLeaveM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       location: string;
       team: string;
       leaveType: "annual" | "sick" | "personal" | "unpaid" | "other";
       startDate: string;
       endDate: string;
       note?: string;
-    }) => recordTeamLeave({ data: { ...payload, actor } }),
+    }) => recordTeamLeave({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success(
         `Team leave recorded — ${r.affectedCount} employee${r.affectedCount === 1 ? "" : "s"} · visible on Team calendar`,
@@ -111,7 +113,7 @@ function LeaveEmployeesPage() {
   });
 
   const voidTeamM = useMutation({
-    mutationFn: (eventId: string) => voidTeamLeave({ data: { eventId, actor } }),
+    mutationFn: async (eventId: string) => voidTeamLeave({ data: { eventId, actor, ...(await superAuth()) } }),
     onSuccess: () => {
       toast.success("Team leave removed");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });

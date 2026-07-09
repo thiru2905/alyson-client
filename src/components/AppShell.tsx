@@ -12,7 +12,7 @@ import { NotificationsPopover } from "@/components/NotificationsPopover";
 import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
-import { usePayrollNavVisible } from "@/lib/payroll-rbac-hooks";
+import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 import { toast } from "sonner";
 
 declare const __BUILD_SHA__: string;
@@ -24,13 +24,20 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   end?: boolean;
   roles?: AppRole[];
-  payrollAccess?: boolean;
+  superAccess?: boolean;
   group: "Workspace" | "People" | "Money" | "Ops" | "Admin";
 };
 
+const SUPER_ACCESS_BADGE_ROUTES = new Set<string>([
+  "/payroll",
+  "/bonus",
+  "/equity",
+  "/workspace-activity",
+  "/leave",
+]);
+
 const NEW_BADGE_ROUTES = new Set<string>([
   "/alyson-brain",
-  "/bonus",
   "/time-dashboard",
   "/alyson-notetaker",
   "/alyson-notetaker/calendar",
@@ -42,7 +49,6 @@ const NEW_BADGE_ROUTES = new Set<string>([
   "/employee-onboarding",
   // "/boarding", — superseded by Employee Onboarding
   "/handover-documentation",
-  "/workspace-activity",
   "/employee-scoring",
   "/reports",
   "/help",
@@ -57,15 +63,15 @@ const NAV: NavItem[] = [
   { to: "/employee-onboarding", label: "Employee Onboarding", icon: UserPlus, group: "People", roles: ["super_admin", "ceo", "hr"] },
   { to: "/time-dashboard", label: "Time Dashboard", icon: Clock, group: "People" },
   { to: "/performance", label: "Performance", icon: TrendingUp, group: "People" },
-  { to: "/leave", label: "Leave", icon: Calendar, group: "People", roles: ["super_admin", "ceo", "hr"] },
+  { to: "/leave", label: "Leave", icon: Calendar, group: "People", superAccess: true },
   { to: "/attendance", label: "Attendance", icon: Clock, group: "People" },
-  { to: "/payroll", label: "Payroll", icon: DollarSign, group: "Money", payrollAccess: true },
-  { to: "/bonus", label: "Bonus", icon: Gift, group: "Money", roles: ["super_admin", "ceo", "finance", "hr", "manager"] },
-  { to: "/equity", label: "Equity", icon: PieChart, group: "Money" },
+  { to: "/payroll", label: "Payroll", icon: DollarSign, group: "Money", superAccess: true },
+  { to: "/bonus", label: "Bonus", icon: Gift, group: "Money", superAccess: true },
+  { to: "/equity", label: "Equity", icon: PieChart, group: "Money", superAccess: true },
   { to: "/workflows", label: "Workflows", icon: GitBranch, group: "Ops" },
   { to: "/documents", label: "Documents", icon: FileText, group: "Ops" },
   { to: "/handover-documentation", label: "Handover Docs", icon: Link2, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
-  { to: "/workspace-activity", label: "Workspace Activity", icon: Activity, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
+  { to: "/workspace-activity", label: "Workspace Activity", icon: Activity, group: "Ops", superAccess: true },
   { to: "/employee-scoring", label: "Employee Scoring", icon: Trophy, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "Ops", roles: ["super_admin", "ceo", "finance", "hr"] },
   { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops" },
@@ -121,7 +127,7 @@ function isNavItemActive(pathname: string, item: NavItem): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
-  const payrollNavVisible = usePayrollNavVisible();
+  const superAccessNavVisible = useSuperAccessNavVisible();
   const { theme, toggle, palette, setPalette } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -136,7 +142,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const prevPathRef = useRef<string | null>(null);
 
   const visible = NAV.filter((n) => {
-    if (n.payrollAccess) return payrollNavVisible;
+    if (n.superAccess) return superAccessNavVisible;
     return !n.roles || hasAnyRole(n.roles);
   });
   const grouped = useMemo(() => groupBy(visible, (n) => n.group), [visible]);
@@ -359,11 +365,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           {showLabel && (
                             <span className="truncate flex items-center gap-2 min-w-0">
                               <span className="truncate">{item.label}</span>
-                              {NEW_BADGE_ROUTES.has(item.to) && (
+                              {SUPER_ACCESS_BADGE_ROUTES.has(item.to) ? (
+                                <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 px-1 py-px text-[9px] leading-none font-medium text-violet-700 dark:text-violet-300">
+                                  Super access
+                                </span>
+                              ) : NEW_BADGE_ROUTES.has(item.to) ? (
                                 <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300">
                                   New
                                 </span>
-                              )}
+                              ) : null}
                             </span>
                           )}
                         </Link>

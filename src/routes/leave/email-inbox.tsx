@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import { fmtDate } from "@/lib/format";
 import {
   getLeaveEmailInbox,
@@ -37,7 +38,8 @@ const QUERY_KEY = ["leave-email-inbox"];
 
 function LeaveEmailInboxPage() {
   const auth = useAuth();
-  const canEdit = auth.hasAnyRole(["super_admin", "ceo", "hr"]);
+  const superAuth = useSuperAccessAuth();
+  const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
 
@@ -48,13 +50,13 @@ function LeaveEmailInboxPage() {
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getLeaveEmailInbox(),
+    queryFn: async () => getLeaveEmailInbox({ data: await superAuth() }),
     refetchInterval: 60_000,
   });
 
   const scanM = useMutation({
-    mutationFn: (period: LeaveEmailScanPeriod) =>
-      scanLeaveEmailInbox({ data: { actor, period } }),
+    mutationFn: async (period: LeaveEmailScanPeriod) =>
+      scanLeaveEmailInbox({ data: { actor, period, ...(await superAuth()) } }),
     onSuccess: (r) => {
       if (r.errors.length) {
         toast.warning(`Scan done with ${r.errors.length} issue(s) — ${r.scanned} scanned, ${r.applied} applied`);
@@ -68,8 +70,8 @@ function LeaveEmailInboxPage() {
   });
 
   const retryM = useMutation({
-    mutationFn: (queueItemId: string) =>
-      retryLeaveEmailExtraction({ data: { actor, queueItemId } }),
+    mutationFn: async (queueItemId: string) =>
+      retryLeaveEmailExtraction({ data: { actor, queueItemId, ...(await superAuth()) } }),
     onMutate: (queueItemId) => setRetryingId(queueItemId),
     onSettled: () => setRetryingId(null),
     onSuccess: (r) => {
@@ -89,7 +91,7 @@ function LeaveEmailInboxPage() {
   });
 
   const retryAllM = useMutation({
-    mutationFn: () => retryAllFailedLeaveEmailExtractions({ data: { actor } }),
+    mutationFn: async () => retryAllFailedLeaveEmailExtractions({ data: { actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       if (r.errors.length) {
         toast.warning(

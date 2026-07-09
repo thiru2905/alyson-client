@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Cloud, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
+import { isSuperAccessEmail } from "@/lib/super-access-constants";
 import { getBonusAuditLog } from "@/lib/bonus-functions";
 import type { BonusOperation } from "@/lib/bonus-schema";
 import { fmtDate } from "@/lib/format";
@@ -14,12 +16,13 @@ export const Route = createFileRoute("/bonus/audit")({
 const QUERY_KEY = ["bonus-audit-log"];
 
 function BonusAuditPage() {
-  const { hasRole } = useAuth();
-  const isSuperAdmin = hasRole("super_admin");
+  const { user } = useAuth();
+  const superAuth = useSuperAccessAuth();
+  const isSuperAdmin = isSuperAccessEmail(user?.email);
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getBonusAuditLog(),
+    queryFn: async () => getBonusAuditLog({ data: await superAuth() }),
   });
 
   const entries = q.data?.entries ?? [];

@@ -20,6 +20,7 @@ import { BarChart3, Loader2, RefreshCw } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { filterBonusAnalytics } from "@/lib/bonus-analytics";
 import { getBonusAnalytics } from "@/lib/bonus-functions";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import { fmtCurrency, fmtDate } from "@/lib/format";
 
 export const Route = createFileRoute("/bonus/analytics")({
@@ -32,6 +33,7 @@ const TEAM_COLORS = ["#10b981", "#34d399", "#64748b", "#94a3b8", "#f59e0b", "#8b
 type Granularity = "daily" | "weekly" | "monthly";
 
 function BonusAnalyticsPage() {
+  const superAuth = useSuperAccessAuth();
   const [teamFilter, setTeamFilter] = useState("__all__");
   const [locationFilter, setLocationFilter] = useState("__all__");
   const [activeOnly, setActiveOnly] = useState(true);
@@ -39,7 +41,7 @@ function BonusAnalyticsPage() {
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getBonusAnalytics(),
+    queryFn: async () => getBonusAnalytics({ data: await superAuth() }),
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,

@@ -7,6 +7,7 @@ import { LeaveCalendarView } from "@/components/LeaveCalendarView";
 import { LeaveTeamLeavePanel } from "@/components/LeaveTeamLeavePanel";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import { fmtDate } from "@/lib/format";
 import {
   buildLeaveCalendarEvents,
@@ -32,7 +33,8 @@ const QUERY_KEY = ["leave-ledger"];
 
 function LeaveCalendarPage() {
   const auth = useAuth();
-  const canEdit = auth.hasAnyRole(["super_admin", "ceo", "hr"]);
+  const superAuth = useSuperAccessAuth();
+  const canEdit = true;
   const actor = auth.user?.email ?? null;
   const qc = useQueryClient();
   const today = pacingTodayIso();
@@ -44,7 +46,7 @@ function LeaveCalendarPage() {
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getLeaveLedger(),
+    queryFn: async () => getLeaveLedger({ data: await superAuth() }),
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -82,14 +84,14 @@ function LeaveCalendarPage() {
   }, [personalEvents, selectedDay]);
 
   const teamLeaveM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       location: string;
       team: string;
       leaveType: "annual" | "sick" | "personal" | "unpaid" | "other";
       startDate: string;
       endDate: string;
       note?: string;
-    }) => recordTeamLeave({ data: { ...payload, actor } }),
+    }) => recordTeamLeave({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
       toast.success(
         `Team leave saved — ${r.affectedCount} employee${r.affectedCount === 1 ? "" : "s"} · shows on calendar & Weekly Pacing (+${r.event.days * PACING_LEAVE_HOURS_PER_DAY}h/day)`,
@@ -104,7 +106,7 @@ function LeaveCalendarPage() {
   });
 
   const voidTeamM = useMutation({
-    mutationFn: (eventId: string) => voidTeamLeave({ data: { eventId, actor } }),
+    mutationFn: async (eventId: string) => voidTeamLeave({ data: { eventId, actor, ...(await superAuth()) } }),
     onSuccess: () => {
       toast.success("Team leave removed from calendar");
       void qc.invalidateQueries({ queryKey: QUERY_KEY });

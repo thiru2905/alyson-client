@@ -19,6 +19,7 @@ import {
 import { BarChart3, Loader2, RefreshCw } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { getLeaveAnalytics } from "@/lib/leave-ledger-functions";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 import { buildLeaveWeekdayBoard, LEAVE_WEEKDAY_LABELS } from "@/lib/leave-analytics";
 import { leaveTypeLabel } from "@/lib/leave-schema";
 
@@ -30,6 +31,7 @@ const QUERY_KEY = ["leave-analytics"];
 const TEAM_COLORS = ["#3b82f6", "#60a5fa", "#64748b", "#94a3b8", "#f59e0b", "#8b5cf6", "#06b6d4"];
 
 function LeaveAnalyticsPage() {
+  const superAuth = useSuperAccessAuth();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [teamFilter, setTeamFilter] = useState("__all__");
@@ -37,7 +39,7 @@ function LeaveAnalyticsPage() {
 
   const q = useQuery({
     queryKey: [...QUERY_KEY, year],
-    queryFn: () => getLeaveAnalytics({ data: { year } }),
+    queryFn: async () => getLeaveAnalytics({ data: { year, ...(await superAuth()) } }),
     staleTime: 15_000,
     refetchInterval: 30_000,
   });

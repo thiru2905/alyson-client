@@ -19,6 +19,8 @@ import {
 } from "@/lib/workspace-activity-range";
 import { toast } from "sonner";
 import { z } from "zod";
+import { SuperAccessGate } from "@/components/SuperAccessGate";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
 
 type TabKey = "overview" | "emails" | "chat" | "docs" | "meetings";
 
@@ -34,6 +36,14 @@ export const Route = createFileRoute("/workspace-activity/$userEmail")({
     .parse,
   component: WorkspaceEmployeeDetailPage,
 });
+
+function WorkspaceEmployeeDetailPage() {
+  return (
+    <SuperAccessGate moduleLabel="Workspace Activity">
+      <WorkspaceEmployeeDetailPageContent />
+    </SuperAccessGate>
+  );
+}
 
 function fmtWhen(iso: string) {
   return fmtWorkspaceWhen(iso);
@@ -137,6 +147,7 @@ function ContentPreviewInsight({
   rangeLabel: string;
   insightKind: InsightKind;
 }) {
+  const superAuth = useSuperAccessAuth();
   const text = previewText(item);
   const labels = INSIGHT_LABELS[insightKind];
   const canOpen = canOpenContentModal(insightKind, item);
@@ -171,8 +182,10 @@ function ContentPreviewInsight({
         isEmail && item.title && !text.toLowerCase().includes(item.title.toLowerCase().slice(0, 24))
           ? `Subject: ${item.title}\n\n${text}`
           : text;
+      const auth = await superAuth();
       const r = await getWorkspaceActivityItemInsight({
         data: {
+          ...auth,
           kind: insightKind,
           title: item.title,
           preview: previewForApi,
@@ -202,8 +215,10 @@ function ContentPreviewInsight({
     setFullLoading(true);
     setFullError(null);
     try {
+      const auth = await superAuth();
       const r = await getWorkspaceActivityEmailBody({
         data: {
+          ...auth,
           userEmail,
           messageId: gmailMessageIdFromItem(item) ?? undefined,
           title: item.title,
@@ -511,7 +526,8 @@ function RichActivityTable({
   );
 }
 
-function WorkspaceEmployeeDetailPage() {
+function WorkspaceEmployeeDetailPageContent() {
+  const superAuth = useSuperAccessAuth();
   const { userEmail: encodedEmail } = Route.useParams();
   const navigate = useNavigate();
   const urlSearch = Route.useSearch();
@@ -579,10 +595,12 @@ function WorkspaceEmployeeDetailPage() {
 
   const q = useQuery({
     queryKey: ["workspace-employee-detail", userEmail, start, end],
-    queryFn: () =>
-      getWorkspaceUserActivityDetail({
-        data: { userEmail, start, end },
-      }),
+    queryFn: async () => {
+      const auth = await superAuth();
+      return getWorkspaceUserActivityDetail({
+        data: { ...auth, userEmail, start, end },
+      });
+    },
     enabled: !!userEmail && !!start && !!end,
     placeholderData: keepPreviousData,
     staleTime: 120_000,

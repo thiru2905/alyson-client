@@ -11,6 +11,7 @@ import { NewGrantDrawer } from "@/components/drawers/NewGrantDrawer";
 import { GrantDrawer } from "@/components/drawers/GrantDrawer";
 import { downloadCSV } from "@/lib/csv";
 import { toast } from "sonner";
+import { SuperAccessGate } from "@/components/SuperAccessGate";
 
 export const Route = createFileRoute("/equity")({
   head: () => ({ meta: [{ title: "Equity — Alyson HR" }] }),
@@ -20,6 +21,14 @@ export const Route = createFileRoute("/equity")({
 const COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 function EquityPage() {
+  return (
+    <SuperAccessGate moduleLabel="Equity">
+      <EquityPageContent />
+    </SuperAccessGate>
+  );
+}
+
+function EquityPageContent() {
   const { data, isLoading } = useQuery({ queryKey: ["equity-holders"], queryFn: fetchEquityHolders });
   const [newOpen, setNewOpen] = useState(false);
   const [picked, setPicked] = useState<any | null>(null);

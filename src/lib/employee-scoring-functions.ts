@@ -29,14 +29,14 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
   .inputValidator((data: unknown) => Input.parse(data))
   .handler(async ({ data }): Promise<EmployeeScoringResponse> => {
     const [
-      { getWorkspaceActivity },
+      { runGetWorkspaceActivity },
       { fetchTimeDoctorEmployeesTable },
       { computeEmployeeScores, SCORING_RULES_SUMMARY, SCORING_WEIGHTS },
       { getSpeakerIdentityIndex },
       { mergeEmployeeScoreInputsByIdentity },
       { clampRange, enumerateDays },
     ] = await Promise.all([
-      import("@/lib/workspace-activity-functions"),
+      import("@/lib/workspace-activity.server"),
       import("@/lib/time-doctor-functions"),
       import("@/lib/employee-scoring-rules"),
       import("@/lib/speaker-identity.server"),
@@ -73,7 +73,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
     }
 
     const [workspaceR, timeDoctorR] = await Promise.allSettled([
-      getWorkspaceActivity({ data: { start: startIso, end: endIso, accurateMeetings: true } }),
+      runGetWorkspaceActivity({ start: startIso, end: endIso, accurateMeetings: true }),
       fetchTimeDoctorEmployeesTable({
         data: { start: tdRange.start, end: tdRange.end },
       }),

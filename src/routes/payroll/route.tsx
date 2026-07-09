@@ -2,8 +2,8 @@ import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { BarChart3, DollarSign, FileText, Loader2 } from "lucide-react";
 import { PayrollGate } from "@/components/PayrollGate";
 import { useAuth } from "@/lib/auth";
-import { usePayrollAccess } from "@/lib/payroll-rbac-hooks";
-import { isPayrollBootstrapEmail } from "@/lib/payroll-rbac-constants";
+import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
+import { isSuperAccessEmail } from "@/lib/super-access-constants";
 
 export const Route = createFileRoute("/payroll")({
   head: () => ({ meta: [{ title: "Payroll — Alyson HR" }] }),
@@ -12,9 +12,8 @@ export const Route = createFileRoute("/payroll")({
 
 function PayrollLayout() {
   const { canAccessPayroll, user } = useAuth();
-  const accessQ = usePayrollAccess();
-  const canViewRbac =
-    accessQ.data?.allowed === true || isPayrollBootstrapEmail(user?.email);
+  const accessQ = useSuperAccess();
+  const canViewRbac = accessQ.data?.allowed === true || isSuperAccessEmail(user?.email);
 
   if (accessQ.isLoading) {
     return (
@@ -87,7 +86,7 @@ function AccessDenied() {
       <div className="surface-card p-10 text-center">
         <div className="font-medium text-[15px]">Access denied</div>
         <div className="text-[13px] text-muted-foreground mt-1 max-w-md mx-auto">
-          Payroll is restricted to users listed in the S3 payroll access table. Contact an admin if you need access.
+          Payroll is restricted to privileged super-access users. Contact an admin if you need access.
         </div>
       </div>
     </div>

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Cloud, Loader2 } from "lucide-react";
 import { FetchingBar } from "@/components/Skeleton";
 import { useAuth } from "@/lib/auth";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
+import { isSuperAccessEmail } from "@/lib/super-access-constants";
 import { getLeaveAuditLog } from "@/lib/leave-ledger-functions";
 import type { LeaveOperation } from "@/lib/leave-schema";
 import { fmtDate } from "@/lib/format";
@@ -14,12 +16,13 @@ export const Route = createFileRoute("/leave/audit")({
 const QUERY_KEY = ["leave-audit-log"];
 
 function LeaveAuditPage() {
-  const { hasRole } = useAuth();
-  const isSuperAdmin = hasRole("super_admin");
+  const { user } = useAuth();
+  const superAuth = useSuperAccessAuth();
+  const isSuperAdmin = isSuperAccessEmail(user?.email);
 
   const q = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getLeaveAuditLog(),
+    queryFn: async () => getLeaveAuditLog({ data: await superAuth() }),
   });
 
   const entries = q.data?.entries ?? [];

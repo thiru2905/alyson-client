@@ -18,6 +18,8 @@ import {
   workspaceSnapshotKey,
 } from "@/lib/workspace-activity-session";
 import { getWorkspaceActivity } from "@/lib/workspace-activity-functions";
+import { useSuperAccessAuth } from "@/lib/super-access-rbac-hooks";
+import { SuperAccessGate } from "@/components/SuperAccessGate";
 import { medalRowClass, rankCellContent, workspaceActivityRank } from "@/lib/rank-medals";
 import { WorkspaceActivityRangePicker, workspacePresetRange } from "@/components/WorkspaceActivityRangePicker";
 import {
@@ -52,6 +54,15 @@ export const Route = createFileRoute("/workspace-activity")({
 });
 
 function WorkspaceActivityPage() {
+  return (
+    <SuperAccessGate moduleLabel="Workspace Activity">
+      <WorkspaceActivityPageContent />
+    </SuperAccessGate>
+  );
+}
+
+function WorkspaceActivityPageContent() {
+  const superAuth = useSuperAccessAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const showingUserDetail =
@@ -95,16 +106,20 @@ function WorkspaceActivityPage() {
     queryKey: applied
       ? workspaceActivityQueryKey(applied)
       : (["workspace-activity", "idle", "idle", "calendar"] as const),
-    queryFn: () =>
-      getWorkspaceActivity({
-        data: applied
-          ? {
-              start: applied.start,
-              end: applied.end,
-              accurateMeetings: true,
-            }
-          : undefined,
-      }),
+    queryFn: async () => {
+      const auth = await superAuth();
+      if (!applied) {
+        return getWorkspaceActivity({ data: auth });
+      }
+      return getWorkspaceActivity({
+        data: {
+          ...auth,
+          start: applied.start,
+          end: applied.end,
+          accurateMeetings: true,
+        },
+      });
+    },
     enabled: hydrated && applied !== null,
     retry: 1,
     initialData: persisted?.snapshot,

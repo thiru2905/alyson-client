@@ -17,8 +17,10 @@ import {
 } from "@/lib/leave-email-sync.server";
 import type { LeaveEmailScanPeriod } from "@/lib/leave-email-sync.server";
 import { ensureLeaveOnS3 } from "@/lib/leave-s3.server";
+import { superAccessInputSchema } from "@/lib/super-access-input";
+import { requireSuperAccess } from "@/lib/super-access-rbac.server";
 
-const actorSchema = z.object({
+const actorWithAuthSchema = superAccessInputSchema.extend({
   actor: z.string().email().optional().nullable(),
 });
 
@@ -40,7 +42,10 @@ const queueItemSchema = actorSchema.extend({
 
 */
 
-export const getLeaveEmailInbox = createServerFn({ method: "GET" }).handler(async () => {
+export const getLeaveEmailInbox = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => superAccessInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
   const [queue, syncState, roster, mailboxProbe] = await Promise.all([
     readLeaveEmailQueue(),
     readLeaveEmailSyncState(),
@@ -87,28 +92,28 @@ export const getLeaveEmailInbox = createServerFn({ method: "GET" }).handler(asyn
 
 export const scanLeaveEmailInbox = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
-    z
-      .object({
-        actor: z.string().email().optional().nullable(),
+    actorWithAuthSchema
+      .extend({
         period: z.enum(["7d", "30d", "90d", "6mo", "12mo", "24mo"]),
       })
       .parse(data),
   )
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     return runLeaveEmailScan(data.period as LeaveEmailScanPeriod);
   });
 
 export const syncLeaveEmailInbox = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
-    z
-      .object({
-        actor: z.string().email().optional().nullable(),
+    actorWithAuthSchema
+      .extend({
         lookbackDays: z.number().int().positive().optional(),
         maxMessages: z.number().int().positive().optional(),
       })
       .parse(data),
   )
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     const result = await runLeaveEmailSync({
       lookbackDays: data.lookbackDays,
       maxMessages: data.maxMessages,
@@ -118,15 +123,15 @@ export const syncLeaveEmailInbox = createServerFn({ method: "POST" })
 
 export const backfillLeaveEmailInbox = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
-    z
-      .object({
-        actor: z.string().email().optional().nullable(),
+    actorWithAuthSchema
+      .extend({
         monthsBack: z.number().int().positive().optional(),
         maxMessagesPerMonth: z.number().int().positive().optional(),
       })
       .parse(data),
   )
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     const result = await runLeaveEmailBackfill({
       monthsBack: data.monthsBack ?? leaveEmailBackfillMonths(),
       maxMessagesPerMonth: data.maxMessagesPerMonth ?? 500,
@@ -136,14 +141,12 @@ export const backfillLeaveEmailInbox = createServerFn({ method: "POST" })
 
 export const retryLeaveEmailExtraction = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
-    z
-      .object({
-        actor: z.string().email().optional().nullable(),
-        queueItemId: z.string().min(1),
-      })
-      .parse(data),
+    actorWithAuthSchema.extend({
+      queueItemId: z.string().min(1),
+    }).parse(data),
   )
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     return retryLeaveEmailQueueItem({
       queueItemId: data.queueItemId,
       actor: data.actor ?? null,
@@ -151,8 +154,9 @@ export const retryLeaveEmailExtraction = createServerFn({ method: "POST" })
   });
 
 export const retryAllFailedLeaveEmailExtractions = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => actorSchema.parse(data))
+  .inputValidator((data: unknown) => actorWithAuthSchema.parse(data))
   .handler(async ({ data }) => {
+    await requireSuperAccess(data.clerkToken, data.emailHint);
     return runRetryAllFailedLeaveEmailExtractions({ actor: data.actor ?? null });
   });
 
