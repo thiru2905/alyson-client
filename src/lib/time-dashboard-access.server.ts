@@ -6,10 +6,6 @@ import { checkSuperAccessForToken } from "@/lib/super-access-rbac.server";
 import { resolveTimeDashboardTeamScope } from "@/lib/time-dashboard-manager-scope";
 import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.schema";
 
-function timeDashboardManagerTestModeEnabled(): boolean {
-  return process.env.NODE_ENV === "development" || isDevClerkBypass();
-}
-
 const MISSING_CLERK_MSG =
   "Missing CLERK_SECRET_KEY — add CLERK_SECRET_KEY=sk_... to .env (Clerk Dashboard → API Keys), then restart npm run dev.";
 
@@ -68,11 +64,7 @@ export async function resolveTimeDashboardScope(
   }
 
   const lookup = getOrgChartRosterLookup();
-  const teamScope = resolveTimeDashboardTeamScope(
-    email,
-    timeDashboardManagerTestModeEnabled(),
-    lookup,
-  );
+  const teamScope = resolveTimeDashboardTeamScope(email, lookup);
   if (teamScope) {
     return {
       level: "team",

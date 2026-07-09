@@ -12,11 +12,6 @@ import {
 } from "@/lib/org-chart-roster";
 import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.schema";
 
-/** Dev/test: treat viewer email as another manager for Time Dashboard team scope only. */
-export const TIME_DASHBOARD_MANAGER_TEST_ALIASES: Record<string, string> = {
-  "mthirumalai2905@gmail.com": "aditya@cintara.ai",
-};
-
 const defaultRosterLookup = buildOrgChartRosterLookup(
   parseOrgChartRosterCsv(BUNDLED_ORG_CHART_ROSTER_CSV),
 );
@@ -29,33 +24,17 @@ function viewerEmailKey(email: string | null | undefined): string | null {
   );
 }
 
-export function resolveTimeDashboardScopeManagerEmail(
-  viewerEmail: string | null | undefined,
-  testMode: boolean,
-): string | null {
-  const viewer = viewerEmailKey(viewerEmail);
-  if (!viewer) return null;
-  if (testMode && TIME_DASHBOARD_MANAGER_TEST_ALIASES[viewer]) {
-    return viewerEmailKey(TIME_DASHBOARD_MANAGER_TEST_ALIASES[viewer]);
-  }
-  return viewer;
-}
-
 export function resolveTimeDashboardTeamScope(
   viewerEmail: string | null | undefined,
-  testMode: boolean,
   lookup: OrgChartRosterLookup = defaultRosterLookup,
 ): { viewerEmail: string; managerEmail: string; team: ManagerTeam } | null {
   const viewer = viewerEmailKey(viewerEmail);
   if (!viewer) return null;
 
-  const managerEmail = resolveTimeDashboardScopeManagerEmail(viewer, testMode);
-  if (!managerEmail) return null;
-
-  const team = getManagerTeamForEmail(managerEmail, lookup);
+  const team = getManagerTeamForEmail(viewer, lookup);
   if (!team || team.directReports.length === 0) return null;
 
-  return { viewerEmail: viewer, managerEmail, team };
+  return { viewerEmail: viewer, managerEmail: viewer, team };
 }
 
 export function employeeVisibleToTimeDashboardViewer(

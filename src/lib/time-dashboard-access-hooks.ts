@@ -14,20 +14,12 @@ import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.sche
 
 const rosterLookup = buildOrgChartRosterLookup(parseOrgChartRosterCsv(BUNDLED_ORG_CHART_ROSTER_CSV));
 
-function timeDashboardManagerTestModeEnabled(): boolean {
-  return import.meta.env.DEV;
-}
-
 function fallbackTimeDashboardAccess(email: string | null | undefined): TimeDashboardAccessResult {
   const normalized = String(email || "").trim().toLowerCase();
   if (isSuperAccessEmail(normalized)) {
     return { level: "full", email: normalized };
   }
-  const teamScope = resolveTimeDashboardTeamScope(
-    normalized,
-    timeDashboardManagerTestModeEnabled(),
-    rosterLookup,
-  );
+  const teamScope = resolveTimeDashboardTeamScope(normalized, rosterLookup);
   if (teamScope) {
     return {
       level: "team",
