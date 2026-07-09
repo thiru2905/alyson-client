@@ -10,6 +10,7 @@ import {
 import { getLeaveFromS3 } from "@/lib/leave-s3.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
+import { rowAllowedForManagerScope } from "@/lib/manager-access-roster";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
 import {
   loadWeeklyPacingActiveOverridesForReport,
@@ -463,6 +464,8 @@ export async function buildWeeklyHoursTrendReport(args?: {
   location?: string;
   team?: string;
   active?: string;
+  /** When set, limit trend to this manager's direct reports (same rules as pacing rows). */
+  managerEmail?: string;
 }): Promise<WeeklyHoursTrendReport> {
   const weekCount = args?.weekCount ?? 8;
   const targetHours = args?.targetHours ?? 35;
@@ -486,11 +489,23 @@ export async function buildWeeklyHoursTrendReport(args?: {
     activeLookup: getCintaraActiveMemberLookup(),
     activeOverrides: await loadWeeklyPacingActiveOverridesForReport(),
   };
-  const filteredUserIds = buildFilteredUserIds(users, ctx, {
+  let filteredUserIds = buildFilteredUserIds(users, ctx, {
     locationFilter,
     teamFilter,
     activeFilter,
   });
+  if (args?.managerEmail) {
+    const scoped = new Set<string>();
+    for (const u of users) {
+      if (!filteredUserIds.has(u.id)) continue;
+      const email = (u.email || "").trim();
+      const name = (u.name || u.email || "").trim();
+      if (rowAllowedForManagerScope({ email, name }, args.managerEmail, ctx.rosterLookup)) {
+        scoped.add(u.id);
+      }
+    }
+    filteredUserIds = scoped;
+  }
 
   let leaveFile: Awaited<ReturnType<typeof getLeaveFromS3>>["file"] = null;
   try {

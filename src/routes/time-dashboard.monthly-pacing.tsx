@@ -19,6 +19,7 @@ import { z } from "zod";
 import { PageHeader, TableScroll } from "@/components/AppShell";
 import { FetchingBar } from "@/components/Skeleton";
 import { TimeDashboardGate } from "@/components/TimeDashboardGate";
+import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { MonthlyPacingPeriodPicker, type MonthlyPacingPeriodMode } from "@/components/MonthlyPacingPeriodPicker";
 import { WeeklyPacingActiveCell } from "@/components/WeeklyPacingActiveCell";
 import { downloadCSV } from "@/lib/csv";
@@ -28,6 +29,7 @@ import { isIsoDate } from "@/lib/time-dashboard-range";
 import { pacingTodayIso } from "@/lib/weekly-pacing";
 import { monthStartIso, monthYearFromIso, isPastMonth } from "@/lib/monthly-pacing";
 import { useAuth } from "@/lib/auth";
+import { useTimeDashboardAuth, useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
 import {
   buildLeaveSummaryFromRows,
   filterPacingRows,
@@ -43,9 +45,9 @@ import {
   type WeeklyPacingStatus,
 } from "@/lib/weekly-pacing";
 import {
-  fetchMonthlyPacingReport,
-  setWeeklyPacingActiveOverride,
-} from "@/lib/time-doctor-pacing-functions";
+  fetchMonthlyPacingReportScoped,
+  setWeeklyPacingActiveOverrideScoped,
+} from "@/lib/time-dashboard-scoped-functions";
 
 export const Route = createFileRoute("/time-dashboard/monthly-pacing")({
   head: () => ({ meta: [{ title: "Monthly Pacing — Alyson HR" }] }),
@@ -116,6 +118,8 @@ function rowClass(row: WeeklyPacingRow): string {
 function MonthlyPacingPage() {
   const auth = useAuth();
   const canAccess = auth.canAccessTimeDashboard;
+  const timeDashboardNavVisible = useTimeDashboardNavVisible();
+  const getTimeDashboardAuth = useTimeDashboardAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
@@ -162,23 +166,28 @@ function MonthlyPacingPage() {
     queryKey: hasCustomRange
       ? ["monthly-pacing-report", "range", appliedStart, appliedEnd]
       : ["monthly-pacing-report", "month", appliedMonth],
-    queryFn: () =>
-      hasCustomRange
-        ? fetchMonthlyPacingReport({ data: { start: appliedStart, end: appliedEnd } })
-        : fetchMonthlyPacingReport({ data: { month: appliedMonth } }),
-    enabled: canAccess,
+    queryFn: async () => {
+      const tdAuth = await getTimeDashboardAuth();
+      return hasCustomRange
+        ? fetchMonthlyPacingReportScoped({ data: { ...tdAuth, start: appliedStart, end: appliedEnd } })
+        : fetchMonthlyPacingReportScoped({ data: { ...tdAuth, month: appliedMonth } });
+    },
+    enabled: canAccess && timeDashboardNavVisible,
     placeholderData: keepPreviousData,
     staleTime: 120_000,
     refetchOnWindowFocus: false,
   });
 
   const activeM = useMutation({
-    mutationFn: (payload: {
+    mutationFn: async (payload: {
       employeeId: string;
       email: string;
       name: string;
       active: boolean;
-    }) => setWeeklyPacingActiveOverride({ data: payload }),
+    }) => {
+      const tdAuth = await getTimeDashboardAuth();
+      return setWeeklyPacingActiveOverrideScoped({ data: { ...tdAuth, ...payload } });
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["monthly-pacing-report"] });
       void queryClient.invalidateQueries({ queryKey: ["weekly-pacing-report"] });
@@ -388,9 +397,16 @@ function MonthlyPacingPage() {
     toast.success(`CSV downloaded (${rows.length} employees)`);
   }
 
-  if (!canAccess) return <TimeDashboardGate />;
+  if (!canAccess) {
+    return (
+      <TimeDashboardRbacGate>
+        <TimeDashboardGate />
+      </TimeDashboardRbacGate>
+    );
+  }
 
   return (
+    <TimeDashboardRbacGate>
     <div className="ops-dense">
       <PageHeader
         eyebrow="People"
@@ -1030,5 +1046,6 @@ function MonthlyPacingPage() {
         ) : null}
       </div>
     </div>
+    </TimeDashboardRbacGate>
   );
 }
