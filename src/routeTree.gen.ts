@@ -533,8 +533,8 @@ export interface FileRoutesByFullPath {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
-  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
+  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -604,8 +604,8 @@ export interface FileRoutesByTo {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
-  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
+  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -680,8 +680,8 @@ export interface FileRoutesById {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
-  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
+  '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
   '/api/cron/scheduled-bot-activation': typeof ApiCronScheduledBotActivationRoute
   '/api/cron/time-doctor-token': typeof ApiCronTimeDoctorTokenRoute
@@ -757,8 +757,8 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
-    | '/api/cron/notetaker-transcripts'
     | '/api/cron/notetaker-meeting-integrity'
+    | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -828,8 +828,8 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
-    | '/api/cron/notetaker-transcripts'
     | '/api/cron/notetaker-meeting-integrity'
+    | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -903,8 +903,8 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
-    | '/api/cron/notetaker-transcripts'
     | '/api/cron/notetaker-meeting-integrity'
+    | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
     | '/api/cron/scheduled-bot-activation'
     | '/api/cron/time-doctor-token'
@@ -951,8 +951,8 @@ export interface RootRouteChildren {
   ApiAnalyticsWorkspaceActivityRoute: typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
   ApiCronLeaveEmailSyncRoute: typeof ApiCronLeaveEmailSyncRoute
-  ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
   ApiCronNotetakerMeetingIntegrityRoute: typeof ApiCronNotetakerMeetingIntegrityRoute
+  ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
   ApiCronRecallCalendarSyncRoute: typeof ApiCronRecallCalendarSyncRoute
   ApiCronScheduledBotActivationRoute: typeof ApiCronScheduledBotActivationRoute
   ApiCronTimeDoctorTokenRoute: typeof ApiCronTimeDoctorTokenRoute
@@ -1703,8 +1703,8 @@ const rootRouteChildren: RootRouteChildren = {
     ApiAnalyticsWorkspaceActivityRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
   ApiCronLeaveEmailSyncRoute: ApiCronLeaveEmailSyncRoute,
-  ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
   ApiCronNotetakerMeetingIntegrityRoute: ApiCronNotetakerMeetingIntegrityRoute,
+  ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
   ApiCronRecallCalendarSyncRoute: ApiCronRecallCalendarSyncRoute,
   ApiCronScheduledBotActivationRoute: ApiCronScheduledBotActivationRoute,
   ApiCronTimeDoctorTokenRoute: ApiCronTimeDoctorTokenRoute,
