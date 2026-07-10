@@ -11,22 +11,33 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceActivityRouteImport } from './routes/workspace-activity'
 import { Route as WorkflowsRouteImport } from './routes/workflows'
+import { Route as VoicesRouteImport } from './routes/voices'
 import { Route as TimeDashboardRouteImport } from './routes/time-dashboard'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TeamRouteImport } from './routes/team'
 import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PerformanceRouteImport } from './routes/performance'
+import { Route as ModulesRouteImport } from './routes/modules'
+import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as HelpRouteImport } from './routes/help'
 import { Route as HandoverDocumentationRouteImport } from './routes/handover-documentation'
+import { Route as FeaturesRouteImport } from './routes/features'
+import { Route as FaqRouteImport } from './routes/faq'
 import { Route as EquityRouteImport } from './routes/equity'
 import { Route as EmployeeScoringRouteImport } from './routes/employee-scoring'
 import { Route as EmployeeOnboardingRouteImport } from './routes/employee-onboarding'
 import { Route as DocumentsRouteImport } from './routes/documents'
+import { Route as CookiesRouteImport } from './routes/cookies'
+import { Route as ContactRouteImport } from './routes/contact'
+import { Route as CareersRouteImport } from './routes/careers'
 import { Route as BoardingRouteImport } from './routes/boarding'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AttendanceRouteImport } from './routes/attendance'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AlysonBrainRouteImport } from './routes/alyson-brain'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as PayrollRouteRouteImport } from './routes/payroll/route'
 import { Route as LeaveRouteRouteImport } from './routes/leave/route'
 import { Route as BonusRouteRouteImport } from './routes/bonus/route'
@@ -95,9 +106,19 @@ const WorkflowsRoute = WorkflowsRouteImport.update({
   path: '/workflows',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VoicesRoute = VoicesRouteImport.update({
+  id: '/voices',
+  path: '/voices',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TimeDashboardRoute = TimeDashboardRouteImport.update({
   id: '/time-dashboard',
   path: '/time-dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TeamRoute = TeamRouteImport.update({
@@ -110,9 +131,24 @@ const ReportsRoute = ReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PerformanceRoute = PerformanceRouteImport.update({
   id: '/performance',
   path: '/performance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModulesRoute = ModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HowItWorksRoute = HowItWorksRouteImport.update({
+  id: '/how-it-works',
+  path: '/how-it-works',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HelpRoute = HelpRouteImport.update({
@@ -123,6 +159,16 @@ const HelpRoute = HelpRouteImport.update({
 const HandoverDocumentationRoute = HandoverDocumentationRouteImport.update({
   id: '/handover-documentation',
   path: '/handover-documentation',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FeaturesRoute = FeaturesRouteImport.update({
+  id: '/features',
+  path: '/features',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EquityRoute = EquityRouteImport.update({
@@ -143,6 +189,21 @@ const EmployeeOnboardingRoute = EmployeeOnboardingRouteImport.update({
 const DocumentsRoute = DocumentsRouteImport.update({
   id: '/documents',
   path: '/documents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CookiesRoute = CookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CareersRoute = CareersRouteImport.update({
+  id: '/careers',
+  path: '/careers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BoardingRoute = BoardingRouteImport.update({
@@ -173,6 +234,11 @@ const AlysonBrainRoute = AlysonBrainRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PayrollRouteRoute = PayrollRouteRouteImport.update({
@@ -494,22 +560,33 @@ export interface FileRoutesByFullPath {
   '/bonus': typeof BonusRouteRouteWithChildren
   '/leave': typeof LeaveRouteRouteWithChildren
   '/payroll': typeof PayrollRouteRouteWithChildren
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
+  '/careers': typeof CareersRoute
+  '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/documents': typeof DocumentsRoute
   '/employee-onboarding': typeof EmployeeOnboardingRoute
   '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
+  '/faq': typeof FaqRoute
+  '/features': typeof FeaturesRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/modules': typeof ModulesRoute
   '/performance': typeof PerformanceRoute
+  '/privacy': typeof PrivacyRoute
   '/reports': typeof ReportsRoute
   '/team': typeof TeamRoute
+  '/terms': typeof TermsRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
+  '/voices': typeof VoicesRoute
   '/workflows': typeof WorkflowsRoute
   '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
@@ -567,22 +644,33 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
+  '/careers': typeof CareersRoute
+  '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/documents': typeof DocumentsRoute
   '/employee-onboarding': typeof EmployeeOnboardingRoute
   '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
+  '/faq': typeof FaqRoute
+  '/features': typeof FeaturesRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/modules': typeof ModulesRoute
   '/performance': typeof PerformanceRoute
+  '/privacy': typeof PrivacyRoute
   '/reports': typeof ReportsRoute
   '/team': typeof TeamRoute
+  '/terms': typeof TermsRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
+  '/voices': typeof VoicesRoute
   '/workflows': typeof WorkflowsRoute
   '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
@@ -645,22 +733,33 @@ export interface FileRoutesById {
   '/bonus': typeof BonusRouteRouteWithChildren
   '/leave': typeof LeaveRouteRouteWithChildren
   '/payroll': typeof PayrollRouteRouteWithChildren
+  '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
   '/alyson-brain': typeof AlysonBrainRoute
   '/app': typeof AppRoute
   '/attendance': typeof AttendanceRoute
   '/auth': typeof AuthRoute
   '/boarding': typeof BoardingRoute
+  '/careers': typeof CareersRoute
+  '/contact': typeof ContactRoute
+  '/cookies': typeof CookiesRoute
   '/documents': typeof DocumentsRoute
   '/employee-onboarding': typeof EmployeeOnboardingRoute
   '/employee-scoring': typeof EmployeeScoringRouteWithChildren
   '/equity': typeof EquityRoute
+  '/faq': typeof FaqRoute
+  '/features': typeof FeaturesRoute
   '/handover-documentation': typeof HandoverDocumentationRoute
   '/help': typeof HelpRoute
+  '/how-it-works': typeof HowItWorksRoute
+  '/modules': typeof ModulesRoute
   '/performance': typeof PerformanceRoute
+  '/privacy': typeof PrivacyRoute
   '/reports': typeof ReportsRoute
   '/team': typeof TeamRoute
+  '/terms': typeof TermsRoute
   '/time-dashboard': typeof TimeDashboardRouteWithChildren
+  '/voices': typeof VoicesRoute
   '/workflows': typeof WorkflowsRoute
   '/workspace-activity': typeof WorkspaceActivityRouteWithChildren
   '/alyson-notetaker/analytics': typeof AlysonNotetakerAnalyticsRouteWithChildren
@@ -724,22 +823,33 @@ export interface FileRouteTypes {
     | '/bonus'
     | '/leave'
     | '/payroll'
+    | '/about'
     | '/admin'
     | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
     | '/boarding'
+    | '/careers'
+    | '/contact'
+    | '/cookies'
     | '/documents'
     | '/employee-onboarding'
     | '/employee-scoring'
     | '/equity'
+    | '/faq'
+    | '/features'
     | '/handover-documentation'
     | '/help'
+    | '/how-it-works'
+    | '/modules'
     | '/performance'
+    | '/privacy'
     | '/reports'
     | '/team'
+    | '/terms'
     | '/time-dashboard'
+    | '/voices'
     | '/workflows'
     | '/workspace-activity'
     | '/alyson-notetaker/analytics'
@@ -797,22 +907,33 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/admin'
     | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
     | '/boarding'
+    | '/careers'
+    | '/contact'
+    | '/cookies'
     | '/documents'
     | '/employee-onboarding'
     | '/employee-scoring'
     | '/equity'
+    | '/faq'
+    | '/features'
     | '/handover-documentation'
     | '/help'
+    | '/how-it-works'
+    | '/modules'
     | '/performance'
+    | '/privacy'
     | '/reports'
     | '/team'
+    | '/terms'
     | '/time-dashboard'
+    | '/voices'
     | '/workflows'
     | '/workspace-activity'
     | '/alyson-notetaker/analytics'
@@ -874,22 +995,33 @@ export interface FileRouteTypes {
     | '/bonus'
     | '/leave'
     | '/payroll'
+    | '/about'
     | '/admin'
     | '/alyson-brain'
     | '/app'
     | '/attendance'
     | '/auth'
     | '/boarding'
+    | '/careers'
+    | '/contact'
+    | '/cookies'
     | '/documents'
     | '/employee-onboarding'
     | '/employee-scoring'
     | '/equity'
+    | '/faq'
+    | '/features'
     | '/handover-documentation'
     | '/help'
+    | '/how-it-works'
+    | '/modules'
     | '/performance'
+    | '/privacy'
     | '/reports'
     | '/team'
+    | '/terms'
     | '/time-dashboard'
+    | '/voices'
     | '/workflows'
     | '/workspace-activity'
     | '/alyson-notetaker/analytics'
@@ -952,22 +1084,33 @@ export interface RootRouteChildren {
   BonusRouteRoute: typeof BonusRouteRouteWithChildren
   LeaveRouteRoute: typeof LeaveRouteRouteWithChildren
   PayrollRouteRoute: typeof PayrollRouteRouteWithChildren
+  AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRoute
   AlysonBrainRoute: typeof AlysonBrainRoute
   AppRoute: typeof AppRoute
   AttendanceRoute: typeof AttendanceRoute
   AuthRoute: typeof AuthRoute
   BoardingRoute: typeof BoardingRoute
+  CareersRoute: typeof CareersRoute
+  ContactRoute: typeof ContactRoute
+  CookiesRoute: typeof CookiesRoute
   DocumentsRoute: typeof DocumentsRoute
   EmployeeOnboardingRoute: typeof EmployeeOnboardingRoute
   EmployeeScoringRoute: typeof EmployeeScoringRouteWithChildren
   EquityRoute: typeof EquityRoute
+  FaqRoute: typeof FaqRoute
+  FeaturesRoute: typeof FeaturesRoute
   HandoverDocumentationRoute: typeof HandoverDocumentationRoute
   HelpRoute: typeof HelpRoute
+  HowItWorksRoute: typeof HowItWorksRoute
+  ModulesRoute: typeof ModulesRoute
   PerformanceRoute: typeof PerformanceRoute
+  PrivacyRoute: typeof PrivacyRoute
   ReportsRoute: typeof ReportsRoute
   TeamRoute: typeof TeamRoute
+  TermsRoute: typeof TermsRoute
   TimeDashboardRoute: typeof TimeDashboardRouteWithChildren
+  VoicesRoute: typeof VoicesRoute
   WorkflowsRoute: typeof WorkflowsRoute
   WorkspaceActivityRoute: typeof WorkspaceActivityRouteWithChildren
   WebhooksRecallRoute: typeof WebhooksRecallRoute
@@ -1005,11 +1148,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkflowsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/voices': {
+      id: '/voices'
+      path: '/voices'
+      fullPath: '/voices'
+      preLoaderRoute: typeof VoicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/time-dashboard': {
       id: '/time-dashboard'
       path: '/time-dashboard'
       fullPath: '/time-dashboard'
       preLoaderRoute: typeof TimeDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/team': {
@@ -1026,11 +1183,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/performance': {
       id: '/performance'
       path: '/performance'
       fullPath: '/performance'
       preLoaderRoute: typeof PerformanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/modules': {
+      id: '/modules'
+      path: '/modules'
+      fullPath: '/modules'
+      preLoaderRoute: typeof ModulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/how-it-works': {
+      id: '/how-it-works'
+      path: '/how-it-works'
+      fullPath: '/how-it-works'
+      preLoaderRoute: typeof HowItWorksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/help': {
@@ -1045,6 +1223,20 @@ declare module '@tanstack/react-router' {
       path: '/handover-documentation'
       fullPath: '/handover-documentation'
       preLoaderRoute: typeof HandoverDocumentationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/features': {
+      id: '/features'
+      path: '/features'
+      fullPath: '/features'
+      preLoaderRoute: typeof FeaturesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/equity': {
@@ -1073,6 +1265,27 @@ declare module '@tanstack/react-router' {
       path: '/documents'
       fullPath: '/documents'
       preLoaderRoute: typeof DocumentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cookies': {
+      id: '/cookies'
+      path: '/cookies'
+      fullPath: '/cookies'
+      preLoaderRoute: typeof CookiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/careers': {
+      id: '/careers'
+      path: '/careers'
+      fullPath: '/careers'
+      preLoaderRoute: typeof CareersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/boarding': {
@@ -1115,6 +1328,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/payroll': {
@@ -1718,22 +1938,33 @@ const rootRouteChildren: RootRouteChildren = {
   BonusRouteRoute: BonusRouteRouteWithChildren,
   LeaveRouteRoute: LeaveRouteRouteWithChildren,
   PayrollRouteRoute: PayrollRouteRouteWithChildren,
+  AboutRoute: AboutRoute,
   AdminRoute: AdminRoute,
   AlysonBrainRoute: AlysonBrainRoute,
   AppRoute: AppRoute,
   AttendanceRoute: AttendanceRoute,
   AuthRoute: AuthRoute,
   BoardingRoute: BoardingRoute,
+  CareersRoute: CareersRoute,
+  ContactRoute: ContactRoute,
+  CookiesRoute: CookiesRoute,
   DocumentsRoute: DocumentsRoute,
   EmployeeOnboardingRoute: EmployeeOnboardingRoute,
   EmployeeScoringRoute: EmployeeScoringRouteWithChildren,
   EquityRoute: EquityRoute,
+  FaqRoute: FaqRoute,
+  FeaturesRoute: FeaturesRoute,
   HandoverDocumentationRoute: HandoverDocumentationRoute,
   HelpRoute: HelpRoute,
+  HowItWorksRoute: HowItWorksRoute,
+  ModulesRoute: ModulesRoute,
   PerformanceRoute: PerformanceRoute,
+  PrivacyRoute: PrivacyRoute,
   ReportsRoute: ReportsRoute,
   TeamRoute: TeamRoute,
+  TermsRoute: TermsRoute,
   TimeDashboardRoute: TimeDashboardRouteWithChildren,
+  VoicesRoute: VoicesRoute,
   WorkflowsRoute: WorkflowsRoute,
   WorkspaceActivityRoute: WorkspaceActivityRouteWithChildren,
   WebhooksRecallRoute: WebhooksRecallRoute,

@@ -43,6 +43,14 @@ const BOOTSTRAP_MEMBERS: Omit<SuperAccessMember, "grantedAt">[] = [
     active: true,
     note: "Super access — payroll, bonus, equity, workspace, leave",
   },
+  {
+    id: "super-acc-hamza",
+    email: "hamza@cintara.ai",
+    displayName: "Hamza",
+    grantedBy: "bootstrap",
+    active: true,
+    note: "Super access — payroll, bonus, equity, workspace, leave",
+  },
 ];
 
 function requireEnv(name: string) {

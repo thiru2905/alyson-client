@@ -152,6 +152,17 @@
   --toast-info-title: oklch(0.32 0.08 250);
   --gradient-paper: linear-gradient(180deg, oklch(0.995 0.004 85) 0%, oklch(0.985 0.008 85) 100%);
   --gradient-accent: linear-gradient(135deg, oklch(0.5 0.13 265) 0%, oklch(0.6 0.12 290) 100%);
+
+  /* Landing hero / CTA atmosphere — tuned for warm light canvas */
+  --landing-mesh-a: color-mix(in oklab, var(--primary) 16%, transparent);
+  --landing-mesh-b: color-mix(in oklab, var(--accent) 60%, transparent);
+  --landing-mesh-c: color-mix(in oklab, var(--chart-2) 22%, transparent);
+  --landing-beam-core: color-mix(in oklab, var(--ink) 16%, transparent);
+  --landing-beam-opacity: 0.58;
+  --landing-glow: color-mix(in oklab, var(--accent) 70%, var(--primary) 30%);
+  --landing-glow-opacity: 0.42;
+  --landing-grid-opacity: 0.085;
+  --landing-spotlight: oklch(0.58 0.11 65 / 0.28);
 }
 
 .dark {
@@ -221,6 +232,17 @@
   --toast-info-accent: oklch(0.62 0.14 240);
   --toast-info-icon: oklch(0.7 0.13 240);
   --toast-info-title: oklch(0.9 0.04 250);
+
+  /* Landing hero / CTA atmosphere — tuned for dark canvas */
+  --landing-mesh-a: color-mix(in oklab, var(--muted) 38%, transparent);
+  --landing-mesh-b: color-mix(in oklab, var(--accent) 28%, transparent);
+  --landing-mesh-c: color-mix(in oklab, var(--primary) 12%, transparent);
+  --landing-beam-core: color-mix(in oklab, var(--foreground) 20%, transparent);
+  --landing-beam-opacity: 0.38;
+  --landing-glow: color-mix(in oklab, var(--muted) 58%, transparent);
+  --landing-glow-opacity: 0.28;
+  --landing-grid-opacity: 0.055;
+  --landing-spotlight: oklch(0.78 0.1 70 / 0.16);
 }
 
 /* Theme presets (full UI variants). Applied on <html> as `theme-*`. */
@@ -513,6 +535,119 @@ input[type="week"] {
 }
 .alyson-beam {
   animation: alyson-beam 5.5s linear infinite;
+  opacity: var(--landing-beam-opacity);
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--landing-beam-core),
+    transparent
+  ) !important;
+}
+
+.landing-glow-orb {
+  background: var(--landing-glow);
+  opacity: var(--landing-glow-opacity);
+  animation: landing-glow-breathe 7s ease-in-out infinite;
+}
+
+@keyframes landing-glow-breathe {
+  0%,
+  100% {
+    opacity: var(--landing-glow-opacity);
+    transform: translate(-50%, 0) scale(1);
+  }
+  50% {
+    opacity: calc(var(--landing-glow-opacity) * 1.28);
+    transform: translate(-50%, 0) scale(1.06);
+  }
+}
+
+.landing-bg-grid {
+  opacity: var(--landing-grid-opacity);
+}
+
+/* Landing — AI SaaS marketing surface */
+.landing-page {
+  font-family: var(--font-sans);
+}
+
+.landing-mesh {
+  background-color: var(--background);
+  background-image:
+    radial-gradient(ellipse 90% 60% at 50% -30%, var(--landing-mesh-a), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 100% 10%, var(--landing-mesh-b), transparent 50%),
+    radial-gradient(ellipse 45% 35% at 0% 35%, var(--landing-mesh-c), transparent 48%);
+}
+
+.landing-gradient-text {
+  color: var(--foreground);
+}
+
+.landing-frame-preview-scale {
+  font-size: 1.45rem;
+}
+
+.landing-frame-preview-scale .min-h-\[88px\] {
+  min-height: 12rem;
+}
+
+.landing-frame-nav-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--border) 80%, transparent) transparent;
+}
+
+.landing-frame-nav-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.landing-frame-nav-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--border) 85%, transparent);
+  border-radius: 999px;
+}
+
+
+.landing-glass {
+  background: color-mix(in oklab, var(--paper) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+}
+
+.landing-feature-card {
+  background: color-mix(in oklab, var(--paper) 88%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+  border-radius: var(--radius-2xl);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.landing-feature-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lift);
+  border-color: color-mix(in oklab, var(--foreground) 12%, var(--border));
+}
+
+.landing-cta-band {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--primary) 92%, black) 0%,
+    color-mix(in oklab, var(--primary) 70%, var(--chart-3)) 100%
+  );
+}
+
+@keyframes landing-agent-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.landing-agent-dot {
+  animation: landing-agent-pulse 2.2s ease-in-out infinite;
 }
 
 /* Aceternity-style marquee (testimonials) */
@@ -523,6 +658,28 @@ input[type="week"] {
   100% {
     transform: translate3d(-50%, 0, 0);
   }
+}
+
+@keyframes alyson-marquee-reverse {
+  0% {
+    transform: translate3d(-50%, 0, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes landing-moving-border {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.landing-moving-border-spin {
+  animation: landing-moving-border 4s linear infinite;
 }
 
 /* Sonner toasts — Alyson styled */

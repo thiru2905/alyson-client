@@ -64,11 +64,11 @@ const NAV: NavItem[] = [
 
 const ROLES: AppRole[] = ["super_admin", "ceo", "finance", "hr", "manager", "employee"];
 const SIDEBAR_COLLAPSED_KEY = "alyson-sidebar-collapsed";
-const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width-v2";
+const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width-v3";
 const NAV_GROUPS_COLLAPSED_KEY = "alyson-nav-groups-collapsed";
-const SIDEBAR_WIDTH_MIN = 200;
-const SIDEBAR_WIDTH_MAX = 320;
-const SIDEBAR_WIDTH_DEFAULT = 236;
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 380;
+const SIDEBAR_WIDTH_DEFAULT = 268;
 const SIDEBAR_WIDTH_COLLAPSED = 60;
 const NAV_GROUPS = ["Workspace", "People", "Money", "Ops", "Admin"] as const;
 type NavGroup = (typeof NAV_GROUPS)[number];
@@ -292,9 +292,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col w-full bg-background text-foreground">
+    <div className="min-h-screen flex flex-col w-full max-w-[100vw] overflow-x-hidden bg-background text-foreground">
       <AppAnnouncementBanner visible={superAccessNavVisible} />
-      <div className="flex flex-1 min-h-0 w-full">
+      <div className="flex flex-1 min-h-0 w-full min-w-0">
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
@@ -356,12 +356,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "relative border-r border-sidebar-border bg-sidebar flex flex-col",
+          "border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
           resizingSidebar ? "" : "transition-[width,transform] duration-200",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
-          "fixed inset-y-0 left-0 z-40",
-          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-          "shrink-0",
+          "max-md:fixed max-md:inset-y-0 max-md:left-0",
+          mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         ].join(" ")}
         style={{ width: asideWidth }}
       >
@@ -546,7 +545,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 flex flex-col">
+      <main className="flex-1 min-w-0 w-full flex flex-col">
         <TopBar
           onAi={() => setAiOpen((o) => !o)}
           onMenu={() => setMobileOpen(true)}

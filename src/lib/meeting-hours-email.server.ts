@@ -181,6 +181,7 @@ const RECIPIENT_DISPLAY_NAMES: Record<string, string> = {
   "mohita@cintara.ai": "Mohita",
   "arman@cintara.ai": "Arman",
   "alysonclient@cintara.ai": "Bill",
+  "hamza@cintara.ai": "Hamza",
 };
 
 function defaultRecipientRows(): MeetingHoursEmailRecipient[] {

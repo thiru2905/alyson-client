@@ -4,6 +4,7 @@ export const SUPER_ACCESS_EMAILS = [
   "mohita@cintara.ai",
   "arman@cintara.ai",
   "alysonclient@cintara.ai",
+  "hamza@cintara.ai",
 ] as const;
 
 export type SuperAccessModule = "payroll" | "bonus" | "equity" | "workspace-activity" | "leave";

@@ -1,40 +1,50 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { cn } from "@/lib/utils";
 
 type Props = {
   className?: string;
-  color?: string;
+  /** Attach pointer tracking to this container (the hero/CTA section). */
+  containerRef: RefObject<HTMLElement | null>;
 };
 
-export function Spotlight({ className, color }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
+export function Spotlight({ className, containerRef }: Props) {
+  const layerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const container = containerRef.current;
+    const layer = layerRef.current;
+    if (!container || !layer) return;
 
     const move = (e: PointerEvent) => {
-      const rect = el.getBoundingClientRect();
+      const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      el.style.setProperty("--spot-x", `${x}px`);
-      el.style.setProperty("--spot-y", `${y}px`);
+      layer.style.setProperty("--spot-x", `${x}px`);
+      layer.style.setProperty("--spot-y", `${y}px`);
     };
 
-    el.addEventListener("pointermove", move);
-    return () => el.removeEventListener("pointermove", move);
-  }, []);
+    const leave = () => {
+      layer.style.setProperty("--spot-x", "50%");
+      layer.style.setProperty("--spot-y", "22%");
+    };
+
+    container.addEventListener("pointermove", move);
+    container.addEventListener("pointerleave", leave);
+    return () => {
+      container.removeEventListener("pointermove", move);
+      container.removeEventListener("pointerleave", leave);
+    };
+  }, [containerRef]);
 
   return (
     <div
-      ref={ref}
+      ref={layerRef}
       aria-hidden
-      className={cn("pointer-events-none absolute inset-0", className)}
+      className={cn("pointer-events-none absolute inset-0 transition-opacity duration-300", className)}
       style={{
         background:
-          `radial-gradient(700px circle at var(--spot-x, 50%) var(--spot-y, 20%), ${color ?? "oklch(0.72 0.14 265 / 0.14)"}, transparent 60%)`,
+          "radial-gradient(680px circle at var(--spot-x, 50%) var(--spot-y, 22%), var(--landing-spotlight), transparent 62%)",
       }}
     />
   );
 }
-

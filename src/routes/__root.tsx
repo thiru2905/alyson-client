@@ -6,6 +6,7 @@ import { hydrateHeavyReportQueries } from "@/lib/heavy-report-query-cache";
 import appCss from "../styles.css?url";
 import { AppShell } from "@/components/AppShell";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { isMarketingPublicPath, isSignedInLandingRedirectPath } from "@/lib/marketing-routes";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -100,18 +101,17 @@ function AuthGate() {
   const router = useRouterState();
   const navigate = useNavigate();
   const path = router.location.pathname;
-  const isAuthRoute = path === "/auth";
-  const isLandingRoute = path === "/";
-  const isPublicRoute = isAuthRoute || isLandingRoute;
+  const isPublicRoute = isMarketingPublicPath(path);
+  const isSignedInRedirectRoute = isSignedInLandingRedirectPath(path);
 
   useEffect(() => {
     if (loading) return;
     if (!session && !isPublicRoute) {
       navigate({ to: "/auth", replace: true });
-    } else if (session && (isAuthRoute || isLandingRoute)) {
+    } else if (session && isSignedInRedirectRoute) {
       navigate({ to: "/app", replace: true });
     }
-  }, [session, loading, isPublicRoute, isAuthRoute, isLandingRoute, navigate]);
+  }, [session, loading, isPublicRoute, isSignedInRedirectRoute, navigate]);
 
   if (loading) {
     return (
