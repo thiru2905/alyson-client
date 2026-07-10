@@ -56,6 +56,7 @@ import { Route as BonusAnalyticsRouteImport } from './routes/bonus/analytics'
 import { Route as AlysonNotetakerUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/unified-meetings'
 import { Route as AlysonNotetakerTasksRouteImport } from './routes/alyson-notetaker/tasks'
 import { Route as AlysonNotetakerMeetingListRouteImport } from './routes/alyson-notetaker/meeting-list'
+import { Route as AlysonNotetakerMeetingHoursRouteImport } from './routes/alyson-notetaker/meeting-hours'
 import { Route as AlysonNotetakerCostTrackingRouteImport } from './routes/alyson-notetaker/cost-tracking'
 import { Route as AlysonNotetakerCalendarRouteImport } from './routes/alyson-notetaker/calendar'
 import { Route as AlysonNotetakerBotJoinReportRouteImport } from './routes/alyson-notetaker/bot-join-report'
@@ -65,6 +66,7 @@ import { Route as ApiCronScheduledBotActivationRouteImport } from './routes/api/
 import { Route as ApiCronRecallCalendarSyncRouteImport } from './routes/api/cron/recall-calendar-sync'
 import { Route as ApiCronNotetakerTranscriptsRouteImport } from './routes/api/cron/notetaker-transcripts'
 import { Route as ApiCronNotetakerMeetingIntegrityRouteImport } from './routes/api/cron/notetaker-meeting-integrity'
+import { Route as ApiCronMeetingHoursReportRouteImport } from './routes/api/cron/meeting-hours-report'
 import { Route as ApiCronLeaveEmailSyncRouteImport } from './routes/api/cron/leave-email-sync'
 import { Route as ApiCronDailyReportsRouteImport } from './routes/api/cron/daily-reports'
 import { Route as ApiAnalyticsWorkspaceActivityRouteImport } from './routes/api/analytics/workspace-activity'
@@ -323,6 +325,12 @@ const AlysonNotetakerMeetingListRoute =
     path: '/meeting-list',
     getParentRoute: () => AlysonNotetakerRouteRoute,
   } as any)
+const AlysonNotetakerMeetingHoursRoute =
+  AlysonNotetakerMeetingHoursRouteImport.update({
+    id: '/meeting-hours',
+    path: '/meeting-hours',
+    getParentRoute: () => AlysonNotetakerRouteRoute,
+  } as any)
 const AlysonNotetakerCostTrackingRoute =
   AlysonNotetakerCostTrackingRouteImport.update({
     id: '/cost-tracking',
@@ -373,6 +381,12 @@ const ApiCronNotetakerMeetingIntegrityRoute =
   ApiCronNotetakerMeetingIntegrityRouteImport.update({
     id: '/api/cron/notetaker-meeting-integrity',
     path: '/api/cron/notetaker-meeting-integrity',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCronMeetingHoursReportRoute =
+  ApiCronMeetingHoursReportRouteImport.update({
+    id: '/api/cron/meeting-hours-report',
+    path: '/api/cron/meeting-hours-report',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiCronLeaveEmailSyncRoute = ApiCronLeaveEmailSyncRouteImport.update({
@@ -502,6 +516,7 @@ export interface FileRoutesByFullPath {
   '/alyson-notetaker/bot-join-report': typeof AlysonNotetakerBotJoinReportRoute
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
+  '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -533,6 +548,7 @@ export interface FileRoutesByFullPath {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
+  '/api/cron/meeting-hours-report': typeof ApiCronMeetingHoursReportRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
@@ -573,6 +589,7 @@ export interface FileRoutesByTo {
   '/alyson-notetaker/bot-join-report': typeof AlysonNotetakerBotJoinReportRoute
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
+  '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -604,6 +621,7 @@ export interface FileRoutesByTo {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
+  '/api/cron/meeting-hours-report': typeof ApiCronMeetingHoursReportRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
@@ -649,6 +667,7 @@ export interface FileRoutesById {
   '/alyson-notetaker/bot-join-report': typeof AlysonNotetakerBotJoinReportRoute
   '/alyson-notetaker/calendar': typeof AlysonNotetakerCalendarRoute
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
+  '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -680,6 +699,7 @@ export interface FileRoutesById {
   '/api/analytics/workspace-activity': typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   '/api/cron/daily-reports': typeof ApiCronDailyReportsRoute
   '/api/cron/leave-email-sync': typeof ApiCronLeaveEmailSyncRoute
+  '/api/cron/meeting-hours-report': typeof ApiCronMeetingHoursReportRoute
   '/api/cron/notetaker-meeting-integrity': typeof ApiCronNotetakerMeetingIntegrityRoute
   '/api/cron/notetaker-transcripts': typeof ApiCronNotetakerTranscriptsRoute
   '/api/cron/recall-calendar-sync': typeof ApiCronRecallCalendarSyncRoute
@@ -726,6 +746,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/bot-join-report'
     | '/alyson-notetaker/calendar'
     | '/alyson-notetaker/cost-tracking'
+    | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
@@ -757,6 +778,7 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
+    | '/api/cron/meeting-hours-report'
     | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
@@ -797,6 +819,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/bot-join-report'
     | '/alyson-notetaker/calendar'
     | '/alyson-notetaker/cost-tracking'
+    | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
@@ -828,6 +851,7 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
+    | '/api/cron/meeting-hours-report'
     | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
@@ -872,6 +896,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/bot-join-report'
     | '/alyson-notetaker/calendar'
     | '/alyson-notetaker/cost-tracking'
+    | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
@@ -903,6 +928,7 @@ export interface FileRouteTypes {
     | '/api/analytics/workspace-activity'
     | '/api/cron/daily-reports'
     | '/api/cron/leave-email-sync'
+    | '/api/cron/meeting-hours-report'
     | '/api/cron/notetaker-meeting-integrity'
     | '/api/cron/notetaker-transcripts'
     | '/api/cron/recall-calendar-sync'
@@ -951,6 +977,7 @@ export interface RootRouteChildren {
   ApiAnalyticsWorkspaceActivityRoute: typeof ApiAnalyticsWorkspaceActivityRouteWithChildren
   ApiCronDailyReportsRoute: typeof ApiCronDailyReportsRoute
   ApiCronLeaveEmailSyncRoute: typeof ApiCronLeaveEmailSyncRoute
+  ApiCronMeetingHoursReportRoute: typeof ApiCronMeetingHoursReportRoute
   ApiCronNotetakerMeetingIntegrityRoute: typeof ApiCronNotetakerMeetingIntegrityRoute
   ApiCronNotetakerTranscriptsRoute: typeof ApiCronNotetakerTranscriptsRoute
   ApiCronRecallCalendarSyncRoute: typeof ApiCronRecallCalendarSyncRoute
@@ -1293,6 +1320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlysonNotetakerMeetingListRouteImport
       parentRoute: typeof AlysonNotetakerRouteRoute
     }
+    '/alyson-notetaker/meeting-hours': {
+      id: '/alyson-notetaker/meeting-hours'
+      path: '/meeting-hours'
+      fullPath: '/alyson-notetaker/meeting-hours'
+      preLoaderRoute: typeof AlysonNotetakerMeetingHoursRouteImport
+      parentRoute: typeof AlysonNotetakerRouteRoute
+    }
     '/alyson-notetaker/cost-tracking': {
       id: '/alyson-notetaker/cost-tracking'
       path: '/cost-tracking'
@@ -1354,6 +1388,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/notetaker-meeting-integrity'
       fullPath: '/api/cron/notetaker-meeting-integrity'
       preLoaderRoute: typeof ApiCronNotetakerMeetingIntegrityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/meeting-hours-report': {
+      id: '/api/cron/meeting-hours-report'
+      path: '/api/cron/meeting-hours-report'
+      fullPath: '/api/cron/meeting-hours-report'
+      preLoaderRoute: typeof ApiCronMeetingHoursReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/leave-email-sync': {
@@ -1498,6 +1539,7 @@ interface AlysonNotetakerRouteRouteChildren {
   AlysonNotetakerBotJoinReportRoute: typeof AlysonNotetakerBotJoinReportRoute
   AlysonNotetakerCalendarRoute: typeof AlysonNotetakerCalendarRoute
   AlysonNotetakerCostTrackingRoute: typeof AlysonNotetakerCostTrackingRoute
+  AlysonNotetakerMeetingHoursRoute: typeof AlysonNotetakerMeetingHoursRoute
   AlysonNotetakerMeetingListRoute: typeof AlysonNotetakerMeetingListRoute
   AlysonNotetakerTasksRoute: typeof AlysonNotetakerTasksRoute
   AlysonNotetakerUnifiedMeetingsRoute: typeof AlysonNotetakerUnifiedMeetingsRoute
@@ -1509,6 +1551,7 @@ const AlysonNotetakerRouteRouteChildren: AlysonNotetakerRouteRouteChildren = {
   AlysonNotetakerBotJoinReportRoute: AlysonNotetakerBotJoinReportRoute,
   AlysonNotetakerCalendarRoute: AlysonNotetakerCalendarRoute,
   AlysonNotetakerCostTrackingRoute: AlysonNotetakerCostTrackingRoute,
+  AlysonNotetakerMeetingHoursRoute: AlysonNotetakerMeetingHoursRoute,
   AlysonNotetakerMeetingListRoute: AlysonNotetakerMeetingListRoute,
   AlysonNotetakerTasksRoute: AlysonNotetakerTasksRoute,
   AlysonNotetakerUnifiedMeetingsRoute: AlysonNotetakerUnifiedMeetingsRoute,
@@ -1703,6 +1746,7 @@ const rootRouteChildren: RootRouteChildren = {
     ApiAnalyticsWorkspaceActivityRouteWithChildren,
   ApiCronDailyReportsRoute: ApiCronDailyReportsRoute,
   ApiCronLeaveEmailSyncRoute: ApiCronLeaveEmailSyncRoute,
+  ApiCronMeetingHoursReportRoute: ApiCronMeetingHoursReportRoute,
   ApiCronNotetakerMeetingIntegrityRoute: ApiCronNotetakerMeetingIntegrityRoute,
   ApiCronNotetakerTranscriptsRoute: ApiCronNotetakerTranscriptsRoute,
   ApiCronRecallCalendarSyncRoute: ApiCronRecallCalendarSyncRoute,

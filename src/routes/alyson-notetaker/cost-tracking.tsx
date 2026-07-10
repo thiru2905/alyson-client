@@ -15,7 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, CalendarDays, Captions, DollarSign, RefreshCw, Sparkles } from "lucide-react";
+import { BarChart3, CalendarDays, Captions, Clock, DollarSign, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { getRecallCostInsights, getRecallCostReport } from "@/lib/recall-cost-functions";
 import type { RecallCostReport } from "@/lib/recall-cost-report.server";
@@ -24,6 +24,7 @@ import {
   loadRecallCostSession,
   saveRecallCostSession,
 } from "@/lib/recall-cost-session";
+import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 
 export const Route = createFileRoute("/alyson-notetaker/cost-tracking")({
   head: () => ({ meta: [{ title: "Recall Cost Tracking — Alyson Notetaker" }] }),
@@ -60,6 +61,7 @@ function hours(n: number) {
 }
 
 function CostTrackingPage() {
+  const meetingHoursVisible = useSuperAccessNavVisible();
   const boot = useMemo(() => loadRecallCostSession(), []);
   const queryClient = useQueryClient();
 
@@ -145,6 +147,15 @@ function CostTrackingPage() {
         dense
         actions={
           <div className="flex items-center gap-2">
+            {meetingHoursVisible ? (
+              <Link
+                to="/alyson-notetaker/meeting-hours"
+                className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Meeting hours
+              </Link>
+            ) : null}
             <Link
               to="/alyson-notetaker/calendar"
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"

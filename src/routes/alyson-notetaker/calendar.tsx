@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { CalendarDays, Captions, CheckSquare, Copy, DollarSign, FileText, X } from "lucide-react";
+import { CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, FileText, X } from "lucide-react";
 import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
 import { toast } from "sonner";
 import { z } from "zod";
 import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
+import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 
 type MeetingRow = {
   prefix: string;
@@ -101,6 +102,7 @@ function meetingTasksKey(m: MeetingRow): string {
 }
 
 function CalendarPage() {
+  const meetingHoursVisible = useSuperAccessNavVisible();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
@@ -374,6 +376,15 @@ function CalendarPage() {
         dense
         actions={
           <div className="flex items-center gap-2">
+            {meetingHoursVisible ? (
+              <Link
+                to="/alyson-notetaker/meeting-hours"
+                className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+              >
+                <Clock className="h-3.5 w-3.5" />
+                Meeting hours
+              </Link>
+            ) : null}
             <Link
               to="/alyson-notetaker/cost-tracking"
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
@@ -664,6 +675,22 @@ function CalendarPage() {
             </>
           )}
         </div>
+
+        {meetingHoursVisible ? (
+          <Link
+            to="/alyson-notetaker/meeting-hours"
+            className="surface-card p-3 flex items-center gap-3 hover:bg-muted/30 transition-colors block"
+          >
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium">Meeting hours</div>
+              <div className="text-[11px] text-muted-foreground">
+                Per-employee daily meeting count &amp; hours (join URL only)
+              </div>
+            </div>
+            <span className="ml-auto text-[11px] text-muted-foreground shrink-0">Open →</span>
+          </Link>
+        ) : null}
 
         <Link
           to="/alyson-notetaker/cost-tracking"

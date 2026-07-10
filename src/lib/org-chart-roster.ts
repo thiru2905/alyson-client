@@ -63,6 +63,7 @@ const EMPLOYEE_MANAGER_OVERRIDES: Record<string, string> = {
   vinit: "Omer",
   adil: "Bill",
   adilahmed: "Bill",
+  thirumalai: "Bill",
   aryan: "Omer",
   farhan: "Bill",
 };

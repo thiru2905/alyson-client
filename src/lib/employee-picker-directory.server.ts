@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { promises as fs } from "node:fs";
+import { canonicalOfficialEmail } from "@/lib/cintara-email";
 import type { EmployeePickerEntry, EmployeePickerResponse } from "@/lib/employee-picker-types";
 import { listTimeDoctorUsersLight } from "@/lib/time-doctor-functions";
 
@@ -62,6 +63,35 @@ async function listGoogleWorkspaceUsers(): Promise<EmployeePickerEntry[]> {
   return out;
 }
 
+function pickDirectoryName(
+  a: EmployeePickerEntry,
+  b: EmployeePickerEntry,
+  canonicalEmail: string,
+): string {
+  if (a.email === canonicalEmail && a.name.trim()) return a.name;
+  if (b.email === canonicalEmail && b.name.trim()) return b.name;
+  return a.name.length >= b.name.length ? a.name : b.name;
+}
+
+/** Collapse alias mailboxes (e.g. aneela@cintara.ai → anila@cintara.ai) into one row. */
+function dedupeDirectoryByCanonicalEmail(employees: EmployeePickerEntry[]): EmployeePickerEntry[] {
+  const byCanonical = new Map<string, EmployeePickerEntry>();
+  for (const entry of employees) {
+    const canonical = canonicalOfficialEmail(entry.email);
+    const prev = byCanonical.get(canonical);
+    if (!prev) {
+      byCanonical.set(canonical, { ...entry, email: canonical });
+      continue;
+    }
+    byCanonical.set(canonical, {
+      email: canonical,
+      name: pickDirectoryName(prev, entry, canonical),
+      timeDoctorUserId: entry.timeDoctorUserId ?? prev.timeDoctorUserId,
+    });
+  }
+  return Array.from(byCanonical.values());
+}
+
 export async function loadEmployeePickerDirectory(): Promise<EmployeePickerResponse> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
     return cache.data;
@@ -95,7 +125,7 @@ export async function loadEmployeePickerDirectory(): Promise<EmployeePickerRespo
     warnings.push(`time_doctor: ${String(tdR.reason)}`);
   }
 
-  const employees = Array.from(byEmail.values()).sort((a, b) =>
+  const employees = dedupeDirectoryByCanonicalEmail(Array.from(byEmail.values())).sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 

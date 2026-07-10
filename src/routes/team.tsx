@@ -199,63 +199,36 @@ function TeamPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filtered.map((e) => (
-                  isSuperAdmin ? (
-                    <button
-                      key={e.id}
-                      onClick={() => setPicked(e)}
-                      className="surface-card p-4 hover:shadow-lg transition-shadow group text-left"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="h-10 w-10 rounded-full bg-accent text-accent-foreground grid place-items-center font-medium text-sm shrink-0">
-                          {employeeInitials(e.full_name)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-[14px] truncate">{e.full_name}</div>
-                          <div className="text-[12px] text-muted-foreground truncate">{e.role}</div>
-                          <div className="text-[11px] text-muted-foreground/80 truncate">{e.email}</div>
-                        </div>
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => setPicked(e)}
+                    className="surface-card p-4 hover:shadow-lg transition-shadow group text-left cursor-pointer w-full"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 rounded-full bg-accent text-accent-foreground grid place-items-center font-medium text-sm shrink-0">
+                        {employeeInitials(e.full_name)}
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-[11px] flex-wrap">
-                        <span className="pill pill-neutral">{e.department_name}</span>
-                        <span className="pill pill-neutral">L{e.level}</span>
-                        <span
-                          className={`pill ${e.performance_score >= 4 ? "pill-success" : e.performance_score >= 3 ? "pill-info" : "pill-warning"}`}
-                        >
-                          {formatPerformanceScore(e.performance_score)}★
-                        </span>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-border text-[11px] text-muted-foreground flex justify-between">
-                        <span>Total comp</span>
-                        <span className="font-mono text-foreground">{fmtCurrency(e.total_comp, { compact: true })}</span>
-                      </div>
-                    </button>
-                  ) : (
-                    <div key={e.id} className="surface-card p-4 text-left">
-                      <div className="flex items-start gap-3">
-                        <div className="h-10 w-10 rounded-full bg-accent text-accent-foreground grid place-items-center font-medium text-sm shrink-0">
-                          {employeeInitials(e.full_name)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="font-medium text-[14px] truncate">{e.full_name}</div>
-                          <div className="text-[12px] text-muted-foreground truncate">{e.role}</div>
-                          <div className="text-[11px] text-muted-foreground/80 truncate">{e.email}</div>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex items-center gap-2 text-[11px] flex-wrap">
-                        <span className="pill pill-neutral">{e.department_name}</span>
-                        <span className="pill pill-neutral">L{e.level}</span>
-                        <span
-                          className={`pill ${e.performance_score >= 4 ? "pill-success" : e.performance_score >= 3 ? "pill-info" : "pill-warning"}`}
-                        >
-                          {formatPerformanceScore(e.performance_score)}★
-                        </span>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-border text-[11px] text-muted-foreground flex justify-between">
-                        <span>Total comp</span>
-                        <span className="font-mono text-foreground">{fmtCurrency(e.total_comp, { compact: true })}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-[14px] truncate">{e.full_name}</div>
+                        <div className="text-[12px] text-muted-foreground truncate">{e.role}</div>
+                        <div className="text-[11px] text-muted-foreground/80 truncate">{e.email}</div>
                       </div>
                     </div>
-                  )
+                    <div className="mt-3 flex items-center gap-2 text-[11px] flex-wrap">
+                      <span className="pill pill-neutral">{e.department_name}</span>
+                      <span className="pill pill-neutral">L{e.level}</span>
+                      <span
+                        className={`pill ${e.performance_score >= 4 ? "pill-success" : e.performance_score >= 3 ? "pill-info" : "pill-warning"}`}
+                      >
+                        {formatPerformanceScore(e.performance_score)}★
+                      </span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-border text-[11px] text-muted-foreground flex justify-between">
+                      <span>Total comp</span>
+                      <span className="font-mono text-foreground">{fmtCurrency(e.total_comp, { compact: true })}</span>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -273,7 +246,7 @@ function TeamPage() {
         )}
       </div>
 
-      {isSuperAdmin && <EmployeeDrawer employee={picked} onClose={() => setPicked(null)} />}
+      <EmployeeDrawer employee={picked} onClose={() => setPicked(null)} />
       <CreateUserDrawer open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );

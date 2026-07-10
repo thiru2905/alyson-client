@@ -35,6 +35,7 @@ const SUPER_ACCESS_BADGE_ROUTES = new Set<string>([
   "/equity",
   "/workspace-activity",
   "/leave",
+  "/alyson-notetaker/meeting-hours",
 ]);
 
 const NEW_BADGE_ROUTES = new Set<string>([
@@ -76,6 +77,7 @@ const NAV: NavItem[] = [
   { to: "/employee-scoring", label: "Employee Scoring", icon: Trophy, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "Ops", roles: ["super_admin", "ceo", "finance", "hr"] },
   { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops" },
+  { to: "/alyson-notetaker/meeting-hours", label: "Meeting Hours", icon: Clock, group: "Ops" },
   { to: "/alyson-notetaker/meeting-list", label: "Meeting List", icon: List, group: "Ops" },
   { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops" },
   { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3, group: "Ops" },
@@ -88,9 +90,37 @@ const NAV: NavItem[] = [
 
 const ROLES: AppRole[] = ["super_admin", "ceo", "finance", "hr", "manager", "employee"];
 const SIDEBAR_COLLAPSED_KEY = "alyson-sidebar-collapsed";
+const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width";
 const NAV_GROUPS_COLLAPSED_KEY = "alyson-nav-groups-collapsed";
+const SIDEBAR_WIDTH_MIN = 220;
+const SIDEBAR_WIDTH_MAX = 420;
+const SIDEBAR_WIDTH_DEFAULT = 288;
+const SIDEBAR_WIDTH_COLLAPSED = 60;
 const NAV_GROUPS = ["Workspace", "People", "Money", "Ops", "Admin"] as const;
 type NavGroup = (typeof NAV_GROUPS)[number];
+
+function clampSidebarWidth(width: number) {
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(width)));
+}
+
+function readSidebarWidth(): number {
+  if (typeof window === "undefined") return SIDEBAR_WIDTH_DEFAULT;
+  try {
+    const raw = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(raw)) return clampSidebarWidth(raw);
+  } catch {
+    // ignore
+  }
+  return SIDEBAR_WIDTH_DEFAULT;
+}
+
+function persistSidebarWidth(width: number) {
+  try {
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clampSidebarWidth(width)));
+  } catch {
+    // ignore
+  }
+}
 
 function readSidebarCollapsed(): boolean {
   if (typeof window === "undefined") return false;
@@ -132,6 +162,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
   const { theme, toggle, palette, setPalette } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH_DEFAULT);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
+  const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [miniAiOpen, setMiniAiOpen] = useState(false);
@@ -156,8 +189,71 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setCollapsed(readSidebarCollapsed());
+    setSidebarWidth(readSidebarWidth());
     setGroupsCollapsed(readNavGroupsCollapsed());
   }, []);
+
+  const asideWidth =
+    collapsed && !mobileOpen ? SIDEBAR_WIDTH_COLLAPSED : clampSidebarWidth(sidebarWidth);
+
+  const startSidebarResize = (event: React.MouseEvent) => {
+    event.preventDefault();
+    sidebarResizeRef.current = {
+      startX: event.clientX,
+      startWidth: collapsed ? SIDEBAR_WIDTH_DEFAULT : asideWidth,
+    };
+    setResizingSidebar(true);
+  };
+
+  useEffect(() => {
+    if (!resizingSidebar) return;
+
+    const onMove = (event: MouseEvent) => {
+      const start = sidebarResizeRef.current;
+      if (!start) return;
+      const next = clampSidebarWidth(start.startWidth + (event.clientX - start.startX));
+      setSidebarWidth(next);
+      if (collapsed && next > SIDEBAR_WIDTH_MIN + 8) {
+        setCollapsed(false);
+        try {
+          window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "0");
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const onUp = () => {
+      setResizingSidebar(false);
+      sidebarResizeRef.current = null;
+      setSidebarWidth((current) => {
+        const width = clampSidebarWidth(current);
+        if (width <= SIDEBAR_WIDTH_MIN + 12) {
+          setCollapsed(true);
+          try {
+            window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "1");
+          } catch {
+            // ignore
+          }
+          persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+          return SIDEBAR_WIDTH_DEFAULT;
+        }
+        persistSidebarWidth(width);
+        return width;
+      });
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [resizingSidebar, collapsed]);
 
   const toggleNavGroup = (group: NavGroup) => {
     setGroupsCollapsed((prev) => {
@@ -194,6 +290,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
       } catch {
         // ignore
+      }
+      if (!next && sidebarWidth < SIDEBAR_WIDTH_MIN) {
+        setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+        persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
       }
       return next;
     });
@@ -280,13 +380,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "border-r border-sidebar-border bg-sidebar flex flex-col transition-[width,transform] duration-200",
+          "relative border-r border-sidebar-border bg-sidebar flex flex-col",
+          resizingSidebar ? "" : "transition-[width,transform] duration-200",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
-          collapsed ? "md:w-[60px]" : "md:w-[232px]",
-          "fixed inset-y-0 left-0 z-40 w-[260px]",
+          "fixed inset-y-0 left-0 z-40",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           "shrink-0",
         ].join(" ")}
+        style={{ width: asideWidth }}
       >
         <div
           className={[
@@ -368,14 +469,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           {showLabel && (
-                            <span className="truncate flex items-center gap-2 min-w-0">
-                              <span className="truncate">{item.label}</span>
+                            <span className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
+                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
                               {SUPER_ACCESS_BADGE_ROUTES.has(item.to) ? (
-                                <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 px-1 py-px text-[9px] leading-none font-medium text-violet-700 dark:text-violet-300">
+                                <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 px-1.5 py-px text-[9px] leading-none font-medium text-violet-700 dark:text-violet-300 whitespace-nowrap">
                                   Super access
                                 </span>
                               ) : NEW_BADGE_ROUTES.has(item.to) ? (
-                                <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300">
+                                <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1.5 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300 whitespace-nowrap">
                                   New
                                 </span>
                               ) : null}
@@ -454,6 +555,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
           )}
+        </div>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          title="Drag to resize sidebar · double-click to reset"
+          onMouseDown={startSidebarResize}
+          onDoubleClick={() => {
+            setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+            persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+            if (collapsed) {
+              setCollapsed(false);
+              try {
+                window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "0");
+              } catch {
+                // ignore
+              }
+            }
+          }}
+          className="hidden md:block absolute top-0 right-0 z-20 h-full w-2 -mr-px cursor-col-resize group"
+        >
+          <div className="absolute inset-y-0 right-0 w-px bg-transparent group-hover:bg-border group-active:bg-foreground/30 transition-colors" />
         </div>
       </aside>
 
@@ -1403,9 +1527,10 @@ function MiniModuleAiFab({
 }
 
 export function PageHeader({
-  eyebrow, title, description, actions, dense = false,
+  eyebrow, title, description, actions, dense = false, titleTag,
 }: {
   eyebrow?: string; title: string; description?: string; actions?: React.ReactNode; dense?: boolean;
+  titleTag?: React.ReactNode;
 }) {
   return (
     <div className={`flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 px-5 md:px-8 ${dense ? "pt-5 pb-4" : "pt-7 md:pt-9 pb-5 md:pb-6"} border-b border-border`}>
@@ -1413,7 +1538,10 @@ export function PageHeader({
         {eyebrow && (
           <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">{eyebrow}</div>
         )}
-        <h1 className={`font-display ${dense ? "text-xl md:text-2xl" : "text-2xl md:text-[34px]"} font-semibold tracking-tight text-foreground leading-tight`}>{title}</h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className={`font-display ${dense ? "text-xl md:text-2xl" : "text-2xl md:text-[34px]"} font-semibold tracking-tight text-foreground leading-tight`}>{title}</h1>
+          {titleTag}
+        </div>
         {description && (
           <p className="mt-1.5 text-[13px] md:text-[14px] text-muted-foreground max-w-2xl leading-relaxed">{description}</p>
         )}

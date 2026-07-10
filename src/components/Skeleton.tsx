@@ -125,3 +125,62 @@ export function CostTrackingSkeleton() {
     </div>
   );
 }
+
+/** Meeting hours report — KPI cards + wide daily grid. */
+export function MeetingHoursSkeleton({
+  dayColumns = 14,
+  rows = 10,
+}: {
+  dayColumns?: number;
+  rows?: number;
+}) {
+  const cols = Math.min(Math.max(dayColumns, 7), 31);
+  return (
+    <div className="space-y-5 animate-in fade-in duration-300" aria-busy="true" aria-label="Loading meeting hours">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="surface-card p-3 space-y-2">
+            <Shimmer className="h-3 w-20" />
+            <Shimmer className="h-8 w-16" />
+            <Shimmer className="h-2.5 w-28" />
+          </div>
+        ))}
+      </div>
+      <div className="surface-card overflow-hidden">
+        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+          <div className="space-y-2 min-w-0">
+            <Shimmer className="h-4 w-40" />
+            <Shimmer className="h-3 w-56 max-w-full" />
+          </div>
+          <Shimmer className="h-3 w-24 shrink-0" />
+        </div>
+        <div className="overflow-x-auto">
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border bg-muted/30 min-w-max">
+            <Shimmer className="h-4 w-32 shrink-0" />
+            {Array.from({ length: cols }).map((_, i) => (
+              <Shimmer key={i} className="h-4 w-10 shrink-0" />
+            ))}
+            <Shimmer className="h-4 w-12 shrink-0" />
+            <Shimmer className="h-4 w-12 shrink-0" />
+          </div>
+          {Array.from({ length: rows }).map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 px-3 py-2.5 border-b border-border/50 min-w-max"
+            >
+              <div className="w-[180px] shrink-0 space-y-1.5">
+                <Shimmer className="h-3.5 w-32" />
+                <Shimmer className="h-2.5 w-40" />
+              </div>
+              {Array.from({ length: cols }).map((_, j) => (
+                <Shimmer key={j} className="h-8 w-10 shrink-0 rounded-sm" />
+              ))}
+              <Shimmer className="h-8 w-12 shrink-0 rounded-sm" />
+              <Shimmer className="h-8 w-12 shrink-0 rounded-sm" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
