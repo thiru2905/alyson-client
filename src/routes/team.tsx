@@ -98,7 +98,7 @@ function TeamPage() {
     return (
       <div className="ops-dense">
         <PageHeader eyebrow="People" title="Team directory" description="Browse, filter, and drill into every active employee across the organization." />
-        <div className="px-5 md:px-8 py-10">
+        <div className="app-page-gutter py-10">
           <EmptyState
             icon={Users}
             title="Unable to load team members"
@@ -179,7 +179,7 @@ function TeamPage() {
           </div>
         }
       />
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         {view === "directory" && (
           <>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">

@@ -81,7 +81,7 @@ function BonusAnalyticsPage() {
   );
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-5">
+    <div className="app-page-gutter py-6 space-y-5">
       <FetchingBar active={q.isFetching} />
 
       <div className="surface-card p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -269,7 +269,7 @@ function BonusAnalyticsPage() {
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="surface-ops overflow-x-auto">
+            <div className="surface-ops app-table-flush overflow-x-auto">
               <div className="px-4 py-3 font-medium text-[13px]">Top recipients</div>
               <table className="ops-table w-full min-w-[480px]">
                 <thead>
@@ -305,7 +305,7 @@ function BonusAnalyticsPage() {
               </table>
             </div>
 
-            <div className="surface-ops overflow-x-auto">
+            <div className="surface-ops app-table-flush overflow-x-auto">
               <div className="px-4 py-3 font-medium text-[13px]">Recent payments</div>
               <table className="ops-table w-full min-w-[520px]">
                 <thead>

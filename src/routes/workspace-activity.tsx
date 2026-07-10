@@ -324,7 +324,7 @@ function WorkspaceActivityPageContent() {
           title="Workspace Activity"
           description="Loading page…"
         />
-        <div className="px-5 md:px-8 py-6">
+        <div className="app-page-gutter py-6">
           <PageSkeleton />
         </div>
       </div>
@@ -372,7 +372,7 @@ function WorkspaceActivityPageContent() {
 
       <FetchingBar active={isBusy} />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <WorkspaceActivityRangePicker
           draftStart={draftStart}
           draftEnd={draftEnd}

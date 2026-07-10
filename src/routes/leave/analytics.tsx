@@ -117,7 +117,7 @@ function LeaveAnalyticsPage() {
   const weekdayTrendChart = useMemo(() => report?.weekdayBoard.trend ?? [], [report]);
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-5">
+    <div className="app-page-gutter py-6 space-y-5">
       <FetchingBar active={q.isFetching} />
 
       <div className="surface-card p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -270,7 +270,7 @@ function LeaveAnalyticsPage() {
             </div>
           </div>
 
-          <div className="surface-ops overflow-x-auto">
+          <div className="surface-ops app-table-flush overflow-x-auto">
             <div className="px-4 py-3 font-medium text-[13px]">Weekday pattern by employee ({year})</div>
             <table className="ops-table w-full min-w-[720px]">
               <thead>
@@ -432,7 +432,7 @@ function LeaveAnalyticsPage() {
             </div>
           </div>
 
-          <div className="surface-ops overflow-x-auto">
+          <div className="surface-ops app-table-flush overflow-x-auto">
             <div className="px-4 py-3 font-medium text-[13px]">Employee breakdown ({year})</div>
             <table className="ops-table w-full min-w-[640px]">
               <thead>

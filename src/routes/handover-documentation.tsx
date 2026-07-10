@@ -96,7 +96,7 @@ function HandoverDocumentationPage() {
         description="Simple mapping of employee name to documentation link. Stored in S3."
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <form onSubmit={submit} className="surface-card p-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <label className="space-y-1 md:col-span-2">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Employee name</span>

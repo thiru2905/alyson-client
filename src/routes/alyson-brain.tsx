@@ -164,7 +164,7 @@ function AlysonBrainPage() {
         }
       />
 
-      <div className="mx-auto max-w-4xl px-5 md:px-8 py-6 space-y-8">
+      <div className="mx-auto max-w-4xl app-page-gutter py-6 space-y-8">
         <div className="space-y-3">
           <form
             className="flex flex-col gap-2 sm:flex-row"

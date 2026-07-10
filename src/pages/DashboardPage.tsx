@@ -139,7 +139,7 @@ export function DashboardPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-6 md:space-y-7">
+      <div className="app-page-gutter py-6 md:py-7 space-y-6 md:space-y-7">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <button onClick={() => setDrill({ kind: "kpi", metric: "totalComp" })} className="text-left">
             <KpiCard

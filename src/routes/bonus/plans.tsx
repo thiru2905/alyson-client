@@ -18,7 +18,7 @@ function BonusPlansPage() {
   const activeCount = useMemo(() => plans.filter((p) => p.active).length, [plans]);
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-6">
+    <div className="app-page-gutter py-6 space-y-6">
       <div className="surface-card p-4 flex items-start justify-between gap-3">
         <div>
           <div className="font-display text-lg">Plans</div>

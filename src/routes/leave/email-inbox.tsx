@@ -124,7 +124,7 @@ function LeaveEmailInboxPage() {
   );
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-5">
+    <div className="app-page-gutter py-6 space-y-5">
       <FetchingBar active={q.isFetching} />
 
       <div className="surface-card p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">

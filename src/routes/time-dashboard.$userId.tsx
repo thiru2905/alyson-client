@@ -255,7 +255,7 @@ function TimeDoctorEmployeePage() {
   if (detailForbidden && q.isSuccess) {
     return (
       <TimeDashboardRbacGate>
-        <div className="px-5 md:px-8 py-10">
+        <div className="app-page-gutter py-10">
           <EmptyState
             title="Employee not on your team"
             description="Time Dashboard is limited to your direct reports. Return to the team list to pick someone you manage."
@@ -348,7 +348,7 @@ function TimeDoctorEmployeePage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <FetchingBar active={isBusy && !coldLoad} />
 
         {statusBanner ? (

@@ -62,7 +62,7 @@ function AttendancePage() {
           </>
         }
       />
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Stat label="Approved hours (14d)" value={`${totalHours.toFixed(0)}h`} />
           <Stat label="Adjusted entries" value={String(adjusted)} />

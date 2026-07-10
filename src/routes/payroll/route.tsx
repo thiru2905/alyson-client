@@ -17,7 +17,7 @@ function PayrollLayout() {
 
   if (accessQ.isLoading) {
     return (
-      <div className="px-5 md:px-8 py-16 flex justify-center">
+      <div className="app-page-gutter py-16 flex justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -29,7 +29,7 @@ function PayrollLayout() {
 
   return (
     <div className="ops-dense">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 px-5 md:px-8 pt-5 pb-4 border-b border-border">
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 app-page-gutter pt-5 pb-4 border-b border-border">
         <div className="min-w-0">
           <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">
             Money
@@ -82,7 +82,7 @@ function Tab({
 
 function AccessDenied() {
   return (
-    <div className="px-5 md:px-8 py-10">
+    <div className="app-page-gutter py-10">
       <div className="surface-card p-10 text-center">
         <div className="font-medium text-[15px]">Access denied</div>
         <div className="text-[13px] text-muted-foreground mt-1 max-w-md mx-auto">

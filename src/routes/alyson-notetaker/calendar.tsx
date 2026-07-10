@@ -405,7 +405,7 @@ function CalendarPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-4 space-y-3">
+      <div className="app-page-gutter py-4 space-y-3">
         <div className="surface-card p-2.5 sm:p-3 flex items-center gap-2">
           <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <div className="text-[13px] font-medium">{monthLabel(month)}</div>

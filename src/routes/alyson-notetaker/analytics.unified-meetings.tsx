@@ -290,7 +290,7 @@ export function UnifiedMeetingsPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-4">
+      <div className="app-page-gutter py-6 space-y-4">
         <RecallCalendarPanel
           loading={calendarQ.isLoading}
           error={calendarQ.isError ? (calendarQ.error as Error).message : null}

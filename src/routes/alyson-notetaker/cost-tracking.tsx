@@ -182,7 +182,7 @@ function CostTrackingPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <FetchingBar active={isRefreshing} />
 
         <div className="surface-card p-4 space-y-3">

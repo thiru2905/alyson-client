@@ -30,7 +30,7 @@ function WorkflowsPage() {
   return (
     <div className="ops-dense">
       <PageHeader eyebrow="Operations" title="Workflows" description="Every approval routed through Alyson — leave, payroll, equity, comp changes." dense />
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {groups.map((g) => (
             <Stat key={g} label={cap(g)} value={String(rows.filter((w) => w.status === g).length)} />

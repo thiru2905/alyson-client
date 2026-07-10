@@ -77,7 +77,7 @@ function EquityPageContent() {
           </>
         }
       />
-      <div className="px-5 md:px-8 py-6 space-y-6">
+      <div className="app-page-gutter py-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Stat label="Total shares granted" value={fmtNumber(totalShares)} />
           <Stat label="Holders" value={String(holders.length)} />

@@ -40,7 +40,7 @@ function DocumentsPage() {
         description="Policies, contracts, and templates — version-tagged and searchable."
         actions={<button onClick={() => setUploadOpen(true)} className="h-8 px-3 rounded-md bg-foreground text-background text-xs flex items-center gap-1.5"><Upload className="h-3.5 w-3.5" />Upload</button>}
       />
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-5">
+      <div className="app-page-gutter py-6 md:py-7 space-y-5">
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1 max-w-sm">
             <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />

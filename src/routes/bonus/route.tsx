@@ -11,7 +11,7 @@ function BonusLayout() {
   return (
     <SuperAccessGate moduleLabel="Bonus">
       <div className="ops-dense">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 px-5 md:px-8 pt-5 pb-4 border-b border-border">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 app-page-gutter pt-5 pb-4 border-b border-border">
           <div className="min-w-0">
             <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">Money</div>
             <div className="flex items-center gap-2">

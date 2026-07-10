@@ -314,9 +314,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col w-full max-w-[100vw] overflow-x-hidden bg-background text-foreground">
+    <div className="h-[100dvh] max-h-[100dvh] flex flex-col w-full max-w-[100vw] overflow-hidden bg-background text-foreground">
       <AppAnnouncementBanner visible={superAccessNavVisible} />
-      <div className="flex flex-1 min-h-0 w-full min-w-0">
+      <div className="flex flex-1 min-h-0 w-full min-w-0 overflow-hidden">
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
@@ -378,17 +378,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
+          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40 h-full",
           resizingSidebar ? "" : "transition-[width,transform] duration-200",
-          "md:sticky md:top-0 md:h-screen md:max-h-screen md:min-h-0",
-          "max-md:fixed max-md:inset-y-0 max-md:left-0",
+          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:max-h-full",
           mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         ].join(" ")}
         style={{ width: asideWidth }}
       >
         <div
           className={[
-            "px-3 pt-4 pb-3 border-b border-sidebar-border flex items-center gap-2.5",
+            "px-3 pt-4 pb-3 border-b border-sidebar-border flex items-center gap-2.5 shrink-0",
             collapsed && !mobileOpen ? "justify-center px-2" : "",
           ].join(" ")}
         >
@@ -482,7 +481,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="border-t border-sidebar-border p-2 space-y-2">
+        <div className="border-t border-sidebar-border p-2 space-y-2 shrink-0">
           {(!collapsed || mobileOpen) && (
             <div className="rounded-md bg-sidebar-accent/40 border border-sidebar-border p-2">
               <div className="text-[10px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-1.5 flex items-center justify-between">
@@ -565,13 +564,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }
             }
           }}
-          className="hidden md:block absolute top-0 -right-[2px] z-30 h-full w-[6px] cursor-col-resize group"
+          className="hidden md:block absolute top-0 right-0 z-30 h-full w-[5px] cursor-col-resize group"
         >
-          <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-border/0 transition-colors group-hover:bg-border/80 group-active:bg-foreground/30" />
+          <div className="absolute inset-y-3 right-0 w-px rounded-full bg-border/0 transition-colors group-hover:bg-border/80 group-active:bg-foreground/30" />
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 w-full flex flex-col">
+      <main className="flex-1 min-w-0 w-full flex flex-col bg-background min-h-0 overflow-y-auto overflow-x-hidden">
         <TopBar
           onAi={() => setAiOpen((o) => !o)}
           onMenu={() => setMobileOpen(true)}
@@ -581,7 +580,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           themePalette={palette}
           onThemePalette={setPalette}
         />
-        <div className="flex-1 min-h-0">{children}</div>
+        <div className="flex-1 min-h-0 flex flex-col">{children}</div>
       </main>
       </div>
 
@@ -1524,7 +1523,7 @@ export function PageHeader({
   titleTag?: React.ReactNode;
 }) {
   return (
-    <div className={`flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 px-5 md:px-8 ${dense ? "pt-5 pb-4" : "pt-7 md:pt-9 pb-5 md:pb-6"} border-b border-border`}>
+    <div className={`flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 app-page-gutter ${dense ? "pt-5 pb-4" : "pt-7 md:pt-9 pb-5 md:pb-6"} border-b border-border`}>
       <div>
         {eyebrow && (
           <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">{eyebrow}</div>
@@ -1542,10 +1541,24 @@ export function PageHeader({
   );
 }
 
-export function TableScroll({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+export function TableScroll({
+  children,
+  className = "",
+  fill = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  fill?: boolean;
+}) {
   return (
-    <div className={`surface-ops overflow-x-auto ${className}`}>
-      <div className="min-w-[640px]">{children}</div>
+    <div
+      className={[
+        "surface-ops app-table-shell overflow-x-auto",
+        fill ? "app-table-fill flex-1 min-h-0" : "",
+        className,
+      ].join(" ")}
+    >
+      <div className={fill ? "min-w-[640px] min-h-full" : "min-w-[640px]"}>{children}</div>
     </div>
   );
 }

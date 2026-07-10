@@ -16,7 +16,7 @@ export function SuperAccessGate({
 
   if (accessQ.isLoading) {
     return (
-      <div className="px-5 md:px-8 py-16 flex justify-center">
+      <div className="app-page-gutter py-16 flex justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -24,7 +24,7 @@ export function SuperAccessGate({
 
   if (!allowed) {
     return (
-      <div className="px-5 md:px-8 py-10">
+      <div className="app-page-gutter py-10">
         <div className="surface-card p-10 text-center">
           <div className="mx-auto h-10 w-10 rounded-full bg-muted grid place-items-center text-muted-foreground mb-3">
             <Shield className="h-5 w-5" />

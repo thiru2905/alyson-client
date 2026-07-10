@@ -164,7 +164,7 @@ function EmployeeScoringDetailPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <FetchingBar active={isBusy && !coldLoad} />
 
         {coldLoad ? (

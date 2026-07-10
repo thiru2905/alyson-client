@@ -238,7 +238,7 @@ function PayrollBoardPage() {
   const saving = saveEmployeeM.isPending || markPaidM.isPending || unmarkPaidM.isPending;
 
   return (
-    <div className="px-5 md:px-8 py-5 space-y-4">
+    <div className="app-page-gutter py-5 space-y-4">
       <FetchingBar active={q.isFetching} />
 
       <div className="flex flex-wrap items-end gap-3">
@@ -478,7 +478,7 @@ function PayrollTable({
   return (
     <div className="space-y-2">
       <h2 className="text-[13px] font-semibold text-foreground px-1">{title}</h2>
-      <div className="surface-ops overflow-x-auto">
+      <div className="surface-ops app-table-flush overflow-x-auto">
         <div className="min-w-[2400px]">
           <table className="ops-table w-full text-[12px]">
             <thead>

@@ -310,7 +310,7 @@ function BotJoinReportPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <div className="surface-card p-4 space-y-3">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="space-y-1">

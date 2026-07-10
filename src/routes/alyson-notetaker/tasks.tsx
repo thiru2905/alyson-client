@@ -253,7 +253,7 @@ function TasksPage() {
         }
       />
 
-      <div className="px-5 md:px-8 py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5">
         <div className="surface-card p-4 space-y-4">
           <div className="space-y-1">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Meeting window</span>

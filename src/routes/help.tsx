@@ -220,7 +220,7 @@ function HelpPage() {
         title="Help & docs"
         description="Everything you need to operate confidently — onboarding, Notetaker, calendar, handover docs, workspace activity, time tracking, payroll, equity, and support."
       />
-      <div className="px-5 md:px-8 py-4 md:py-5 space-y-4 max-w-5xl mx-auto">
+      <div className="app-page-gutter py-4 md:py-5 space-y-4 max-w-5xl mx-auto">
         <div className="relative max-w-xl">
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input

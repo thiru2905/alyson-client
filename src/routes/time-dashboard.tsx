@@ -329,7 +329,7 @@ function TimeDashboardPage() {
 
   return (
     <TimeDashboardRbacGate>
-    <div className="ops-dense">
+    <div className="ops-dense flex flex-col flex-1 min-h-0">
       {showingUserDetail ? <Outlet /> : null}
       {!showingUserDetail ? (
         <>
@@ -411,7 +411,7 @@ function TimeDashboardPage() {
             }
           />
 
-          <div className="px-5 md:px-8 py-6 space-y-5">
+          <div className="app-page-gutter pt-6 pb-4 space-y-5 shrink-0">
             <FetchingBar active={isBusy && !coldLoad} />
 
             {statusBanner ? (
@@ -441,7 +441,6 @@ function TimeDashboardPage() {
             ) : null}
 
             {coldLoad ? (
-              <>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div key={i} className="surface-card p-4 space-y-2">
@@ -450,8 +449,6 @@ function TimeDashboardPage() {
                     </div>
                   ))}
                 </div>
-                <TimeDashboardTableSkeleton />
-              </>
             ) : table.error && !table.data ? null : (
               <>
             {data?.warnings?.length && !showingStaleRange ? (
@@ -528,10 +525,24 @@ function TimeDashboardPage() {
               </div>
             ) : null}
 
-            <div className="relative min-h-[12rem]">
+            {employeeRollups.length === 0 && !showingStaleRange && !coldLoad && !(table.error && !table.data) ? (
+              <EmptyState icon={Clock} title="No employees" description="No Time Doctor users matched your search." />
+            ) : null}
+              </>
+            )}
+          </div>
+
+          {coldLoad ? (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <TimeDashboardTableSkeleton />
+            </div>
+          ) : null}
+
+          {!coldLoad && !(table.error && !table.data) && employeeRollups.length > 0 ? (
+            <div className="relative flex-1 min-h-0 flex flex-col">
               {showingStaleRange ? (
                 <div
-                  className="absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-10"
+                  className="absolute inset-0 z-10 bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-10"
                   aria-hidden
                 >
                   <span className="text-[12px] text-muted-foreground bg-paper border border-border px-3 py-1.5 rounded-full shadow-sm inline-flex items-center gap-1.5">
@@ -543,11 +554,11 @@ function TimeDashboardPage() {
               <div
                 className={
                   showingStaleRange
-                    ? "opacity-55 pointer-events-none select-none transition-opacity duration-300"
-                    : "transition-opacity duration-300"
+                    ? "flex flex-1 min-h-0 flex-col opacity-55 pointer-events-none select-none transition-opacity duration-300"
+                    : "flex flex-1 min-h-0 flex-col transition-opacity duration-300"
                 }
               >
-            <TableScroll>
+            <TableScroll fill>
               <table className="ops-table w-full table-fixed">
                 <colgroup>
                   <col className="w-[3.25rem]" />
@@ -557,7 +568,7 @@ function TimeDashboardPage() {
                   <col className="w-[6rem]" />
                   <col className="w-[6.5rem]" />
                 </colgroup>
-                <thead>
+                <thead className="sticky top-0 z-[1] bg-[var(--ops-paper)]">
                   <tr>
                     <th align="center" className="whitespace-nowrap">
                       Medal
@@ -714,13 +725,7 @@ function TimeDashboardPage() {
             </TableScroll>
               </div>
             </div>
-
-            {employeeRollups.length === 0 && !showingStaleRange && (
-              <EmptyState icon={Clock} title="No employees" description="No Time Doctor users matched your search." />
-            )}
-              </>
-            )}
-          </div>
+          ) : null}
         </>
       ) : null}
     </div>

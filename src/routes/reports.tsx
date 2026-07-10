@@ -55,7 +55,7 @@ function ReportsPage() {
         description="KPI catalog and hour-by-hour employee activity (Time Doctor + Workspace), with search and custom time windows."
       />
 
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-6">
+      <div className="app-page-gutter py-6 md:py-7 space-y-6">
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
           <button
             type="button"

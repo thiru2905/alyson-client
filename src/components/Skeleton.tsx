@@ -12,7 +12,7 @@ export function Shimmer({ className = "" }: { className?: string }) {
 
 export function PageSkeleton() {
   return (
-    <div className="px-5 md:px-8 py-7 space-y-6 animate-in fade-in">
+    <div className="app-page-gutter py-7 space-y-6 animate-in fade-in">
       <div className="space-y-2">
         <Shimmer className="h-3 w-24" />
         <Shimmer className="h-8 w-72" />
@@ -56,8 +56,8 @@ export function FetchingBar({ active }: { active: boolean }) {
 /** Table-shaped shimmer for Time Dashboard first paint. */
 export function TimeDashboardTableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
-    <div className="surface-card overflow-hidden animate-in fade-in duration-300">
-      <div className="border-b border-border px-4 py-3 flex gap-3 items-center">
+    <div className="surface-ops app-table-shell overflow-hidden animate-in fade-in duration-300">
+      <div className="border-b border-border px-4 py-3 flex gap-3 items-center min-w-[640px]">
         <Shimmer className="h-4 w-10 shrink-0" />
         <Shimmer className="h-4 flex-1 max-w-[12rem]" />
         <Shimmer className="h-4 w-16 ml-auto hidden sm:block" />
@@ -66,7 +66,7 @@ export function TimeDashboardTableSkeleton({ rows = 8 }: { rows?: number }) {
         <Shimmer className="h-4 w-16 hidden sm:block" />
       </div>
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="px-4 py-3 border-b border-border/50 flex items-center gap-3">
+        <div key={i} className="px-4 py-2.5 border-b border-border/50 flex items-center gap-3 min-w-[640px]">
           <Shimmer className="h-5 w-5 rounded-full shrink-0" />
           <div className="flex-1 min-w-0 space-y-1.5">
             <Shimmer className="h-3.5 w-36 max-w-full" />

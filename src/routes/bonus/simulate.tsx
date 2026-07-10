@@ -21,7 +21,7 @@ function BonusSimulatePage() {
   const allocation = useMemo(() => allocateBonus(MOCK_EMPLOYEES, normalized), [normalized]);
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-6">
+    <div className="app-page-gutter py-6 space-y-6">
       <div className="surface-card p-4">
         <div className="font-display text-lg">Simulation</div>
         <div className="text-[12px] text-muted-foreground mt-1">
@@ -115,7 +115,7 @@ function BonusSimulatePage() {
         </div>
       </div>
 
-      <div className="surface-ops overflow-x-auto">
+      <div className="surface-ops app-table-flush overflow-x-auto">
         <div className="min-w-[820px]">
           <table className="ops-table w-full">
             <thead>

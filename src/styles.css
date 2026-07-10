@@ -399,6 +399,59 @@
   border-radius: calc(var(--radius) - 2px);
 }
 
+/* App pages: asymmetric gutter — flush to sidebar, breathe on the right */
+.app-page-gutter {
+  padding-right: 1.25rem;
+  padding-left: 1.25rem;
+}
+@media (min-width: 768px) {
+  .app-page-gutter {
+    padding-right: 2rem;
+    padding-left: 1.5rem;
+  }
+}
+
+.app-table-flush {
+  margin-inline: -1.25rem;
+  border-left-width: 0;
+  border-right-width: 0;
+  border-radius: 0;
+}
+@media (min-width: 768px) {
+  .app-table-flush {
+    margin-inline: -1.5rem -2rem;
+  }
+}
+
+.app-table-shell {
+  width: 100%;
+  margin: 0;
+  border-left-width: 0;
+  border-right-width: 0;
+  border-bottom-width: 0;
+  border-radius: 0;
+}
+
+.app-table-fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-table-shell .ops-table th,
+.app-table-shell .ops-table td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.app-table-shell .ops-table th:first-child,
+.app-table-shell .ops-table td:first-child {
+  padding-left: 1rem;
+}
+
+.app-table-shell .ops-table tbody tr:last-child {
+  border-bottom-width: 0;
+}
+
 /* Dense ops layout: tighter typography for tables and operational screens */
 .ops-dense {
   font-feature-settings: "tnum", "ss01";
@@ -608,7 +661,6 @@ input[type="week"] {
 .app-sidebar-nav-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--sidebar-border) 90%, transparent) transparent;
-  scrollbar-gutter: stable;
 }
 
 .app-sidebar-nav-scroll::-webkit-scrollbar {

@@ -84,7 +84,7 @@ function AlysonNotetakerPage() {
     return (
       <div className="ops-dense">
         <PageHeader eyebrow="Operations" title="Alyson Notetaker" description="Recall.ai meeting bot + live transcript + notes." dense />
-        <div className="px-5 md:px-8 py-6">
+        <div className="app-page-gutter py-6">
           <div className="surface-card p-5">
             <div className="font-medium">Unable to load Alyson Notetaker</div>
             <div className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{msg}</div>
@@ -208,7 +208,7 @@ function AlysonNotetakerPage() {
           </div>
         }
       />
-      <div className="px-5 md:px-8 py-6">
+      <div className="app-page-gutter py-6">
         {!hasRecallConfig && (
           <div className="surface-card p-4 border border-border mb-5">
             <div className="font-medium text-[13px]">Server not configured</div>

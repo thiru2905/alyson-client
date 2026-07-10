@@ -62,7 +62,7 @@ function PerformancePage() {
           </>
         }
       />
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-6">
+      <div className="app-page-gutter py-6 md:py-7 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Stat label="Avg rating" value={avgRating ? avgRating.toFixed(2) : "—"} />
           <Stat label="Submitted reviews" value={`${submitted} / ${reviewRows.length}`} />

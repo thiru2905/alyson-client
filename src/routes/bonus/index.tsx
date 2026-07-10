@@ -148,7 +148,7 @@ function BonusEmployeesPage() {
   const saving = bonusM.isPending || shareM.isPending || voidBonusM.isPending || voidShareM.isPending;
 
   return (
-    <div className="px-5 md:px-8 py-6 space-y-5">
+    <div className="app-page-gutter py-6 space-y-5">
       <FetchingBar active={q.isFetching} />
 
       <div className="surface-card p-4 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -212,7 +212,7 @@ function BonusEmployeesPage() {
         </div>
       </div>
 
-      <div className="surface-ops overflow-x-auto">
+      <div className="surface-ops app-table-flush overflow-x-auto">
         <div className="min-w-[960px]">
           <table className="ops-table w-full">
             <thead>

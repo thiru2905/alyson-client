@@ -36,7 +36,7 @@ function AdminPage() {
   return (
     <div>
       <PageHeader eyebrow="Admin" title="Workspace settings" description="Super-admin controls for the entire Alyson HR workspace." />
-      <div className="px-5 md:px-8 py-6 md:py-7 space-y-6">
+      <div className="app-page-gutter py-6 md:py-7 space-y-6">
         <div className="surface-card p-5">
           <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">Your roles</div>
           <div className="mt-2 flex flex-wrap gap-2">
