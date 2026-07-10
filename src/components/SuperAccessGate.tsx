@@ -1,7 +1,9 @@
 import { Loader2, Shield } from "lucide-react";
+import { useEffect } from "react";
 import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
 import { isSuperAccessEmail } from "@/lib/super-access-constants";
 import { useAuth } from "@/lib/auth";
+import { resetAppScroll } from "@/lib/app-scroll";
 
 export function SuperAccessGate({
   children,
@@ -14,9 +16,13 @@ export function SuperAccessGate({
   const accessQ = useSuperAccess();
   const allowed = accessQ.data?.allowed === true || isSuperAccessEmail(user?.email);
 
+  useEffect(() => {
+    if (!accessQ.isLoading && allowed) resetAppScroll();
+  }, [accessQ.isLoading, allowed]);
+
   if (accessQ.isLoading) {
     return (
-      <div className="app-page-gutter py-16 flex justify-center">
+      <div className="app-page-gutter pt-6 pb-4 flex justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );

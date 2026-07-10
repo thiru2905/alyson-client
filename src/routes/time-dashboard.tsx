@@ -21,6 +21,7 @@ import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { useTimeDashboardNavVisible, useTimeDashboardAccess, filterRowsForTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
 import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
+import { resetAppScroll } from "@/lib/app-scroll";
 
 export const Route = createFileRoute("/time-dashboard")({
   head: () => ({ meta: [{ title: "Time Dashboard — Alyson HR" }] }),
@@ -93,6 +94,10 @@ function TimeDashboardPage() {
   const isBusy = table.isFetching;
   const showingStaleRange = table.isPlaceholderData && isBusy;
   const coldLoad = table.isPending && !table.data;
+
+  useEffect(() => {
+    if (canAccess) resetAppScroll();
+  }, [canAccess]);
 
   const data = table.data as
     | {
@@ -326,7 +331,7 @@ function TimeDashboardPage() {
 
   return (
     <TimeDashboardRbacGate>
-    <div className="ops-dense min-h-[50vh]">
+    <div className="ops-dense min-h-0">
       {showingUserDetail ? <Outlet /> : null}
       {!showingUserDetail ? (
         <>
@@ -334,6 +339,7 @@ function TimeDashboardPage() {
             eyebrow="Operations"
             title="Time Dashboard"
             description="Time Doctor hours by employee. Click any row to open a full time detail page."
+            dense
             actions={
               <div className="flex items-center gap-2 flex-wrap">
                 <button
@@ -352,35 +358,6 @@ function TimeDashboardPage() {
                   <Download className="h-3.5 w-3.5" />
                   Export CSV
                 </button>
-                <Link
-                  to="/time-dashboard/pacing"
-                  search={{ start: appliedStart, end: appliedEnd, day: undefined }}
-                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted"
-                  title="Current week pacing — employees under 35h with hours remaining"
-                >
-                  <TrendingDown className="h-3.5 w-3.5" />
-                  Weekly Pacing
-                </Link>
-                <Link
-                  to="/time-dashboard/monthly-pacing"
-                  search={{ month: undefined, start: undefined, end: undefined }}
-                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted"
-                  title="Month-to-date pacing — workdays in month × 7h target"
-                >
-                  <Calendar className="h-3.5 w-3.5" />
-                  Monthly Pacing
-                </Link>
-                <label className="h-8 px-2 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted cursor-pointer disabled:opacity-50">
-                  <span className="text-muted-foreground whitespace-nowrap">Month</span>
-                  <input
-                    type="month"
-                    value={underHoursMonth}
-                    onChange={(e) => setUnderHoursMonth(e.target.value)}
-                    disabled={underHoursPdfLoading || coldLoad}
-                    className="bg-transparent text-xs outline-none w-[7.5rem] disabled:opacity-60"
-                    aria-label="Month for under-hours weekly PDF"
-                  />
-                </label>
                 <button
                   onClick={() => void exportUnderHoursPdf()}
                   disabled={underHoursPdfLoading || coldLoad || showingStaleRange}
@@ -406,6 +383,36 @@ function TimeDashboardPage() {
               isBusy={isBusy}
               draftMatchesApplied={draftMatchesApplied}
             />
+
+            <div className="flex flex-wrap items-center gap-2 -mt-2">
+              <Link
+                to="/time-dashboard/pacing"
+                search={{ start: appliedStart, end: appliedEnd, day: undefined }}
+                className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
+              >
+                <TrendingDown className="h-3.5 w-3.5" />
+                Weekly Pacing
+              </Link>
+              <Link
+                to="/time-dashboard/monthly-pacing"
+                search={{ month: undefined, start: undefined, end: undefined }}
+                className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                Monthly Pacing
+              </Link>
+              <label className="h-7 px-3 rounded-full text-[11px] font-medium border border-border bg-paper text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 cursor-pointer">
+                <span>Month PDF</span>
+                <input
+                  type="month"
+                  value={underHoursMonth}
+                  onChange={(e) => setUnderHoursMonth(e.target.value)}
+                  disabled={underHoursPdfLoading || coldLoad}
+                  className="bg-transparent text-[11px] outline-none w-[6.5rem] disabled:opacity-60"
+                  aria-label="Month for under-hours weekly PDF"
+                />
+              </label>
+            </div>
 
             {statusBanner ? (
               <div

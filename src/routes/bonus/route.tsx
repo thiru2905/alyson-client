@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { BarChart3, Gift, FileText } from "lucide-react";
 import { SuperAccessGate } from "@/components/SuperAccessGate";
+import { useAppScrollTop } from "@/lib/app-scroll";
 
 export const Route = createFileRoute("/bonus")({
   head: () => ({ meta: [{ title: "Bonus — Alyson HR" }] }),
@@ -8,9 +9,11 @@ export const Route = createFileRoute("/bonus")({
 });
 
 function BonusLayout() {
+  useAppScrollTop();
+
   return (
     <SuperAccessGate moduleLabel="Bonus">
-      <div className="ops-dense">
+      <div className="ops-dense w-full">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 app-page-gutter pt-5 pb-4 border-b border-border">
           <div className="min-w-0">
             <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">Money</div>

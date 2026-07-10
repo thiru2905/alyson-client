@@ -1,9 +1,11 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { BarChart3, DollarSign, FileText, Loader2 } from "lucide-react";
 import { PayrollGate } from "@/components/PayrollGate";
 import { useAuth } from "@/lib/auth";
 import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
 import { isSuperAccessEmail } from "@/lib/super-access-constants";
+import { useAppScrollTop, resetAppScroll } from "@/lib/app-scroll";
 
 export const Route = createFileRoute("/payroll")({
   head: () => ({ meta: [{ title: "Payroll — Alyson HR" }] }),
@@ -14,10 +16,15 @@ function PayrollLayout() {
   const { canAccessPayroll, user } = useAuth();
   const accessQ = useSuperAccess();
   const canViewRbac = accessQ.data?.allowed === true || isSuperAccessEmail(user?.email);
+  useAppScrollTop();
+
+  useEffect(() => {
+    if (canAccessPayroll) resetAppScroll();
+  }, [canAccessPayroll]);
 
   if (accessQ.isLoading) {
     return (
-      <div className="app-page-gutter py-16 flex justify-center">
+      <div className="app-page-gutter pt-6 pb-4 flex justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -28,7 +35,7 @@ function PayrollLayout() {
   if (!canAccessPayroll) return <PayrollGate />;
 
   return (
-    <div className="ops-dense">
+    <div className="ops-dense w-full">
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 md:gap-6 app-page-gutter pt-5 pb-4 border-b border-border">
         <div className="min-w-0">
           <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium mb-1.5">

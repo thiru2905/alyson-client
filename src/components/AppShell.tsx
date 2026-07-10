@@ -10,6 +10,7 @@ import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { NotificationsPopover } from "@/components/NotificationsPopover";
 import { AppAnnouncementBanner } from "@/components/AppAnnouncementBanner";
+import { resetAppScroll, APP_MAIN_SCROLL_ID } from "@/lib/app-scroll";
 import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
@@ -297,9 +298,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [mobileOpen]);
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.style.height = "100%";
+    return () => {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      document.body.style.height = "";
+    };
+  }, []);
 
   // Cmd+K palette
   useEffect(() => {
@@ -313,10 +320,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // Keep page content pinned to the top on navigation (avoids centered lock screens leaving scroll offset).
+  useEffect(() => {
+    resetAppScroll();
+  }, [location.pathname]);
+
   return (
-    <div className="min-h-screen flex flex-col w-full max-w-[100vw] overflow-x-hidden bg-background text-foreground">
+    <div className="h-[100dvh] max-h-[100dvh] flex flex-col w-full max-w-[100vw] overflow-hidden bg-background text-foreground">
       <AppAnnouncementBanner visible={superAccessNavVisible} />
-      <div className="flex flex-1 min-h-0 w-full min-w-0">
+      <div className="flex flex-1 min-h-0 w-full min-w-0 overflow-hidden">
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
@@ -378,10 +390,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
+          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40 h-full",
           resizingSidebar ? "" : "transition-[width,transform] duration-200",
-          "md:sticky md:top-0 md:h-screen md:max-h-screen md:min-h-0",
-          "max-md:fixed max-md:inset-y-0 max-md:left-0",
+          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full",
           mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         ].join(" ")}
         style={{ width: asideWidth }}
@@ -571,7 +582,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 w-full flex flex-col bg-background">
+      <main className="flex flex-1 min-w-0 min-h-0 w-full flex-col bg-background overflow-hidden">
         <TopBar
           onAi={() => setAiOpen((o) => !o)}
           onMenu={() => setMobileOpen(true)}
@@ -581,7 +592,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           themePalette={palette}
           onThemePalette={setPalette}
         />
-        <div className="flex-1 min-h-0">{children}</div>
+        <div
+          id={APP_MAIN_SCROLL_ID}
+          className="flex-1 min-h-0 w-full min-w-0 overflow-y-auto overflow-x-hidden"
+        >
+          {children}
+        </div>
       </main>
       </div>
 
@@ -616,7 +632,7 @@ function TopBar({
 }) {
   const [themeOpen, setThemeOpen] = useState(false);
   return (
-    <div className="h-12 border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-20 flex items-center px-3 md:px-5 gap-2 md:gap-3">
+    <div className="h-12 shrink-0 border-b border-border bg-background/80 backdrop-blur-sm z-20 flex items-center px-3 md:px-5 gap-2 md:gap-3">
       <button onClick={onMenu} className="md:hidden h-8 w-8 grid place-items-center rounded-md hover:bg-muted text-muted-foreground" aria-label="Open menu">
         <Menu className="h-4 w-4" />
       </button>

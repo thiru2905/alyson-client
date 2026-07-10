@@ -27,6 +27,7 @@ import {
   fmtWorkspaceWhen,
   isoForInput,
 } from "@/lib/workspace-activity-range";
+import { useAppScrollTop } from "@/lib/app-scroll";
 
 const WorkspaceActivityCharts = lazy(() =>
   import("@/components/WorkspaceActivityCharts").then((m) => ({ default: m.WorkspaceActivityCharts })),
@@ -63,6 +64,7 @@ function WorkspaceActivityPage() {
 
 function WorkspaceActivityPageContent() {
   const superAuth = useSuperAccessAuth();
+  useAppScrollTop();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const showingUserDetail =

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { ClerkProvider, useAuth as useClerkAuth, useClerk, useUser as useClerkUser } from "@clerk/clerk-react";
+import { resetAppScroll } from "@/lib/app-scroll";
 import {
   PAYROLL_CODE,
   PAYROLL_UNLOCK_KEY,
@@ -104,6 +105,7 @@ function AuthInner({ children }: { children: ReactNode }) {
     if (!tryUnlockModuleCode(code, TIME_DASHBOARD_CODE)) return false;
     setTimeDashboardUnlocked(true);
     writeModuleUnlocked(TIME_DASHBOARD_UNLOCK_KEY, true);
+    resetAppScroll();
     return true;
   }, []);
 
@@ -116,6 +118,7 @@ function AuthInner({ children }: { children: ReactNode }) {
     if (!tryUnlockModuleCode(code, PAYROLL_CODE)) return false;
     setPayrollUnlocked(true);
     writeModuleUnlocked(PAYROLL_UNLOCK_KEY, true);
+    resetAppScroll();
     return true;
   }, []);
 

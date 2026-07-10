@@ -1,8 +1,10 @@
 import { Loader2, Users } from "lucide-react";
+import { useEffect } from "react";
 import { useTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
 import { hasTimeDashboardFullScope } from "@/lib/time-dashboard-access-constants";
 import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
 import { useAuth } from "@/lib/auth";
+import { resetAppScroll } from "@/lib/app-scroll";
 
 /** RBAC gate — super admins and roster managers only (before the access-code lock). */
 export function TimeDashboardRbacGate({ children }: { children: React.ReactNode }) {
@@ -17,9 +19,13 @@ export function TimeDashboardRbacGate({ children }: { children: React.ReactNode 
     accessQ.data?.level === "full" ||
     accessQ.data?.level === "team";
 
+  useEffect(() => {
+    if (!accessQ.isLoading && allowed) resetAppScroll();
+  }, [accessQ.isLoading, allowed]);
+
   if (accessQ.isLoading) {
     return (
-      <div className="app-page-gutter py-16 flex justify-center">
+      <div className="app-page-gutter pt-6 pb-4 flex justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
