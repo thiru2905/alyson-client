@@ -129,6 +129,11 @@ function isNavItemActive(pathname: string, item: NavItem): boolean {
   return item.end ? pathname === item.to : pathname.startsWith(item.to);
 }
 
+function clampNavScrollTop(nav: HTMLElement, scrollTop: number) {
+  const max = Math.max(0, nav.scrollHeight - nav.clientHeight);
+  return Math.min(max, Math.max(0, scrollTop));
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
@@ -149,6 +154,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [pendingRole, setPendingRole] = useState<AppRole | null>(null);
   const [groupsCollapsed, setGroupsCollapsed] = useState<Partial<Record<NavGroup, boolean>>>({});
   const prevPathRef = useRef<string | null>(null);
+  const navScrollRef = useRef<HTMLElement>(null);
+  const navScrollTopRef = useRef(0);
 
   const visible = NAV.filter((n) => {
     if (n.superAccess) return superAccessNavVisible;
@@ -257,6 +264,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }, [location.pathname, grouped]);
 
+  // Keep sidebar scroll position when switching modules (avoid jumping to top).
+  useEffect(() => {
+    const top = navScrollTopRef.current;
+    const frame = requestAnimationFrame(() => {
+      const nav = navScrollRef.current;
+      if (nav) nav.scrollTop = clampNavScrollTop(nav, top);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.pathname, groupsCollapsed]);
+
+  const onSidebarNavScroll = () => {
+    const nav = navScrollRef.current;
+    if (nav) navScrollTopRef.current = nav.scrollTop;
+  };
+
   const toggleCollapsed = () => {
     setCollapsed((c) => {
       const next = !c;
@@ -356,9 +378,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
+          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
           resizingSidebar ? "" : "transition-[width,transform] duration-200",
-          "md:sticky md:top-0 md:h-screen md:translate-x-0",
+          "md:sticky md:top-0 md:h-screen md:max-h-screen md:min-h-0",
           "max-md:fixed max-md:inset-y-0 max-md:left-0",
           mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         ].join(" ")}
@@ -399,7 +421,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        <nav className="flex-1 px-2 py-3 space-y-3 overflow-y-auto">
+        <nav
+          ref={navScrollRef}
+          onScroll={onSidebarNavScroll}
+          className="flex-1 min-h-0 px-2 py-3 space-y-3 overflow-y-auto overflow-x-hidden app-sidebar-nav-scroll"
+        >
           {NAV_GROUPS.map((g) => {
             const items = grouped[g];
             if (!items?.length) return null;
@@ -539,9 +565,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }
             }
           }}
-          className="hidden md:block absolute top-0 right-0 z-20 h-full w-2 -mr-px cursor-col-resize group"
+          className="hidden md:block absolute top-0 -right-[2px] z-30 h-full w-[6px] cursor-col-resize group"
         >
-          <div className="absolute inset-y-0 right-0 w-px bg-transparent group-hover:bg-border group-active:bg-foreground/30 transition-colors" />
+          <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-border/0 transition-colors group-hover:bg-border/80 group-active:bg-foreground/30" />
         </div>
       </aside>
 
