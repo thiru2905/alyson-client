@@ -9,6 +9,7 @@ import {
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { NotificationsPopover } from "@/components/NotificationsPopover";
+import { AppAnnouncementBanner } from "@/components/AppAnnouncementBanner";
 import { CommandPalette } from "@/components/CommandPalette";
 import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
@@ -28,33 +29,6 @@ type NavItem = {
   superAccess?: boolean;
   group: "Workspace" | "People" | "Money" | "Ops" | "Admin";
 };
-
-const SUPER_ACCESS_BADGE_ROUTES = new Set<string>([
-  "/payroll",
-  "/bonus",
-  "/equity",
-  "/workspace-activity",
-  "/leave",
-  "/alyson-notetaker/meeting-hours",
-]);
-
-const NEW_BADGE_ROUTES = new Set<string>([
-  "/alyson-brain",
-  "/time-dashboard",
-  "/alyson-notetaker",
-  "/alyson-notetaker/calendar",
-  "/alyson-notetaker/meeting-list",
-  "/alyson-notetaker/analytics",
-  "/alyson-notetaker/bot-join-report",
-  "/alyson-notetaker/unified-meetings",
-  "/alyson-notetaker/tasks",
-  "/employee-onboarding",
-  // "/boarding", — superseded by Employee Onboarding
-  "/handover-documentation",
-  "/employee-scoring",
-  "/reports",
-  "/help",
-]);
 
 const NAV: NavItem[] = [
   { to: "/alyson-brain", label: "Alyson Brain", icon: Sparkles, group: "Workspace", roles: ["super_admin", "ceo", "hr", "manager"] },
@@ -90,11 +64,11 @@ const NAV: NavItem[] = [
 
 const ROLES: AppRole[] = ["super_admin", "ceo", "finance", "hr", "manager", "employee"];
 const SIDEBAR_COLLAPSED_KEY = "alyson-sidebar-collapsed";
-const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width";
+const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width-v2";
 const NAV_GROUPS_COLLAPSED_KEY = "alyson-nav-groups-collapsed";
-const SIDEBAR_WIDTH_MIN = 220;
-const SIDEBAR_WIDTH_MAX = 420;
-const SIDEBAR_WIDTH_DEFAULT = 288;
+const SIDEBAR_WIDTH_MIN = 200;
+const SIDEBAR_WIDTH_MAX = 320;
+const SIDEBAR_WIDTH_DEFAULT = 236;
 const SIDEBAR_WIDTH_COLLAPSED = 60;
 const NAV_GROUPS = ["Workspace", "People", "Money", "Ops", "Admin"] as const;
 type NavGroup = (typeof NAV_GROUPS)[number];
@@ -318,7 +292,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen flex w-full bg-background text-foreground">
+    <div className="min-h-screen flex flex-col w-full bg-background text-foreground">
+      <AppAnnouncementBanner visible={superAccessNavVisible} />
+      <div className="flex flex-1 min-h-0 w-full">
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
@@ -469,18 +445,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         >
                           <Icon className="h-4 w-4 shrink-0" />
                           {showLabel && (
-                            <span className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
-                              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                              {SUPER_ACCESS_BADGE_ROUTES.has(item.to) ? (
-                                <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 px-1.5 py-px text-[9px] leading-none font-medium text-violet-700 dark:text-violet-300 whitespace-nowrap">
-                                  Super access
-                                </span>
-                              ) : NEW_BADGE_ROUTES.has(item.to) ? (
-                                <span className="shrink-0 rounded-full border border-amber-500/40 bg-amber-500/15 px-1.5 py-px text-[9px] leading-none font-medium text-amber-700 dark:text-amber-300 whitespace-nowrap">
-                                  New
-                                </span>
-                              ) : null}
-                            </span>
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
                           )}
                         </Link>
                       );
@@ -593,6 +558,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div className="flex-1 min-h-0">{children}</div>
       </main>
+      </div>
 
       {aiOpen && <AiPanel onClose={() => setAiOpen(false)} pagePath={location.pathname} />}
       <MiniModuleAiFab

@@ -22,14 +22,6 @@ export const Route = createFileRoute("/alyson-notetaker/meeting-hours")({
   component: MeetingHoursRoute,
 });
 
-function SuperAccessBadge() {
-  return (
-    <span className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[10px] leading-none font-medium text-violet-700 dark:text-violet-300">
-      Super access
-    </span>
-  );
-}
-
 function MeetingHoursRoute() {
   return (
     <SuperAccessGate moduleLabel="Meeting Hours">
@@ -94,16 +86,11 @@ function formatHours(n: number) {
 const DAY_COL_CLASS = "border-r border-border/70";
 const TOTAL_COL_CLASS = "border-l border-border";
 
-function DayCell({ count, hours }: { count: number; hours: number }) {
-  if (count <= 0) {
+function DayCell({ hours }: { hours: number }) {
+  if (hours <= 0) {
     return <span className="text-muted-foreground/50">—</span>;
   }
-  return (
-    <div className="leading-tight">
-      <div className="font-medium tabular-nums">{count}</div>
-      <div className="text-[10px] text-muted-foreground tabular-nums">{formatHours(hours)}</div>
-    </div>
-  );
+  return <span className="font-medium tabular-nums">{formatHours(hours)}</span>;
 }
 
 function matchesEmployeeSearch(row: MeetingHoursEmployeeRow, query: string): boolean {
@@ -424,12 +411,11 @@ function MeetingHoursContent({
                             key={cell.day}
                             className={`px-2 py-2 text-center align-top tabular-nums ${DAY_COL_CLASS}`}
                           >
-                            <DayCell count={cell.meetingCount} hours={cell.hours} />
+                            <DayCell hours={cell.hours} />
                           </td>
                         ))}
-                        <td className={`px-3 py-2 text-right align-top ${TOTAL_COL_CLASS}`}>
-                          <div className="font-medium">{row.totalMeetings}</div>
-                          <div className="text-[10px] text-muted-foreground">{formatHours(row.totalHours)}</div>
+                        <td className={`px-3 py-2 text-right align-top font-medium tabular-nums ${TOTAL_COL_CLASS}`}>
+                          {formatHours(row.totalHours)}
                         </td>
                         <td className="px-3 py-2 text-right align-top font-medium tabular-nums">
                           {formatHours(row.avgHoursPerDay)}
@@ -628,7 +614,6 @@ function MeetingHoursPage() {
       <PageHeader
         eyebrow="Operations"
         title="Meeting hours"
-        titleTag={<SuperAccessBadge />}
         description={
           coldLoad
             ? "Connecting to Google Calendar…"

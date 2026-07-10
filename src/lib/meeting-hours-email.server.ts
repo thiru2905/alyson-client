@@ -59,18 +59,18 @@ function formatHours(n: number): string {
   return n < 10 ? `${n.toFixed(1)}h` : `${Math.round(n * 10) / 10}h`;
 }
 
-function dayCellHtml(count: number, hours: number): string {
-  if (count <= 0) {
+function dayCellHtml(hours: number): string {
+  if (hours <= 0) {
     return `<span style="color:#9ca3af;">—</span>`;
   }
-  return `<div style="line-height:1.25;"><div style="font-weight:600;">${count}</div><div style="font-size:10px;color:#6b7280;">${esc(formatHours(hours))}</div></div>`;
+  return `<div style="font-weight:600;">${esc(formatHours(hours))}</div>`;
 }
 
 function employeeRowHtml(row: MeetingHoursEmployeeRow, days: string[]): string {
   const dayCells = days
     .map((day) => {
       const cell = row.days.find((d) => d.day === day) ?? { meetingCount: 0, hours: 0 };
-      return `<td style="padding:6px 4px;text-align:center;border-bottom:1px solid #f3f4f6;vertical-align:top;">${dayCellHtml(cell.meetingCount, cell.hours)}</td>`;
+      return `<td style="padding:6px 4px;text-align:center;border-bottom:1px solid #f3f4f6;vertical-align:top;">${dayCellHtml(cell.hours)}</td>`;
     })
     .join("");
 
@@ -80,10 +80,7 @@ function employeeRowHtml(row: MeetingHoursEmployeeRow, days: string[]): string {
       <div style="font-size:10px;color:#6b7280;">${esc(row.email)}</div>
     </td>
     ${dayCells}
-    <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f3f4f6;vertical-align:top;">
-      <div style="font-weight:600;">${row.totalMeetings}</div>
-      <div style="font-size:10px;color:#6b7280;">${esc(formatHours(row.totalHours))}</div>
-    </td>
+    <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f3f4f6;font-weight:600;vertical-align:top;">${esc(formatHours(row.totalHours))}</td>
     <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f3f4f6;font-weight:600;vertical-align:top;">${esc(formatHours(row.avgHoursPerDay))}</td>
   </tr>`;
 }
@@ -151,7 +148,7 @@ export function buildMeetingHoursEmailHtml(report: MeetingHoursReport): string {
         </table>
       </div>
       <p style="margin:16px 0 0;font-size:12px;color:#6b7280;">
-        Cell = meeting count · hours that day. Generated ${esc(new Date(report.generatedAt).toLocaleString("en-IN", { timeZone: report.timeZone }))}.
+        Cell = meeting hours that day. Generated ${esc(new Date(report.generatedAt).toLocaleString("en-IN", { timeZone: report.timeZone }))}.
       </p>
       <p style="margin:12px 0 0;font-size:12px;">
         <a href="${esc(`${appUrl}/alyson-notetaker/meeting-hours`)}" style="color:#4f46e5;text-decoration:none;">Open Meeting Hours in Alyson</a>
