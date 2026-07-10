@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 
 const TOUR_STEP_MS = 5000;
 
+const NAV_GROUPS = ["Workspace", "People", "Money", "Ops"] as const;
+
 const HELP_ITEM: LandingModule = {
   group: "Ops",
   name: "Help",
