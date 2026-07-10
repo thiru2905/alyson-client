@@ -432,23 +432,26 @@
   border-radius: 0;
 }
 
-.app-table-fill {
-  display: flex;
-  flex-direction: column;
+.app-table-card {
+  background: var(--ops-paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 
-.app-table-shell .ops-table th,
-.app-table-shell .ops-table td {
+.app-table-card .ops-table thead th {
+  background: color-mix(in oklab, var(--ops-paper) 82%, var(--muted) 18%);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-table-card .ops-table th,
+.app-table-card .ops-table td {
   padding-top: 7px;
   padding-bottom: 7px;
 }
 
-.app-table-shell .ops-table th:first-child,
-.app-table-shell .ops-table td:first-child {
-  padding-left: 1rem;
-}
-
-.app-table-shell .ops-table tbody tr:last-child {
+.app-table-card .ops-table tbody tr:last-child {
   border-bottom-width: 0;
 }
 

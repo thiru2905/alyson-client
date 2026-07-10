@@ -314,9 +314,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] flex flex-col w-full max-w-[100vw] overflow-hidden bg-background text-foreground">
+    <div className="min-h-screen flex flex-col w-full max-w-[100vw] overflow-x-hidden bg-background text-foreground">
       <AppAnnouncementBanner visible={superAccessNavVisible} />
-      <div className="flex flex-1 min-h-0 w-full min-w-0 overflow-hidden">
+      <div className="flex flex-1 min-h-0 w-full min-w-0">
       {mobileOpen && (
         <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
@@ -378,9 +378,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <aside
         className={[
-          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40 h-full",
+          "relative overflow-hidden border-r border-sidebar-border bg-sidebar flex flex-col shrink-0 z-40",
           resizingSidebar ? "" : "transition-[width,transform] duration-200",
-          "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:h-full max-md:max-h-full",
+          "md:sticky md:top-0 md:h-screen md:max-h-screen md:min-h-0",
+          "max-md:fixed max-md:inset-y-0 max-md:left-0",
           mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
         ].join(" ")}
         style={{ width: asideWidth }}
@@ -570,7 +571,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 w-full flex flex-col bg-background min-h-0 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 min-w-0 w-full flex flex-col bg-background">
         <TopBar
           onAi={() => setAiOpen((o) => !o)}
           onMenu={() => setMobileOpen(true)}
@@ -580,7 +581,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           themePalette={palette}
           onThemePalette={setPalette}
         />
-        <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+        <div className="flex-1 min-h-0">{children}</div>
       </main>
       </div>
 
@@ -1541,24 +1542,10 @@ export function PageHeader({
   );
 }
 
-export function TableScroll({
-  children,
-  className = "",
-  fill = false,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  fill?: boolean;
-}) {
+export function TableScroll({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={[
-        "surface-ops app-table-shell overflow-x-auto",
-        fill ? "app-table-fill flex-1 min-h-0" : "",
-        className,
-      ].join(" ")}
-    >
-      <div className={fill ? "min-w-[640px] min-h-full" : "min-w-[640px]"}>{children}</div>
+    <div className={`app-table-card overflow-x-auto ${className}`}>
+      <div className="min-w-[640px]">{children}</div>
     </div>
   );
 }

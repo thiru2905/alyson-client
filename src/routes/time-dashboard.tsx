@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tan
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PageHeader, TableScroll, EmptyState } from "@/components/AppShell";
-import { FetchingBar, TimeDashboardTableSkeleton } from "@/components/Skeleton";
+import { FetchingBar, TableSkeleton } from "@/components/Skeleton";
 import { TimeDashboardRangePicker } from "@/components/TimeDashboardRangePicker";
 import { fetchTimeDoctorEmployeesTable, fetchTimeDoctorMonthlyUnderHoursReport, type TimeDoctorEmployeeRow } from "@/lib/time-doctor-functions";
 import { downloadTimeDoctorUnderHoursPdf } from "@/lib/time-doctor-under-hours-pdf";
@@ -11,7 +11,7 @@ import {
   formatRangeLabel,
   isIsoDate,
 } from "@/lib/time-dashboard-range";
-import { ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Download, FileText, Loader2, RefreshCw, TrendingDown } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, Calendar, Clock, Download, FileText, Loader2, RefreshCw, Search, TrendingDown } from "lucide-react";
 import { downloadCSV } from "@/lib/csv";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -186,9 +186,6 @@ function TimeDashboardPage() {
     setSortDir(field === "name" ? "asc" : "desc");
   };
 
-  const sortHeaderClass = (field: TimeDashboardSortField) =>
-    sortBy === field ? "text-foreground" : "text-muted-foreground";
-
   const totalRangeHours = useMemo(
     () => employeeRollups.reduce((s, e) => s + (e.rangeSeconds ?? 0), 0) / 3600,
     [employeeRollups],
@@ -329,34 +326,20 @@ function TimeDashboardPage() {
 
   return (
     <TimeDashboardRbacGate>
-    <div className="ops-dense flex flex-col flex-1 min-h-0">
+    <div className="ops-dense min-h-[50vh]">
       {showingUserDetail ? <Outlet /> : null}
       {!showingUserDetail ? (
         <>
           <PageHeader
-            eyebrow="People"
+            eyebrow="Operations"
             title="Time Dashboard"
-            description={
-              coldLoad
-                ? "Connecting to Time Doctor…"
-                : `Time Doctor — ${data?.company?.name ?? "…"}. Period = ${rangeLabel}. Today / weekly / Cal. month use company timezone (${data?.timeZoneLabel ?? "…"}); Cal. month = ${calMonthLabel ?? "1st → today"}. Top 3 medals by ${medalSortLabel}.`
-            }
-            dense
+            description="Time Doctor hours by employee. Click any row to open a full time detail page."
             actions={
-              <>
-                <TimeDashboardRangePicker
-                  start={start}
-                  end={end}
-                  onStartChange={setStart}
-                  onEndChange={setEnd}
-                  onApply={applyRange}
-                  isBusy={isBusy}
-                  draftMatchesApplied={draftMatchesApplied}
-                />
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => table.refetch()}
                   disabled={isBusy}
-                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? "animate-spin" : ""}`} />
                   Refresh
@@ -364,12 +347,30 @@ function TimeDashboardPage() {
                 <button
                   onClick={exportCsv}
                   disabled={!employeeRollups.length || showingStaleRange || coldLoad}
-                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Export
+                  Export CSV
                 </button>
-                <label className="h-8 px-2 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted cursor-pointer disabled:opacity-50">
+                <Link
+                  to="/time-dashboard/pacing"
+                  search={{ start: appliedStart, end: appliedEnd, day: undefined }}
+                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted"
+                  title="Current week pacing — employees under 35h with hours remaining"
+                >
+                  <TrendingDown className="h-3.5 w-3.5" />
+                  Weekly Pacing
+                </Link>
+                <Link
+                  to="/time-dashboard/monthly-pacing"
+                  search={{ month: undefined, start: undefined, end: undefined }}
+                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted"
+                  title="Month-to-date pacing — workdays in month × 7h target"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Monthly Pacing
+                </Link>
+                <label className="h-8 px-2 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted cursor-pointer disabled:opacity-50">
                   <span className="text-muted-foreground whitespace-nowrap">Month</span>
                   <input
                     type="month"
@@ -380,39 +381,31 @@ function TimeDashboardPage() {
                     aria-label="Month for under-hours weekly PDF"
                   />
                 </label>
-                <Link
-                  to="/time-dashboard/pacing"
-                  search={{ start: appliedStart, end: appliedEnd, day: undefined }}
-                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
-                  title="Current week pacing — employees under 35h with hours remaining"
-                >
-                  <TrendingDown className="h-3.5 w-3.5" />
-                  Weekly Pacing
-                </Link>
-                <Link
-                  to="/time-dashboard/monthly-pacing"
-                  search={{ month: undefined, start: undefined, end: undefined }}
-                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted"
-                  title="Month-to-date pacing — workdays in month × 7h target"
-                >
-                  <Calendar className="h-3.5 w-3.5" />
-                  Monthly Pacing
-                </Link>
                 <button
                   onClick={() => void exportUnderHoursPdf()}
                   disabled={underHoursPdfLoading || coldLoad || showingStaleRange}
-                  className="h-8 px-3 rounded-md border border-border text-xs flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
+                  className="h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
                   title="Download PDF listing employees under 35 hours for each week of the selected month"
                 >
                   <FileText className="h-3.5 w-3.5" />
                   {underHoursPdfLoading ? "Building PDF…" : "Under 35h PDF"}
                 </button>
-              </>
+              </div>
             }
           />
 
-          <div className="app-page-gutter pt-6 pb-4 space-y-5 shrink-0">
-            <FetchingBar active={isBusy && !coldLoad} />
+          <FetchingBar active={isBusy && !coldLoad} />
+
+          <div className="app-page-gutter py-6 space-y-5">
+            <TimeDashboardRangePicker
+              start={start}
+              end={end}
+              onStartChange={setStart}
+              onEndChange={setEnd}
+              onApply={applyRange}
+              isBusy={isBusy}
+              draftMatchesApplied={draftMatchesApplied}
+            />
 
             {statusBanner ? (
               <div
@@ -429,33 +422,65 @@ function TimeDashboardPage() {
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
                 ) : null}
                 <span>{statusBanner.text}</span>
-                {statusBanner.tone === "error" ? (
-                  <button
-                    onClick={() => table.refetch()}
-                    className="ml-auto h-7 px-2.5 rounded-md bg-foreground text-background text-[11px] inline-flex items-center gap-1"
-                  >
-                    <RefreshCw className="h-3 w-3" /> Retry
-                  </button>
-                ) : null}
               </div>
             ) : null}
 
-            {coldLoad ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="surface-card p-4 space-y-2">
-                      <div className="h-3 w-24 rounded-md bg-muted/60 animate-pulse" />
-                      <div className="h-7 w-20 rounded-md bg-muted/60 animate-pulse mt-2" />
-                    </div>
-                  ))}
-                </div>
-            ) : table.error && !table.data ? null : (
-              <>
+            {data && !coldLoad ? (
+              <div className="surface-card p-3 text-[12px] text-muted-foreground">
+                {showingStaleRange ? <span className="font-medium text-foreground">Pending range · </span> : null}
+                Period: {rangeLabel}
+                {data.timeZoneLabel ? ` · ${data.timeZoneLabel}` : ""}
+                {data.company?.name ? ` · ${data.company.name}` : ""}
+                {` · Employees: ${employeeRollups.length}`}
+                {` · Total hours: ${totalRangeHours.toFixed(0)}h`}
+                {q.trim() ? ` · Showing: ${employeeRollups.length}` : ""}
+                {` · Top 3 medals by ${medalSortLabel}`}
+              </div>
+            ) : null}
+
+            <div className="relative max-w-sm">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search by name or email…"
+                className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground mr-1">Sort by</span>
+              {SORT_OPTIONS.map((s) => {
+                const active = sortBy === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => applySort(s.key)}
+                    className={
+                      "h-7 px-2.5 rounded-full text-[11px] font-medium border inline-flex items-center gap-1 " +
+                      (active
+                        ? "bg-foreground text-background border-foreground"
+                        : "bg-paper border-border text-muted-foreground hover:text-foreground")
+                    }
+                    title={active ? `Sorted ${sortDir}` : "Click to sort"}
+                  >
+                    {s.label}
+                    {active ? (
+                      sortDir === "asc" ? (
+                        <ArrowUpAZ className="h-3.5 w-3.5" />
+                      ) : (
+                        <ArrowDownAZ className="h-3.5 w-3.5" />
+                      )
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+
             {data?.warnings?.length && !showingStaleRange ? (
               <div className="surface-card p-4">
-                <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">
-                  Notes
-                </div>
+                <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium mb-2">Notes</div>
                 <ul className="text-xs text-muted-foreground space-y-1">
                   {data!.warnings.map((w, i) => (
                     <li key={i}>{w}</li>
@@ -464,280 +489,115 @@ function TimeDashboardPage() {
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Stat label="Employees" value={String(employeeRollups.length)} />
-              <Stat label="Total hours (period)" value={`${totalRangeHours.toFixed(0)}h`} />
-              <Stat label="Selected range" value={rangeLabel} small />
-            </div>
+            {coldLoad ? <TableSkeleton rows={10} /> : null}
 
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <div className="relative flex-1 max-w-sm">
-                  <input
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search by name or email…"
-                    className="w-full h-8 px-3 rounded-md border border-border bg-background text-[13px]"
-                  />
-                </div>
-                <div className="sm:ml-auto text-xs text-muted-foreground">{employeeRollups.length} employees</div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-muted-foreground mr-1">Sort by</span>
-                {SORT_OPTIONS.map((s) => {
-                  const active = sortBy === s.key;
-                  return (
-                    <button
-                      key={s.key}
-                      type="button"
-                      onClick={() => applySort(s.key)}
-                      className={
-                        "h-7 px-2.5 rounded-full text-[11px] font-medium border inline-flex items-center gap-1 " +
-                        (active
-                          ? "bg-foreground text-background border-foreground"
-                          : "bg-paper border-border text-muted-foreground hover:text-foreground")
-                      }
-                      title={active ? `Sorted ${sortDir}` : "Click to sort"}
-                    >
-                      {s.label}
-                      {active ? (
-                        sortDir === "asc" ? (
-                          <ArrowUpAZ className="h-3.5 w-3.5" />
-                        ) : (
-                          <ArrowDownAZ className="h-3.5 w-3.5" />
-                        )
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {data && !coldLoad ? (
-              <div className="surface-card p-3 text-[12px] text-muted-foreground">
-                {showingStaleRange ? (
-                  <span className="font-medium text-foreground">Pending range · </span>
-                ) : null}
-                Period: {rangeLabel}
-                {data.timeZoneLabel ? ` · ${data.timeZoneLabel}` : ""}
-                {q.trim() ? ` · Showing ${employeeRollups.length}` : ""}
+            {table.error && !coldLoad && !table.data ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <p className="font-medium">Could not load Time Dashboard</p>
+                <p className="mt-1 text-[13px] opacity-90">
+                  {timeDoctorErrorBannerText(table.error, "Failed to load Time Doctor dashboard")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void table.refetch()}
+                  className="mt-3 h-8 px-3 rounded-md border border-destructive/30 text-xs hover:bg-destructive/10"
+                >
+                  Try again
+                </button>
               </div>
             ) : null}
 
-            {employeeRollups.length === 0 && !showingStaleRange && !coldLoad && !(table.error && !table.data) ? (
+            {!coldLoad && !isBusy && data && employeeRollups.length === 0 ? (
               <EmptyState icon={Clock} title="No employees" description="No Time Doctor users matched your search." />
             ) : null}
+
+            {!!employeeRollups.length && (
+              <>
+                <div className="relative min-h-[12rem]">
+                  {showingStaleRange ? (
+                    <div
+                      className="absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-8"
+                      aria-hidden
+                    >
+                      <span className="text-[12px] text-muted-foreground bg-paper border border-border px-3 py-1.5 rounded-full shadow-sm">
+                        Updating range…
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className={showingStaleRange ? "opacity-60 pointer-events-none select-none transition-opacity" : ""}>
+                    <TableScroll>
+                      <table className="ops-table w-full">
+                        <thead>
+                          <tr>
+                            <th align="center">Medal</th>
+                            <th align="left">Employee</th>
+                            <th align="right">Period hours</th>
+                            <th align="right">Today</th>
+                            <th align="right" title={weekLabel ? `Week to date: ${weekLabel}` : "Monday → today (company timezone)"}>
+                              Weekly
+                            </th>
+                            <th align="right" title={calMonthLabel ? `Calendar month: ${calMonthLabel}` : "Calendar month (1st → today, company timezone)"}>
+                              Cal. month
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {employeeRollups.map((e, rowIndex) => {
+                            const rank = rankByEmployeeId.get(e.employee_id) ?? rowIndex + 1;
+                            return (
+                              <tr
+                                key={e.employee_id}
+                                className={medalRowClass(rank) + " hover:bg-muted/40 cursor-pointer"}
+                                onClick={() => {
+                                  navigate({
+                                    to: "/time-dashboard/$userId",
+                                    params: { userId: e.employee_id },
+                                    search: detailSearch,
+                                  });
+                                }}
+                                title="Open time detail page"
+                              >
+                                <td align="center">{rankCellContent(rank)}</td>
+                                <td className="align-middle">
+                                  <div className="font-medium text-[13px]">
+                                    <Link
+                                      to="/time-dashboard/$userId"
+                                      params={{ userId: e.employee_id }}
+                                      search={detailSearch}
+                                      className="hover:underline"
+                                      onClick={(ev) => ev.stopPropagation()}
+                                    >
+                                      {e.name}
+                                    </Link>
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground truncate">{e.email}</div>
+                                </td>
+                                <td align="right" className={`font-mono tabular-nums ${sortBy === "range" ? "font-semibold text-foreground" : ""}`}>
+                                  {((e.rangeSeconds ?? 0) / 3600).toFixed(2)}
+                                </td>
+                                <td align="right" className={`font-mono tabular-nums ${sortBy === "daily" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                  {((e.dailySeconds ?? 0) / 3600).toFixed(2)}
+                                </td>
+                                <td align="right" className={`font-mono tabular-nums ${sortBy === "weekly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                  {((e.weeklySeconds ?? 0) / 3600).toFixed(2)}
+                                </td>
+                                <td align="right" className={`font-mono tabular-nums ${sortBy === "monthly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                  {((e.monthlySeconds ?? 0) / 3600).toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </TableScroll>
+                  </div>
+                </div>
               </>
             )}
           </div>
-
-          {coldLoad ? (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <TimeDashboardTableSkeleton />
-            </div>
-          ) : null}
-
-          {!coldLoad && !(table.error && !table.data) && employeeRollups.length > 0 ? (
-            <div className="relative flex-1 min-h-0 flex flex-col">
-              {showingStaleRange ? (
-                <div
-                  className="absolute inset-0 z-10 bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-10"
-                  aria-hidden
-                >
-                  <span className="text-[12px] text-muted-foreground bg-paper border border-border px-3 py-1.5 rounded-full shadow-sm inline-flex items-center gap-1.5">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Loading {formatRangeLabel(appliedStart, appliedEnd)}…
-                  </span>
-                </div>
-              ) : null}
-              <div
-                className={
-                  showingStaleRange
-                    ? "flex flex-1 min-h-0 flex-col opacity-55 pointer-events-none select-none transition-opacity duration-300"
-                    : "flex flex-1 min-h-0 flex-col transition-opacity duration-300"
-                }
-              >
-            <TableScroll fill>
-              <table className="ops-table w-full table-fixed">
-                <colgroup>
-                  <col className="w-[3.25rem]" />
-                  <col />
-                  <col className="w-[7rem]" />
-                  <col className="w-[6rem]" />
-                  <col className="w-[6rem]" />
-                  <col className="w-[6.5rem]" />
-                </colgroup>
-                <thead className="sticky top-0 z-[1] bg-[var(--ops-paper)]">
-                  <tr>
-                    <th align="center" className="whitespace-nowrap">
-                      Medal
-                    </th>
-                    <th align="left">
-                      <button
-                        type="button"
-                        onClick={() => applySort("name")}
-                        className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("name")}`}
-                      >
-                        Employee
-                        {sortBy === "name" ? (
-                          sortDir === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          )
-                        ) : null}
-                      </button>
-                    </th>
-                    <th align="right" className="whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => applySort("range")}
-                        className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("range")}`}
-                      >
-                        Period hours
-                        {sortBy === "range" ? (
-                          sortDir === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          )
-                        ) : null}
-                      </button>
-                    </th>
-                    <th align="right" className="whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => applySort("daily")}
-                        className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("daily")}`}
-                      >
-                        Today
-                        {sortBy === "daily" ? (
-                          sortDir === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          )
-                        ) : null}
-                      </button>
-                    </th>
-                    <th align="right" className="whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => applySort("weekly")}
-                        className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("weekly")}`}
-                      >
-                        <span title={weekLabel ? `Week to date: ${weekLabel}` : "Monday → today (company timezone)"}>
-                          Weekly
-                        </span>
-                        {sortBy === "weekly" ? (
-                          sortDir === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          )
-                        ) : null}
-                      </button>
-                    </th>
-                    <th align="right" className="whitespace-nowrap !pr-6">
-                      <button
-                        type="button"
-                        onClick={() => applySort("monthly")}
-                        className={`inline-flex items-center gap-1 ml-auto font-medium hover:text-foreground ${sortHeaderClass("monthly")}`}
-                      >
-                        <span title={calMonthLabel ? `Calendar month: ${calMonthLabel}` : "Calendar month (1st → today, company timezone)"}>
-                          Cal. month
-                        </span>
-                        {sortBy === "monthly" ? (
-                          sortDir === "asc" ? (
-                            <ArrowUpAZ className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownAZ className="h-3 w-3" />
-                          )
-                        ) : null}
-                      </button>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employeeRollups.map((e, rowIndex) => {
-                    const rank = rankByEmployeeId.get(e.employee_id) ?? rowIndex + 1;
-                    return (
-                    <tr
-                      key={e.employee_id}
-                      className={
-                        medalRowClass(rank) + " hover:bg-muted/40 cursor-pointer"
-                      }
-                      onClick={() => {
-                        navigate({
-                          to: "/time-dashboard/$userId",
-                          params: { userId: e.employee_id },
-                          search: detailSearch,
-                        });
-                      }}
-                    >
-                      <td align="center" className="align-middle">
-                        {rankCellContent(rank)}
-                      </td>
-                      <td className="align-middle">
-                        <div className="font-medium text-[13px]">
-                          <Link
-                            to="/time-dashboard/$userId"
-                            params={{ userId: e.employee_id }}
-                            search={detailSearch}
-                            className="hover:underline"
-                            onClick={(ev) => ev.stopPropagation()}
-                          >
-                            {e.name}
-                          </Link>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate">{e.email}</div>
-                      </td>
-                      <td
-                        align="right"
-                        className={`font-mono tabular-nums align-middle ${sortBy === "range" ? "font-semibold text-foreground" : "font-medium"}`}
-                      >
-                        {((e.rangeSeconds ?? 0) / 3600).toFixed(2)}
-                      </td>
-                      <td
-                        align="right"
-                        className={`font-mono tabular-nums align-middle ${sortBy === "daily" ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                      >
-                        {((e.dailySeconds ?? 0) / 3600).toFixed(2)}
-                      </td>
-                      <td
-                        align="right"
-                        className={`font-mono tabular-nums align-middle ${sortBy === "weekly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                      >
-                        {((e.weeklySeconds ?? 0) / 3600).toFixed(2)}
-                      </td>
-                      <td
-                        align="right"
-                        className={`font-mono tabular-nums align-middle !pr-6 ${sortBy === "monthly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                      >
-                        {((e.monthlySeconds ?? 0) / 3600).toFixed(2)}
-                      </td>
-                    </tr>
-                  );
-                  })}
-                </tbody>
-              </table>
-            </TableScroll>
-              </div>
-            </div>
-          ) : null}
         </>
       ) : null}
     </div>
     </TimeDashboardRbacGate>
-  );
-}
-
-function Stat({ label, value, small }: { label: string; value: string; small?: boolean }) {
-  return (
-    <div className="surface-card p-4">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium">{label}</div>
-      <div className={`font-display mt-1 ${small ? "text-base" : "text-2xl"}`}>{value}</div>
-    </div>
   );
 }

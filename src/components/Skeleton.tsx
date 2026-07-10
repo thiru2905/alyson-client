@@ -56,8 +56,8 @@ export function FetchingBar({ active }: { active: boolean }) {
 /** Table-shaped shimmer for Time Dashboard first paint. */
 export function TimeDashboardTableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
-    <div className="surface-ops app-table-shell overflow-hidden animate-in fade-in duration-300">
-      <div className="border-b border-border px-4 py-3 flex gap-3 items-center min-w-[640px]">
+    <div className="app-table-card overflow-hidden animate-in fade-in duration-300">
+      <div className="border-b border-border px-4 py-3 flex gap-3 items-center min-w-[640px] bg-[color-mix(in_oklab,var(--ops-paper)_82%,var(--muted)_18%)]">
         <Shimmer className="h-4 w-10 shrink-0" />
         <Shimmer className="h-4 flex-1 max-w-[12rem]" />
         <Shimmer className="h-4 w-16 ml-auto hidden sm:block" />
