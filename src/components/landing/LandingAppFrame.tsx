@@ -102,6 +102,20 @@ function FrameInsightStrip({ text }: { text: string }) {
   );
 }
 
+function scrollNavItemIntoView(nav: HTMLElement, item: HTMLElement) {
+  const navTop = nav.scrollTop;
+  const itemTop = item.offsetTop;
+  const itemBottom = itemTop + item.offsetHeight;
+  const viewTop = navTop;
+  const viewBottom = navTop + nav.clientHeight;
+
+  if (itemTop < viewTop) {
+    nav.scrollTop = itemTop;
+  } else if (itemBottom > viewBottom) {
+    nav.scrollTop = itemBottom - nav.clientHeight;
+  }
+}
+
 function NavItemButton({
   item,
   active,
@@ -125,11 +139,7 @@ function NavItemButton({
       )}
     >
       {active ? (
-        <motion.span
-          layoutId="landing-frame-active-nav"
-          className="absolute inset-0 rounded-md bg-sidebar-accent"
-          transition={{ type: "spring", stiffness: 380, damping: 32 }}
-        />
+        <span className="absolute inset-0 rounded-md bg-sidebar-accent" />
       ) : null}
       <Icon className="relative h-3 w-3 shrink-0" />
       <span className="relative truncate leading-tight">{item.name}</span>
@@ -143,6 +153,7 @@ export function LandingAppFrame() {
   );
   const [paused, setPaused] = useState(false);
   const [tourProgress, setTourProgress] = useState(0);
+  const [userPickedModule, setUserPickedModule] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -162,14 +173,21 @@ export function LandingAppFrame() {
   const selectModule = useCallback((index: number, pauseMs = 10_000) => {
     setActiveIndex(index);
     setPaused(true);
+    setUserPickedModule(true);
     setTourProgress(0);
-    window.setTimeout(() => setPaused(false), pauseMs);
+    window.setTimeout(() => {
+      setPaused(false);
+      setUserPickedModule(false);
+    }, pauseMs);
   }, []);
 
   useEffect(() => {
+    if (!userPickedModule) return;
+    const nav = navRef.current;
     const el = itemRefs.current.get(active.name);
-    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [active.name]);
+    if (!nav || !el) return;
+    scrollNavItemIntoView(nav, el);
+  }, [active.name, userPickedModule]);
 
   useEffect(() => {
     if (paused) return;
@@ -258,14 +276,14 @@ export function LandingAppFrame() {
           </div>
 
           <div className="flex-1 p-3 md:p-4 overflow-hidden flex flex-col min-h-0">
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="sync">
               <motion.div
                 key={active.name}
                 className="flex flex-col flex-1 min-h-0"
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
                 <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
                   {active.group}
@@ -277,16 +295,16 @@ export function LandingAppFrame() {
                   {moduleSummary(active.name)}
                 </p>
 
-                <div className="mt-3 flex-1 min-h-0 overflow-hidden">
+                <div className="mt-3 flex-1 min-h-[17rem] max-h-[17rem] overflow-hidden">
                   {isDashboard ? (
                     <DashboardHero />
                   ) : (
-                    <div className="h-full flex items-start justify-center overflow-auto">
+                    <div className="h-full flex items-start justify-center overflow-hidden">
                       <motion.div
-                        className="w-full max-w-lg"
-                        initial={{ opacity: 0, scale: 0.96 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ duration: 0.35, delay: 0.05 }}
+                        className="w-full max-w-lg h-full"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.25 }}
                       >
                         <div className="surface-card rounded-lg overflow-hidden shadow-[var(--shadow-soft)] landing-frame-preview-scale">
                           <ModuleSnapPreview mod={active} />

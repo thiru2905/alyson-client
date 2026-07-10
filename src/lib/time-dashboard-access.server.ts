@@ -1,7 +1,7 @@
 import { isDevClerkBypass, requireClerkEmailFromSessionToken } from "@/lib/clerk-auth.server";
 import { canonicalOfficialEmail } from "@/lib/cintara-email";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
-import { isSuperAccessEmail } from "@/lib/super-access-constants";
+import { hasTimeDashboardFullScope } from "@/lib/time-dashboard-access-constants";
 import { checkSuperAccessForToken } from "@/lib/super-access-rbac.server";
 import { resolveTimeDashboardTeamScope } from "@/lib/time-dashboard-manager-scope";
 import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.schema";
@@ -52,7 +52,7 @@ export async function resolveTimeDashboardScope(
 ): Promise<ResolvedTimeDashboardScope> {
   const email = await resolveViewerEmail(clerkToken, emailHint);
 
-  if (isSuperAccessEmail(email)) {
+  if (hasTimeDashboardFullScope(email)) {
     return { level: "full", email };
   }
 
@@ -60,7 +60,7 @@ export async function resolveTimeDashboardScope(
     const superCheck = await checkSuperAccessForToken(clerkToken, emailHint);
     if (superCheck.allowed) return { level: "full", email };
   } catch {
-    if (isSuperAccessEmail(email)) return { level: "full", email };
+    if (hasTimeDashboardFullScope(email)) return { level: "full", email };
   }
 
   const lookup = getOrgChartRosterLookup();

@@ -7,8 +7,7 @@ import {
   buildOrgChartRosterLookup,
   parseOrgChartRosterCsv,
 } from "@/lib/org-chart-roster";
-import { isSuperAccessEmail } from "@/lib/super-access-constants";
-import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
+import { hasTimeDashboardFullScope } from "@/lib/time-dashboard-access-constants";
 import { checkTimeDashboardAccess } from "@/lib/time-dashboard-access-functions";
 import type { TimeDashboardAccessResult } from "@/lib/time-dashboard-access.schema";
 
@@ -16,7 +15,7 @@ const rosterLookup = buildOrgChartRosterLookup(parseOrgChartRosterCsv(BUNDLED_OR
 
 function fallbackTimeDashboardAccess(email: string | null | undefined): TimeDashboardAccessResult {
   const normalized = String(email || "").trim().toLowerCase();
-  if (isSuperAccessEmail(normalized)) {
+  if (hasTimeDashboardFullScope(normalized)) {
     return { level: "full", email: normalized };
   }
   const teamScope = resolveTimeDashboardTeamScope(normalized, rosterLookup);
@@ -61,11 +60,9 @@ export function useTimeDashboardAccess() {
 export function useTimeDashboardNavVisible() {
   const { user } = useAuth();
   const accessQ = useTimeDashboardAccess();
-  const superAccessQ = useSuperAccess();
   const email = user?.email?.toLowerCase() ?? "";
   return (
-    isSuperAccessEmail(email) ||
-    superAccessQ.data?.allowed === true ||
+    hasTimeDashboardFullScope(email) ||
     accessQ.data?.level === "full" ||
     accessQ.data?.level === "team"
   );

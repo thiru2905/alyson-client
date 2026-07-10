@@ -1,6 +1,6 @@
 import { Loader2, Users } from "lucide-react";
 import { useTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
-import { isSuperAccessEmail } from "@/lib/super-access-constants";
+import { hasTimeDashboardFullScope } from "@/lib/time-dashboard-access-constants";
 import { useSuperAccess } from "@/lib/super-access-rbac-hooks";
 import { useAuth } from "@/lib/auth";
 
@@ -12,7 +12,7 @@ export function TimeDashboardRbacGate({ children }: { children: React.ReactNode 
   const email = user?.email?.toLowerCase() ?? "";
 
   const allowed =
-    isSuperAccessEmail(email) ||
+    hasTimeDashboardFullScope(email) ||
     superAccessQ.data?.allowed === true ||
     accessQ.data?.level === "full" ||
     accessQ.data?.level === "team";
