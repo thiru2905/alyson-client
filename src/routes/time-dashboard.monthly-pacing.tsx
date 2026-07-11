@@ -455,7 +455,7 @@ function MonthlyPacingPage() {
         }
       />
 
-      <div className="app-page-gutter py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5 min-w-0">
         <FetchingBar active={isBusy && !q.data} />
 
         {q.isError ? (

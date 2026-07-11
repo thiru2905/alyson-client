@@ -594,7 +594,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div
           id={APP_MAIN_SCROLL_ID}
-          className="flex-1 min-h-0 w-full min-w-0 overflow-y-auto overflow-x-hidden"
+          className="flex-1 min-h-0 w-full min-w-0 overflow-y-auto overflow-x-hidden overscroll-x-none"
         >
           {children}
         </div>
@@ -1560,8 +1560,12 @@ export function PageHeader({
 
 export function TableScroll({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`app-table-card w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden ${className}`}>
-      <div className="min-w-max">{children}</div>
+    <div
+      className={`app-table-card w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden touch-pan-x ${className}`}
+      style={{ WebkitOverflowScrolling: "touch" }}
+    >
+      {/* w-max forces scroll when columns exceed viewport; min-w-full keeps short tables full-width */}
+      <div className="inline-block min-w-full w-max align-top">{children}</div>
     </div>
   );
 }

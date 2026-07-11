@@ -331,7 +331,7 @@ function TimeDashboardPage() {
 
   return (
     <TimeDashboardRbacGate>
-    <div className="ops-dense min-h-0">
+    <div className="ops-dense min-h-0 min-w-0 w-full max-w-full">
       {showingUserDetail ? <Outlet /> : null}
       {!showingUserDetail ? (
         <>
@@ -373,7 +373,7 @@ function TimeDashboardPage() {
 
           <FetchingBar active={isBusy && !coldLoad} />
 
-          <div className="app-page-gutter py-6 space-y-5">
+          <div className="app-page-gutter py-6 space-y-5 min-w-0">
             <TimeDashboardRangePicker
               start={start}
               end={end}
@@ -520,7 +520,7 @@ function TimeDashboardPage() {
 
             {!!employeeRollups.length && (
               <>
-                <div className="relative min-h-[12rem]">
+                <div className="relative min-h-[12rem] min-w-0">
                   {showingStaleRange ? (
                     <div
                       className="absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-8"
@@ -531,19 +531,31 @@ function TimeDashboardPage() {
                       </span>
                     </div>
                   ) : null}
-                  <div className={showingStaleRange ? "opacity-60 pointer-events-none select-none transition-opacity" : ""}>
+                  <div className={(showingStaleRange ? "opacity-60 pointer-events-none select-none transition-opacity " : "") + "min-w-0"}>
                     <TableScroll>
-                      <table className="ops-table w-full">
+                      <table className="ops-table w-full min-w-[720px]">
                         <thead>
                           <tr>
-                            <th align="center">Medal</th>
-                            <th align="left">Employee</th>
-                            <th align="right">Period hours</th>
-                            <th align="right">Today</th>
-                            <th align="right" title={weekLabel ? `Week to date: ${weekLabel}` : "Monday → today (company timezone)"}>
+                            <th align="center" className="sticky left-0 z-10 bg-muted/95 backdrop-blur min-w-[56px]">
+                              Medal
+                            </th>
+                            <th align="left" className="sticky left-[56px] z-10 bg-muted/95 backdrop-blur min-w-[160px] border-r border-border">
+                              Employee
+                            </th>
+                            <th align="right" className="min-w-[96px] whitespace-nowrap">Period hours</th>
+                            <th align="right" className="min-w-[72px] whitespace-nowrap">Today</th>
+                            <th
+                              align="right"
+                              className="min-w-[72px] whitespace-nowrap"
+                              title={weekLabel ? `Week to date: ${weekLabel}` : "Monday → today (company timezone)"}
+                            >
                               Weekly
                             </th>
-                            <th align="right" title={calMonthLabel ? `Calendar month: ${calMonthLabel}` : "Calendar month (1st → today, company timezone)"}>
+                            <th
+                              align="right"
+                              className="min-w-[88px] whitespace-nowrap"
+                              title={calMonthLabel ? `Calendar month: ${calMonthLabel}` : "Calendar month (1st → today, company timezone)"}
+                            >
                               Cal. month
                             </th>
                           </tr>
@@ -564,9 +576,11 @@ function TimeDashboardPage() {
                                 }}
                                 title="Open time detail page"
                               >
-                                <td align="center">{rankCellContent(rank)}</td>
-                                <td className="align-middle">
-                                  <div className="font-medium text-[13px]">
+                                <td align="center" className="sticky left-0 z-10 bg-background">
+                                  {rankCellContent(rank)}
+                                </td>
+                                <td className="align-middle sticky left-[56px] z-10 bg-background border-r border-border">
+                                  <div className="font-medium text-[13px] truncate max-w-[180px]">
                                     <Link
                                       to="/time-dashboard/$userId"
                                       params={{ userId: e.employee_id }}
@@ -577,18 +591,18 @@ function TimeDashboardPage() {
                                       {e.name}
                                     </Link>
                                   </div>
-                                  <div className="text-[11px] text-muted-foreground truncate">{e.email}</div>
+                                  <div className="text-[11px] text-muted-foreground truncate max-w-[180px]">{e.email}</div>
                                 </td>
-                                <td align="right" className={`font-mono tabular-nums ${sortBy === "range" ? "font-semibold text-foreground" : ""}`}>
+                                <td align="right" className={`font-mono tabular-nums whitespace-nowrap ${sortBy === "range" ? "font-semibold text-foreground" : ""}`}>
                                   {((e.rangeSeconds ?? 0) / 3600).toFixed(2)}
                                 </td>
-                                <td align="right" className={`font-mono tabular-nums ${sortBy === "daily" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                <td align="right" className={`font-mono tabular-nums whitespace-nowrap ${sortBy === "daily" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                                   {((e.dailySeconds ?? 0) / 3600).toFixed(2)}
                                 </td>
-                                <td align="right" className={`font-mono tabular-nums ${sortBy === "weekly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                <td align="right" className={`font-mono tabular-nums whitespace-nowrap ${sortBy === "weekly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                                   {((e.weeklySeconds ?? 0) / 3600).toFixed(2)}
                                 </td>
-                                <td align="right" className={`font-mono tabular-nums ${sortBy === "monthly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                                <td align="right" className={`font-mono tabular-nums whitespace-nowrap ${sortBy === "monthly" ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                                   {((e.monthlySeconds ?? 0) / 3600).toFixed(2)}
                                 </td>
                               </tr>
