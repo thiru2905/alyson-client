@@ -321,7 +321,7 @@ function MeetingHoursContent({
         </div>
       </div>
 
-      <div className="relative min-h-[12rem]">
+      <div className="relative min-h-[12rem] min-w-0">
         {showingStaleRange ? (
           <div
             className="absolute inset-0 z-10 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none flex items-start justify-center pt-10"
@@ -336,11 +336,11 @@ function MeetingHoursContent({
         <div
           className={
             showingStaleRange
-              ? "opacity-60 pointer-events-none select-none transition-opacity"
-              : undefined
+              ? "opacity-60 pointer-events-none select-none transition-opacity min-w-0"
+              : "min-w-0"
           }
         >
-          <div className="surface-card overflow-hidden">
+          <div className="surface-card min-w-0">
             <div className="px-4 py-3 border-b border-border space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
                 <div>
@@ -365,7 +365,7 @@ function MeetingHoursContent({
                 onSearchQueryChange={onSearchQueryChange}
               />
             </div>
-            <TableScroll>
+            <TableScroll className="rounded-none border-0 shadow-none bg-transparent">
               <table className="w-full text-[11.5px] border-collapse min-w-max">
                 <thead>
                   <tr className="border-b border-border bg-muted/30">
@@ -650,7 +650,7 @@ function MeetingHoursPage() {
         }
       />
 
-      <div className="app-page-gutter py-6 space-y-5">
+      <div className="app-page-gutter py-6 space-y-5 min-w-0">
         <div
           className={`surface-card p-4 space-y-3 transition-opacity ${isBusy ? "opacity-90" : ""}`}
         >

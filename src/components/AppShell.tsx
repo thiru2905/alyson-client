@@ -1560,8 +1560,8 @@ export function PageHeader({
 
 export function TableScroll({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`app-table-card overflow-x-auto ${className}`}>
-      <div className="min-w-[640px]">{children}</div>
+    <div className={`app-table-card w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden ${className}`}>
+      <div className="min-w-max">{children}</div>
     </div>
   );
 }

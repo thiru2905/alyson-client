@@ -437,7 +437,11 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  /* Must allow horizontal scroll for wide day grids (meeting hours 30/60d).
+     Unlayered `overflow: hidden` was overriding Tailwind overflow-x-auto. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .app-table-card .ops-table thead th {
