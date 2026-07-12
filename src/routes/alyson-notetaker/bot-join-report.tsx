@@ -285,6 +285,13 @@ function BotJoinReportPage() {
         actions={
           <div className="flex items-center gap-2">
             <Link
+              to="/alyson-notetaker/recall-calendar"
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+            >
+              <CalendarDays className="h-3.5 w-3.5" />
+              Recall Calendar
+            </Link>
+            <Link
               to="/alyson-notetaker/analytics"
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
             >

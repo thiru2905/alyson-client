@@ -66,6 +66,7 @@ import { Route as BonusApprovalsRouteImport } from './routes/bonus/approvals'
 import { Route as BonusAnalyticsRouteImport } from './routes/bonus/analytics'
 import { Route as AlysonNotetakerUnifiedMeetingsRouteImport } from './routes/alyson-notetaker/unified-meetings'
 import { Route as AlysonNotetakerTasksRouteImport } from './routes/alyson-notetaker/tasks'
+import { Route as AlysonNotetakerRecallCalendarRouteImport } from './routes/alyson-notetaker/recall-calendar'
 import { Route as AlysonNotetakerMeetingListRouteImport } from './routes/alyson-notetaker/meeting-list'
 import { Route as AlysonNotetakerMeetingHoursRouteImport } from './routes/alyson-notetaker/meeting-hours'
 import { Route as AlysonNotetakerCostTrackingRouteImport } from './routes/alyson-notetaker/cost-tracking'
@@ -385,6 +386,12 @@ const AlysonNotetakerTasksRoute = AlysonNotetakerTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => AlysonNotetakerRouteRoute,
 } as any)
+const AlysonNotetakerRecallCalendarRoute =
+  AlysonNotetakerRecallCalendarRouteImport.update({
+    id: '/recall-calendar',
+    path: '/recall-calendar',
+    getParentRoute: () => AlysonNotetakerRouteRoute,
+  } as any)
 const AlysonNotetakerMeetingListRoute =
   AlysonNotetakerMeetingListRouteImport.update({
     id: '/meeting-list',
@@ -595,6 +602,7 @@ export interface FileRoutesByFullPath {
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
   '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
+  '/alyson-notetaker/recall-calendar': typeof AlysonNotetakerRecallCalendarRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/analytics': typeof BonusAnalyticsRoute
@@ -679,6 +687,7 @@ export interface FileRoutesByTo {
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
   '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
+  '/alyson-notetaker/recall-calendar': typeof AlysonNotetakerRecallCalendarRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/analytics': typeof BonusAnalyticsRoute
@@ -768,6 +777,7 @@ export interface FileRoutesById {
   '/alyson-notetaker/cost-tracking': typeof AlysonNotetakerCostTrackingRoute
   '/alyson-notetaker/meeting-hours': typeof AlysonNotetakerMeetingHoursRoute
   '/alyson-notetaker/meeting-list': typeof AlysonNotetakerMeetingListRoute
+  '/alyson-notetaker/recall-calendar': typeof AlysonNotetakerRecallCalendarRoute
   '/alyson-notetaker/tasks': typeof AlysonNotetakerTasksRoute
   '/alyson-notetaker/unified-meetings': typeof AlysonNotetakerUnifiedMeetingsRoute
   '/bonus/analytics': typeof BonusAnalyticsRoute
@@ -858,6 +868,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/cost-tracking'
     | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
+    | '/alyson-notetaker/recall-calendar'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
     | '/bonus/analytics'
@@ -942,6 +953,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/cost-tracking'
     | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
+    | '/alyson-notetaker/recall-calendar'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
     | '/bonus/analytics'
@@ -1030,6 +1042,7 @@ export interface FileRouteTypes {
     | '/alyson-notetaker/cost-tracking'
     | '/alyson-notetaker/meeting-hours'
     | '/alyson-notetaker/meeting-list'
+    | '/alyson-notetaker/recall-calendar'
     | '/alyson-notetaker/tasks'
     | '/alyson-notetaker/unified-meetings'
     | '/bonus/analytics'
@@ -1533,6 +1546,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlysonNotetakerTasksRouteImport
       parentRoute: typeof AlysonNotetakerRouteRoute
     }
+    '/alyson-notetaker/recall-calendar': {
+      id: '/alyson-notetaker/recall-calendar'
+      path: '/recall-calendar'
+      fullPath: '/alyson-notetaker/recall-calendar'
+      preLoaderRoute: typeof AlysonNotetakerRecallCalendarRouteImport
+      parentRoute: typeof AlysonNotetakerRouteRoute
+    }
     '/alyson-notetaker/meeting-list': {
       id: '/alyson-notetaker/meeting-list'
       path: '/meeting-list'
@@ -1761,6 +1781,7 @@ interface AlysonNotetakerRouteRouteChildren {
   AlysonNotetakerCostTrackingRoute: typeof AlysonNotetakerCostTrackingRoute
   AlysonNotetakerMeetingHoursRoute: typeof AlysonNotetakerMeetingHoursRoute
   AlysonNotetakerMeetingListRoute: typeof AlysonNotetakerMeetingListRoute
+  AlysonNotetakerRecallCalendarRoute: typeof AlysonNotetakerRecallCalendarRoute
   AlysonNotetakerTasksRoute: typeof AlysonNotetakerTasksRoute
   AlysonNotetakerUnifiedMeetingsRoute: typeof AlysonNotetakerUnifiedMeetingsRoute
   AlysonNotetakerIndexRoute: typeof AlysonNotetakerIndexRoute
@@ -1773,6 +1794,7 @@ const AlysonNotetakerRouteRouteChildren: AlysonNotetakerRouteRouteChildren = {
   AlysonNotetakerCostTrackingRoute: AlysonNotetakerCostTrackingRoute,
   AlysonNotetakerMeetingHoursRoute: AlysonNotetakerMeetingHoursRoute,
   AlysonNotetakerMeetingListRoute: AlysonNotetakerMeetingListRoute,
+  AlysonNotetakerRecallCalendarRoute: AlysonNotetakerRecallCalendarRoute,
   AlysonNotetakerTasksRoute: AlysonNotetakerTasksRoute,
   AlysonNotetakerUnifiedMeetingsRoute: AlysonNotetakerUnifiedMeetingsRoute,
   AlysonNotetakerIndexRoute: AlysonNotetakerIndexRoute,

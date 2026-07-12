@@ -19,6 +19,8 @@ const MAX_CHAT_TOTAL = 120;
 const MAX_PREVIEW = 2400;
 /** Stats cap — MIME sizeEstimate / audit bytes can be MB with attachments. */
 const MAX_EMAIL_BODY_CHARS = 24_000;
+/** Cap for “read entire email / thread” — keep large enough for real messages. */
+const MAX_FULL_EMAIL_CHARS = 200_000;
 
 const ROUTING_META_KEYS = new Set([
   "flattened_destinations",
@@ -98,10 +100,10 @@ export function statsFromText(text: string) {
   };
 }
 
-function capEmailBodyForStats(text: string) {
+function capEmailBodyForStats(text: string, maxChars = MAX_EMAIL_BODY_CHARS) {
   const t = text.trim();
   if (!t) return "";
-  return t.length <= MAX_EMAIL_BODY_CHARS ? t : t.slice(0, MAX_EMAIL_BODY_CHARS);
+  return t.length <= maxChars ? t : `${t.slice(0, maxChars)}\n\n…[truncated]`;
 }
 
 /** Char/word counts from visible plain text only (not MIME size or audit byte fields). */
@@ -416,9 +418,36 @@ export function humanEmailRecipient(meta: Record<string, string>) {
     "recipient_address",
     "recipient_email",
     "to",
+    "target_user",
+    "destination",
   ]);
-  if (raw && !raw.toLowerCase().includes("smtp-outbound")) return raw.slice(0, 160);
-  return undefined;
+  if (!raw) return undefined;
+  const cleaned = cleanAddressHeader(raw);
+  if (!cleaned) return undefined;
+  if (cleaned.toLowerCase().includes("smtp-outbound")) return undefined;
+  return cleaned.slice(0, 240);
+}
+
+/** Normalize From/To/Cc headers into readable address lists. */
+export function cleanAddressHeader(raw: string): string {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/smtp-outbound/i.test(s) && !s.includes("@")) return "";
+  // Prefer angle-bracket emails when present, keep display names otherwise.
+  const parts = s.split(/[,;]/).map((p) => p.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const part of parts) {
+    if (/smtp-outbound/i.test(part) && !part.includes("@")) continue;
+    const m = part.match(/^(.*?)\s*<([^>]+)>$/);
+    if (m) {
+      const name = m[1]!.replace(/"/g, "").trim();
+      const email = m[2]!.trim();
+      out.push(name ? `${name} <${email}>` : email);
+    } else if (part.includes("@")) {
+      out.push(part.replace(/^mailto:/i, ""));
+    }
+  }
+  return (out.length ? out.join(", ") : s.replace(/\s+/g, " ")).slice(0, 500);
 }
 
 export function extractChatTextFromMeta(meta: Record<string, string>, title = "") {
@@ -654,6 +683,7 @@ function stripHtmlToPlain(html: string) {
 
 function extractPlainFromGmailPart(
   part: { mimeType?: string | null; body?: { data?: string | null }; parts?: unknown[] } | null | undefined,
+  maxChars = MAX_EMAIL_BODY_CHARS,
 ): string {
   if (!part) return "";
   const mime = String(part.mimeType || "").toLowerCase();
@@ -664,23 +694,23 @@ function extractPlainFromGmailPart(
     for (const child of part.parts ?? []) {
       const childPart = child as typeof part;
       const childMime = String(childPart.mimeType || "").toLowerCase();
-      const nested = extractPlainFromGmailPart(childPart);
+      const nested = extractPlainFromGmailPart(childPart, maxChars);
       if (!nested) continue;
       if (childMime === "text/plain") plain = nested;
       else if (childMime === "text/html") html = nested;
       else if (!plain && !html) plain = nested;
     }
-    return plain || capEmailBodyForStats(html);
+    return plain || capEmailBodyForStats(html, maxChars);
   }
 
   if ((mime === "text/plain" || mime === "text/html") && part.body?.data) {
     const raw = decodeBase64Url(part.body.data);
-    if (mime === "text/html") return capEmailBodyForStats(stripHtmlToPlain(raw));
-    return capEmailBodyForStats(raw);
+    if (mime === "text/html") return capEmailBodyForStats(stripHtmlToPlain(raw), maxChars);
+    return capEmailBodyForStats(raw, maxChars);
   }
 
   for (const child of part.parts ?? []) {
-    const nested = extractPlainFromGmailPart(child as typeof part);
+    const nested = extractPlainFromGmailPart(child as typeof part, maxChars);
     if (nested) return nested;
   }
   return "";
@@ -690,10 +720,11 @@ function gmailReadableBody(
   payload: { mimeType?: string | null; body?: { data?: string | null }; parts?: unknown[] } | null | undefined,
   snippet?: string | null,
   subject?: string,
+  maxChars = MAX_EMAIL_BODY_CHARS,
 ) {
-  const plain = extractPlainFromGmailPart(payload);
+  const plain = extractPlainFromGmailPart(payload, maxChars);
   if (plain) return plain;
-  return capEmailBodyForStats(String(snippet || subject || "").trim());
+  return capEmailBodyForStats(String(snippet || subject || "").trim(), maxChars);
 }
 
 function collectDocTextRuns(node: unknown, parts: string[]) {
@@ -868,7 +899,15 @@ export async function listUserSentGmailRich(
         const headers = msg.data.payload?.headers ?? [];
         const subject =
           headers.find((h) => h.name?.toLowerCase() === "subject")?.value?.trim() || "(no subject)";
-        const to = headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim();
+        const to = cleanAddressHeader(
+          headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim() || "",
+        );
+        const cc = cleanAddressHeader(
+          headers.find((h) => h.name?.toLowerCase() === "cc")?.value?.trim() || "",
+        );
+        const from = cleanAddressHeader(
+          headers.find((h) => h.name?.toLowerCase() === "from")?.value?.trim() || userEmail,
+        );
         const dateHdr = headers.find((h) => h.name?.toLowerCase() === "date")?.value;
         const at = dateHdr
           ? new Date(dateHdr).toISOString()
@@ -879,16 +918,22 @@ export async function listUserSentGmailRich(
         const bodyChars = stats.bodyChars;
         const bodyWords = stats.bodyWords;
         const category = inferContentCategory(subject, plain || subject);
+        const threadId = msg.data.threadId ? String(msg.data.threadId) : undefined;
         items.push({
           at,
           subject: subject.slice(0, 240),
           snippet: preview.slice(0, 400) || subject,
           preview,
-          to: to?.slice(0, 160),
+          from: from || userEmail,
+          to: to || undefined,
+          cc: cc || undefined,
           bodyChars,
           bodyWords,
           category,
-          meta: { gmail_id: String(id) },
+          meta: {
+            gmail_id: String(id),
+            ...(threadId ? { thread_id: threadId } : {}),
+          },
         });
       }
       pageToken = list.data.nextPageToken ?? undefined;
@@ -914,7 +959,9 @@ export function gmailSnippetsToActivityItems(snippets: GmailSentSnippet[]): Work
       bodyChars: g.bodyChars,
       bodyWords: g.bodyWords,
       category: g.category,
+      from: g.from,
       to: g.to,
+      cc: g.cc,
       source: "gmail" as const,
       meta: g.meta,
     }),
@@ -924,7 +971,16 @@ export function gmailSnippetsToActivityItems(snippets: GmailSentSnippet[]): Work
 async function fetchGmailMessageStats(
   userEmail: string,
   messageId: string,
-): Promise<{ preview: string; bodyChars: number; bodyWords: number; to?: string; subject: string } | null> {
+): Promise<{
+  preview: string;
+  bodyChars: number;
+  bodyWords: number;
+  from?: string;
+  to?: string;
+  cc?: string;
+  subject: string;
+  threadId?: string;
+} | null> {
   try {
     const auth = await loadServiceAccountJwtForSubject(userEmail, [GMAIL_READONLY_SCOPE]);
     const gmail = google.gmail({ version: "v1", auth });
@@ -932,7 +988,11 @@ async function fetchGmailMessageStats(
     const headers = msg.data.payload?.headers ?? [];
     const subject =
       headers.find((h) => h.name?.toLowerCase() === "subject")?.value?.trim() || "(no subject)";
-    const to = headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim();
+    const to = cleanAddressHeader(headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim() || "");
+    const cc = cleanAddressHeader(headers.find((h) => h.name?.toLowerCase() === "cc")?.value?.trim() || "");
+    const from = cleanAddressHeader(
+      headers.find((h) => h.name?.toLowerCase() === "from")?.value?.trim() || userEmail,
+    );
     const plain = gmailReadableBody(msg.data.payload, msg.data.snippet, subject);
     const stats = emailBodyStatsFromPlain(plain, subject);
     return {
@@ -940,7 +1000,10 @@ async function fetchGmailMessageStats(
       preview: stats.preview,
       bodyChars: stats.bodyChars,
       bodyWords: stats.bodyWords,
-      to: to?.slice(0, 160),
+      from: from || userEmail,
+      to: to || undefined,
+      cc: cc || undefined,
+      threadId: msg.data.threadId ? String(msg.data.threadId) : undefined,
     };
   } catch {
     return null;
@@ -955,12 +1018,60 @@ export type WorkspaceActivityEmailBody = {
   sentAt?: string;
   body: string;
   source: "gmail" | "preview";
+  threadId?: string;
+  thread?: Array<{
+    id?: string;
+    subject: string;
+    to?: string;
+    cc?: string;
+    from?: string;
+    sentAt?: string;
+    body: string;
+  }>;
 };
 
 export function gmailMessageIdFromItem(item: {
   meta?: Record<string, string>;
 }): string | null {
   return pickMeta(item.meta ?? {}, ["gmail_id", "message_id", "gmail_message_id", "msg_id"]) || null;
+}
+
+export function gmailThreadIdFromItem(item: {
+  meta?: Record<string, string>;
+}): string | null {
+  return pickMeta(item.meta ?? {}, ["thread_id", "gmail_thread_id", "threadId"]) || null;
+}
+
+function parseGmailMessageHeaders(msg: {
+  id?: string | null;
+  threadId?: string | null;
+  snippet?: string | null;
+  internalDate?: string | null;
+  payload?: { mimeType?: string | null; body?: { data?: string | null }; parts?: unknown[]; headers?: Array<{ name?: string | null; value?: string | null }> | null } | null;
+}, fallbackFrom?: string) {
+  const headers = msg.payload?.headers ?? [];
+  const subject =
+    headers.find((h) => h.name?.toLowerCase() === "subject")?.value?.trim() || "(no subject)";
+  const to = cleanAddressHeader(headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim() || "");
+  const cc = cleanAddressHeader(headers.find((h) => h.name?.toLowerCase() === "cc")?.value?.trim() || "");
+  const from = cleanAddressHeader(
+    headers.find((h) => h.name?.toLowerCase() === "from")?.value?.trim() || fallbackFrom || "",
+  );
+  const dateHdr = headers.find((h) => h.name?.toLowerCase() === "date")?.value;
+  const sentAt = dateHdr
+    ? new Date(dateHdr).toISOString()
+    : new Date(Number(msg.internalDate || Date.now())).toISOString();
+  const body = gmailReadableBody(msg.payload, msg.snippet, subject, MAX_FULL_EMAIL_CHARS);
+  return {
+    id: msg.id ? String(msg.id) : undefined,
+    subject: subject.slice(0, 500),
+    to: to || undefined,
+    cc: cc || undefined,
+    from: from || undefined,
+    sentAt,
+    body: body || "(Empty message body)",
+    threadId: msg.threadId ? String(msg.threadId) : undefined,
+  };
 }
 
 /** Full sent-mail body via Gmail API (domain-wide delegation). */
@@ -972,25 +1083,96 @@ export async function fetchGmailMessageFullBody(
     const auth = await loadServiceAccountJwtForSubject(userEmail, [GMAIL_READONLY_SCOPE]);
     const gmail = google.gmail({ version: "v1", auth });
     const msg = await gmail.users.messages.get({ userId: "me", id: messageId, format: "full" });
-    const headers = msg.data.payload?.headers ?? [];
-    const subject =
-      headers.find((h) => h.name?.toLowerCase() === "subject")?.value?.trim() || "(no subject)";
-    const to = headers.find((h) => h.name?.toLowerCase() === "to")?.value?.trim();
-    const cc = headers.find((h) => h.name?.toLowerCase() === "cc")?.value?.trim();
-    const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value?.trim();
-    const dateHdr = headers.find((h) => h.name?.toLowerCase() === "date")?.value;
-    const sentAt = dateHdr
-      ? new Date(dateHdr).toISOString()
-      : new Date(Number(msg.data.internalDate || Date.now())).toISOString();
-    const body = gmailReadableBody(msg.data.payload, msg.data.snippet, subject);
+    const parsed = parseGmailMessageHeaders(msg.data, userEmail);
     return {
-      subject: subject.slice(0, 500),
-      to: to?.slice(0, 500),
-      cc: cc?.slice(0, 500),
-      from: from?.slice(0, 500),
-      sentAt,
-      body: body || "(Empty message body)",
+      subject: parsed.subject,
+      to: parsed.to,
+      cc: parsed.cc,
+      from: parsed.from || userEmail,
+      sentAt: parsed.sentAt,
+      body: parsed.body,
       source: "gmail",
+      threadId: parsed.threadId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve a sent message by subject + approximate time when audit rows lack gmail_id. */
+export async function findGmailMessageBySubjectAndTime(
+  userEmail: string,
+  subject: string,
+  atIso: string,
+): Promise<WorkspaceActivityEmailBody | null> {
+  try {
+    const auth = await loadServiceAccountJwtForSubject(userEmail, [GMAIL_READONLY_SCOPE]);
+    const gmail = google.gmail({ version: "v1", auth });
+    const at = new Date(atIso);
+    const day = Number.isFinite(at.getTime()) ? at : new Date();
+    const after = format(new Date(day.getTime() - 36 * 3600_000), "yyyy/MM/dd");
+    const before = format(new Date(day.getTime() + 36 * 3600_000), "yyyy/MM/dd");
+    const cleanSubject = subject.replace(/"/g, "").trim().slice(0, 120);
+    const q = `in:sent after:${after} before:${before}${cleanSubject ? ` subject:"${cleanSubject}"` : ""}`;
+    const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 10 });
+    const ids = (list.data.messages ?? []).map((m) => m.id).filter(Boolean) as string[];
+    if (!ids.length) return null;
+
+    let best: WorkspaceActivityEmailBody | null = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (const id of ids) {
+      const full = await fetchGmailMessageFullBody(userEmail, id);
+      if (!full?.sentAt) continue;
+      const delta = Math.abs(new Date(full.sentAt).getTime() - day.getTime());
+      if (delta < bestDelta) {
+        best = full;
+        bestDelta = delta;
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/** Load every message in a Gmail thread (conversation view). */
+export async function fetchGmailThreadFull(
+  userEmail: string,
+  threadId: string,
+): Promise<WorkspaceActivityEmailBody | null> {
+  try {
+    const auth = await loadServiceAccountJwtForSubject(userEmail, [GMAIL_READONLY_SCOPE]);
+    const gmail = google.gmail({ version: "v1", auth });
+    const thread = await gmail.users.threads.get({
+      userId: "me",
+      id: threadId,
+      format: "full",
+    });
+    const messages = (thread.data.messages ?? [])
+      .map((m) => parseGmailMessageHeaders(m, userEmail))
+      .sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
+    if (!messages.length) return null;
+    const focus =
+      messages.find((m) => (m.from || "").toLowerCase().includes(userEmail.toLowerCase())) ??
+      messages[messages.length - 1]!;
+    return {
+      subject: focus.subject,
+      to: focus.to,
+      cc: focus.cc,
+      from: focus.from || userEmail,
+      sentAt: focus.sentAt,
+      body: focus.body,
+      source: "gmail",
+      threadId,
+      thread: messages.map(({ id, subject, to, cc, from, sentAt, body }) => ({
+        id,
+        subject,
+        to,
+        cc,
+        from,
+        sentAt,
+        body,
+      })),
     };
   } catch {
     return null;
@@ -1038,9 +1220,15 @@ export async function mergeAndEnrichEmails(
             preview: fetched.preview,
             bodyChars: fetched.bodyChars,
             bodyWords: fetched.bodyWords,
+            from: fetched.from ?? audit.from ?? userEmail,
             to: fetched.to ?? audit.to,
+            cc: fetched.cc ?? audit.cc,
             source: "gmail",
-            meta: { ...(audit.meta ?? {}), gmail_id: messageId },
+            meta: {
+              ...(audit.meta ?? {}),
+              gmail_id: messageId,
+              ...(fetched.threadId ? { thread_id: fetched.threadId } : {}),
+            },
           }),
         );
         continue;
@@ -1054,6 +1242,7 @@ export async function mergeAndEnrichEmails(
         preview: fallback.preview,
         bodyChars: fallback.bodyChars,
         bodyWords: fallback.bodyWords,
+        from: audit.from ?? userEmail,
         to: audit.to ?? humanEmailRecipient(audit.meta ?? {}),
       }),
     );

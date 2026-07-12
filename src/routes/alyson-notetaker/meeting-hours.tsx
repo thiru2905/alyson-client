@@ -14,7 +14,7 @@ import {
 import type { MeetingHoursEmailPreview } from "@/lib/meeting-hours-email.server";
 import type { MeetingHoursReport, MeetingHoursEmployeeRow } from "@/lib/meeting-hours-report.server";
 import { useSuperAccessAuth, useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
-import { CalendarDays, Captions, DollarSign, Loader2, Mail, RefreshCw, Search, X } from "lucide-react";
+import { Bot, CalendarDays, Captions, DollarSign, Loader2, Mail, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/alyson-notetaker/meeting-hours")({
@@ -86,11 +86,73 @@ function formatHours(n: number) {
 const DAY_COL_CLASS = "border-r border-border/70";
 const TOTAL_COL_CLASS = "border-l border-border";
 
-function DayCell({ hours }: { hours: number }) {
-  if (hours <= 0) {
+type ViewMode = "daily" | "weekly";
+
+type WeekBucket = {
+  id: string;
+  label: string;
+  subLabel: string;
+  days: string[];
+};
+
+type PeriodCellData = {
+  key: string;
+  hours: number;
+  meetingCount: number;
+};
+
+/** Monday (UTC) of the ISO calendar week containing `day`. */
+function mondayOfIsoDay(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  const dow = d.getUTCDay(); // 0 = Sun
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + mondayOffset);
+  return d.toISOString().slice(0, 10);
+}
+
+function clusterDaysIntoWeeks(days: string[]): WeekBucket[] {
+  const groups = new Map<string, string[]>();
+  for (const day of days) {
+    const mon = mondayOfIsoDay(day);
+    const arr = groups.get(mon) ?? [];
+    arr.push(day);
+    groups.set(mon, arr);
+  }
+  return [...groups.entries()].map(([mon, weekDays], i) => {
+    const first = weekDays[0]!;
+    const last = weekDays[weekDays.length - 1]!;
+    return {
+      id: mon,
+      label: `Week ${i + 1}`,
+      subLabel:
+        first === last
+          ? formatDayHeader(first)
+          : `${formatDayHeader(first)}–${formatDayHeader(last)}`,
+      days: weekDays,
+    };
+  });
+}
+
+function PeriodCell({
+  hours,
+  meetingCount,
+  showCount,
+}: {
+  hours: number;
+  meetingCount: number;
+  showCount?: boolean;
+}) {
+  if (hours <= 0 && meetingCount <= 0) {
     return <span className="text-muted-foreground/50">—</span>;
   }
-  return <span className="font-medium tabular-nums">{formatHours(hours)}</span>;
+  return (
+    <div className="leading-tight">
+      <div className="font-medium tabular-nums">{formatHours(hours)}</div>
+      {showCount && meetingCount > 0 ? (
+        <div className="text-[10px] text-muted-foreground tabular-nums">{meetingCount} mtg</div>
+      ) : null}
+    </div>
+  );
 }
 
 function matchesEmployeeSearch(row: MeetingHoursEmployeeRow, query: string): boolean {
@@ -273,9 +335,57 @@ function MeetingHoursContent({
   onSearchQueryChange: (value: string) => void;
   totalEmployeeCount: number;
 }) {
+  const [viewMode, setViewMode] = useState<ViewMode>("daily");
   const days = report.days;
   const comparing = compareEmails.length > 0;
   const filterActive = comparing || searchQuery.trim().length > 0;
+
+  const weeks = useMemo(() => clusterDaysIntoWeeks(days), [days]);
+
+  const periodColumns = useMemo(() => {
+    if (viewMode === "daily") {
+      return days.map((day) => ({
+        key: day,
+        label: formatDayHeader(day),
+        title: day,
+        subLabel: null as string | null,
+        dayKeys: [day],
+      }));
+    }
+    return weeks.map((w) => ({
+      key: w.id,
+      label: w.label,
+      title: `${w.label}: ${w.subLabel} (${w.days.length} day${w.days.length === 1 ? "" : "s"})`,
+      subLabel: w.subLabel,
+      dayKeys: w.days,
+    }));
+  }, [viewMode, days, weeks]);
+
+  const employeePeriodCells = useMemo(() => {
+    const byEmail = new Map<string, PeriodCellData[]>();
+    for (const row of employees) {
+      const dayMap = new Map(row.days.map((c) => [c.day, c]));
+      byEmail.set(
+        row.email,
+        periodColumns.map((col) => {
+          let hours = 0;
+          let meetingCount = 0;
+          for (const day of col.dayKeys) {
+            const cell = dayMap.get(day);
+            if (!cell) continue;
+            hours += cell.hours;
+            meetingCount += cell.meetingCount;
+          }
+          return {
+            key: col.key,
+            hours: Math.round(hours * 100) / 100,
+            meetingCount,
+          };
+        }),
+      );
+    }
+    return byEmail;
+  }, [employees, periodColumns]);
 
   const displayTotals = useMemo(() => {
     if (!filterActive) return report.totals;
@@ -344,17 +454,54 @@ function MeetingHoursContent({
             <div className="px-4 py-3 border-b border-border space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
                 <div>
-                  <div className="text-[13px] font-medium">Daily meeting load</div>
+                  <div className="text-[13px] font-medium">
+                    {viewMode === "weekly" ? "Weekly meeting load" : "Daily meeting load"}
+                  </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Cell = meeting count · hours that day · Avg = total hours ÷ days in range
+                    {viewMode === "weekly"
+                      ? "Cell = hours (and meeting count) per calendar week · Avg = total hours ÷ days in range"
+                      : "Cell = hours that day · Avg = total hours ÷ days in range"}
                   </div>
                 </div>
-                <div className="text-[11px] text-muted-foreground tabular-nums shrink-0">
-                  {comparing
-                    ? `Comparing ${employees.length} people`
-                    : filterActive
-                      ? `${employees.length} of ${totalEmployeeCount} employees`
-                      : `${totalEmployeeCount} employees`}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <div
+                    className="inline-flex items-center rounded-full border border-border bg-paper p-0.5"
+                    role="group"
+                    aria-label="Table granularity"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("daily")}
+                      className={
+                        "h-7 px-3 rounded-full text-[11.5px] font-medium transition-colors " +
+                        (viewMode === "daily"
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:text-foreground")
+                      }
+                    >
+                      Daily
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode("weekly")}
+                      className={
+                        "h-7 px-3 rounded-full text-[11.5px] font-medium transition-colors " +
+                        (viewMode === "weekly"
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:text-foreground")
+                      }
+                    >
+                      Weekly
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground tabular-nums">
+                    {comparing
+                      ? `Comparing ${employees.length} people`
+                      : filterActive
+                        ? `${employees.length} of ${totalEmployeeCount} employees`
+                        : `${totalEmployeeCount} employees`}
+                    {viewMode === "weekly" ? ` · ${weeks.length} weeks` : ""}
+                  </div>
                 </div>
               </div>
               <EmployeeComparePicker
@@ -372,13 +519,20 @@ function MeetingHoursContent({
                     <th className={`sticky left-0 z-10 bg-muted/95 backdrop-blur px-3 py-2 text-left font-medium min-w-[180px] border-r border-border`}>
                       Employee
                     </th>
-                    {days.map((day) => (
+                    {periodColumns.map((col) => (
                       <th
-                        key={day}
-                        className={`px-2 py-2 text-center font-medium text-muted-foreground min-w-[52px] ${DAY_COL_CLASS}`}
-                        title={day}
+                        key={col.key}
+                        className={`px-2 py-2 text-center font-medium text-muted-foreground ${
+                          viewMode === "weekly" ? "min-w-[88px]" : "min-w-[52px]"
+                        } ${DAY_COL_CLASS}`}
+                        title={col.title}
                       >
-                        {formatDayHeader(day)}
+                        <div>{col.label}</div>
+                        {col.subLabel ? (
+                          <div className="text-[10px] font-normal text-muted-foreground/80 mt-0.5 whitespace-nowrap">
+                            {col.subLabel}
+                          </div>
+                        ) : null}
                       </th>
                     ))}
                     <th className={`px-3 py-2 text-right font-medium min-w-[72px] ${TOTAL_COL_CLASS}`}>Total</th>
@@ -389,7 +543,7 @@ function MeetingHoursContent({
                   {employees.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={days.length + 3}
+                        colSpan={periodColumns.length + 3}
                         className="px-4 py-10 text-center text-[12px] text-muted-foreground"
                       >
                         {comparing
@@ -406,12 +560,16 @@ function MeetingHoursContent({
                           </div>
                           <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">{row.email}</div>
                         </td>
-                        {row.days.map((cell) => (
+                        {(employeePeriodCells.get(row.email) ?? []).map((cell) => (
                           <td
-                            key={cell.day}
+                            key={cell.key}
                             className={`px-2 py-2 text-center align-top tabular-nums ${DAY_COL_CLASS}`}
                           >
-                            <DayCell hours={cell.hours} />
+                            <PeriodCell
+                              hours={cell.hours}
+                              meetingCount={cell.meetingCount}
+                              showCount={viewMode === "weekly"}
+                            />
                           </td>
                         ))}
                         <td className={`px-3 py-2 text-right align-top font-medium tabular-nums ${TOTAL_COL_CLASS}`}>
@@ -630,6 +788,13 @@ function MeetingHoursPage() {
             >
               <CalendarDays className="h-3.5 w-3.5" />
               Calendar
+            </Link>
+            <Link
+              to="/alyson-notetaker/recall-calendar"
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              Recall Calendar
             </Link>
             <Link
               to="/alyson-notetaker/cost-tracking"

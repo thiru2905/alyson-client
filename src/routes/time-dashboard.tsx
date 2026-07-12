@@ -20,7 +20,7 @@ import { TimeDashboardGate } from "@/components/TimeDashboardGate";
 import { TimeDashboardRbacGate } from "@/components/TimeDashboardRbacGate";
 import { useTimeDashboardNavVisible, useTimeDashboardAccess, filterRowsForTimeDashboardAccess } from "@/lib/time-dashboard-access-hooks";
 import { timeDoctorErrorBannerText } from "@/lib/time-doctor-auth-errors";
-import { medalRowClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
+import { medalRowClass, medalStickyCellClass, rankCellContent, timeDashboardRank } from "@/lib/rank-medals";
 import { resetAppScroll } from "@/lib/app-scroll";
 
 export const Route = createFileRoute("/time-dashboard")({
@@ -563,10 +563,17 @@ function TimeDashboardPage() {
                         <tbody>
                           {employeeRollups.map((e, rowIndex) => {
                             const rank = rankByEmployeeId.get(e.employee_id) ?? rowIndex + 1;
+                            const medalClass = medalRowClass(rank);
+                            const stickyClass = medalStickyCellClass(rank);
                             return (
                               <tr
                                 key={e.employee_id}
-                                className={medalRowClass(rank) + " hover:bg-muted/40 cursor-pointer"}
+                                className={
+                                  medalClass +
+                                  (medalClass
+                                    ? " hover:brightness-[0.97] dark:hover:brightness-110 cursor-pointer"
+                                    : " hover:bg-muted/40 cursor-pointer")
+                                }
                                 onClick={() => {
                                   navigate({
                                     to: "/time-dashboard/$userId",
@@ -576,10 +583,10 @@ function TimeDashboardPage() {
                                 }}
                                 title="Open time detail page"
                               >
-                                <td align="center" className="sticky left-0 z-10 bg-background">
+                                <td align="center" className={`sticky left-0 z-10 ${stickyClass}`}>
                                   {rankCellContent(rank)}
                                 </td>
-                                <td className="align-middle sticky left-[56px] z-10 bg-background border-r border-border">
+                                <td className={`align-middle sticky left-[56px] z-10 border-r border-border ${stickyClass}`}>
                                   <div className="font-medium text-[13px] truncate max-w-[180px]">
                                     <Link
                                       to="/time-dashboard/$userId"

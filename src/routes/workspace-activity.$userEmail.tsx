@@ -83,6 +83,21 @@ function gmailMessageIdFromItem(item: WorkspaceActivityItem): string | null {
   return m.gmail_id || m.message_id || m.gmail_message_id || m.msg_id || null;
 }
 
+function gmailThreadIdFromItem(item: WorkspaceActivityItem): string | null {
+  const m = item.meta;
+  if (!m) return null;
+  return m.thread_id || m.gmail_thread_id || m.threadId || null;
+}
+
+function EmailParty({ label, value }: { label: string; value?: string | null }) {
+  if (!value?.trim()) return null;
+  return (
+    <p className="text-[12px] text-muted-foreground break-words">
+      <span className="font-medium text-foreground">{label}:</span> {value}
+    </p>
+  );
+}
+
 function canOpenContentModal(kind: InsightKind, item: WorkspaceActivityItem) {
   const text = previewText(item);
   if (!text.trim()) return false;
@@ -154,7 +169,7 @@ function ContentPreviewInsight({
   const canSummarize = canInsightPreview(insightKind, item);
   const isEmail = insightKind === "email";
   const [open, setOpen] = useState(false);
-  const [panel, setPanel] = useState<"summary" | "full">("summary");
+  const [panel, setPanel] = useState<"summary" | "full" | "thread">("summary");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +180,14 @@ function ContentPreviewInsight({
   const fullCacheRef = useRef(new Map<string, WorkspaceActivityEmailBodyResult>());
 
   const cacheKey = `${item.at}|${item.title}`;
-  const fullCacheKey = `${cacheKey}|${gmailMessageIdFromItem(item) ?? "preview"}`;
+  const messageId = gmailMessageIdFromItem(item);
+  const threadId = gmailThreadIdFromItem(item) || fullBody?.threadId || undefined;
+  const fullCacheKey = `${cacheKey}|${messageId ?? "resolve"}|msg`;
+  const threadCacheKey = `${cacheKey}|${threadId ?? messageId ?? "resolve"}|thread`;
+
+  const displayFrom = fullBody?.from || item.from || (isEmail ? userEmail : undefined);
+  const displayTo = fullBody?.to || item.to;
+  const displayCc = fullBody?.cc || item.cc;
 
   const loadInsight = async () => {
     if (!canSummarize) return;
@@ -180,7 +202,7 @@ function ContentPreviewInsight({
     try {
       const previewForApi =
         isEmail && item.title && !text.toLowerCase().includes(item.title.toLowerCase().slice(0, 24))
-          ? `Subject: ${item.title}\n\n${text}`
+          ? `Subject: ${item.title}\nFrom: ${displayFrom || userEmail}\nTo: ${displayTo || "—"}\n\n${text}`
           : text;
       const auth = await superAuth();
       const r = await getWorkspaceActivityItemInsight({
@@ -204,31 +226,37 @@ function ContentPreviewInsight({
     }
   };
 
-  const loadFullEmail = async () => {
-    const cached = fullCacheRef.current.get(fullCacheKey);
-    if (cached) {
+  const loadEmail = async (includeThread: boolean) => {
+    const key = includeThread ? threadCacheKey : fullCacheKey;
+    const cached = fullCacheRef.current.get(key);
+    if (cached && (!includeThread || cached.thread?.length)) {
       setFullBody(cached);
       setFullError(null);
-      setPanel("full");
+      setPanel(includeThread ? "thread" : "full");
       return;
     }
     setFullLoading(true);
     setFullError(null);
+    setPanel(includeThread ? "thread" : "full");
     try {
       const auth = await superAuth();
       const r = await getWorkspaceActivityEmailBody({
         data: {
           ...auth,
           userEmail,
-          messageId: gmailMessageIdFromItem(item) ?? undefined,
+          messageId: messageId ?? undefined,
+          threadId: threadId ?? undefined,
           title: item.title,
           preview: text,
           at: item.at,
+          includeThread,
         },
       });
-      fullCacheRef.current.set(fullCacheKey, r);
+      fullCacheRef.current.set(key, r);
+      if (r.threadId) {
+        fullCacheRef.current.set(`${cacheKey}|${r.threadId}|thread`, r);
+      }
       setFullBody(r);
-      setPanel("full");
     } catch (e) {
       setFullError(e instanceof Error ? e.message : "Failed to load email body");
     } finally {
@@ -238,8 +266,13 @@ function ContentPreviewInsight({
 
   const onOpen = () => {
     setOpen(true);
-    setPanel("summary");
-    if (canSummarize) void loadInsight();
+    if (isEmail) {
+      setPanel("full");
+      void loadEmail(false);
+    } else {
+      setPanel("summary");
+      if (canSummarize) void loadInsight();
+    }
   };
 
   const closeModal = () => {
@@ -281,21 +314,20 @@ function ContentPreviewInsight({
           onClick={closeModal}
         >
           <div
-            className="surface-card w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5 shadow-xl"
+            className="surface-card w-full max-w-3xl max-h-[90vh] overflow-y-auto p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
+              <div className="min-w-0">
                 <div
                   id={labels.ariaId}
                   className="text-[11px] uppercase tracking-[0.1em] text-muted-foreground font-medium"
                 >
                   {isEmail ? "Email details" : labels.modalTitle}
                 </div>
-                <h3 className="text-[15px] font-medium mt-1 leading-snug">{item.title}</h3>
+                <h3 className="text-[15px] font-medium mt-1 leading-snug break-words">{item.title}</h3>
                 <p className="text-[11px] text-muted-foreground mt-1">
                   {fmtWhen(item.at)} · {rangeLabel}
-                  {item.to ? ` · To: ${item.to}` : ""}
                 </p>
               </div>
               <button
@@ -309,7 +341,56 @@ function ContentPreviewInsight({
             </div>
 
             {isEmail ? (
+              <div className="rounded-md border border-border/70 bg-muted/25 px-3 py-2.5 mb-3 space-y-1">
+                <EmailParty label="From" value={displayFrom} />
+                <EmailParty label="To" value={displayTo} />
+                <EmailParty label="Cc" value={displayCc} />
+                {!displayTo ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Recipient not available from audit logs — open full email to load Gmail headers.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {isEmail ? (
               <div className="flex flex-wrap items-center gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => void loadEmail(false)}
+                  disabled={fullLoading}
+                  className={
+                    "h-7 px-2.5 rounded text-[11px] font-medium border inline-flex items-center gap-1.5 " +
+                    (panel === "full"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {fullLoading && panel === "full" ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Mail className="h-3 w-3" />
+                  )}
+                  Full email
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void loadEmail(true)}
+                  disabled={fullLoading}
+                  className={
+                    "h-7 px-2.5 rounded text-[11px] font-medium border inline-flex items-center gap-1.5 " +
+                    (panel === "thread"
+                      ? "bg-foreground text-background border-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground")
+                  }
+                >
+                  {fullLoading && panel === "thread" ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Mail className="h-3 w-3" />
+                  )}
+                  Entire thread
+                </button>
                 {canSummarize ? (
                   <button
                     type="button"
@@ -327,20 +408,6 @@ function ContentPreviewInsight({
                     AI summary
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => void loadFullEmail()}
-                  disabled={fullLoading}
-                  className={
-                    "h-7 px-2.5 rounded text-[11px] font-medium border inline-flex items-center gap-1.5 " +
-                    (panel === "full"
-                      ? "bg-foreground text-background border-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground")
-                  }
-                >
-                  {fullLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
-                  Read entire email
-                </button>
               </div>
             ) : null}
 
@@ -354,29 +421,55 @@ function ContentPreviewInsight({
                 <p className="text-[13px] text-destructive">{fullError}</p>
               ) : fullBody ? (
                 <div className="space-y-3">
-                  {fullBody.from ? (
-                    <p className="text-[12px] text-muted-foreground">
-                      <span className="font-medium text-foreground">From:</span> {fullBody.from}
-                    </p>
-                  ) : null}
-                  {fullBody.to ? (
-                    <p className="text-[12px] text-muted-foreground">
-                      <span className="font-medium text-foreground">To:</span> {fullBody.to}
-                    </p>
-                  ) : null}
-                  {fullBody.cc ? (
-                    <p className="text-[12px] text-muted-foreground">
-                      <span className="font-medium text-foreground">Cc:</span> {fullBody.cc}
-                    </p>
-                  ) : null}
-                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap border border-border/60 rounded-md p-3 bg-muted/20 max-h-[50vh] overflow-y-auto">
+                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap border border-border/60 rounded-md p-3 bg-muted/20 max-h-[55vh] overflow-y-auto">
                     {fullBody.body}
                   </div>
                   <p className="text-[10px] text-muted-foreground">
                     {fullBody.source === "gmail"
                       ? "Full message from Gmail API."
-                      : "Audit/preview only — Gmail delegation may be required for the complete body."}
+                      : "Audit/preview only — Gmail domain-wide delegation may be required for the complete body."}
                   </p>
+                </div>
+              ) : null
+            ) : panel === "thread" && isEmail ? (
+              fullLoading ? (
+                <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading conversation thread from Gmail…
+                </div>
+              ) : fullError ? (
+                <p className="text-[13px] text-destructive">{fullError}</p>
+              ) : fullBody?.thread?.length ? (
+                <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {fullBody.thread.map((msg, idx) => (
+                    <div
+                      key={msg.id || `${msg.sentAt}-${idx}`}
+                      className="rounded-md border border-border/70 bg-muted/15 p-3 space-y-2"
+                    >
+                      <div className="text-[11px] text-muted-foreground">
+                        {msg.sentAt ? fmtWhen(msg.sentAt) : "—"}
+                        {msg.subject ? ` · ${msg.subject}` : ""}
+                      </div>
+                      <EmailParty label="From" value={msg.from} />
+                      <EmailParty label="To" value={msg.to} />
+                      <EmailParty label="Cc" value={msg.cc} />
+                      <div className="text-[13px] leading-relaxed whitespace-pre-wrap pt-1 border-t border-border/50">
+                        {msg.body}
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-muted-foreground">
+                    {fullBody.thread.length} message{fullBody.thread.length === 1 ? "" : "s"} in thread (Gmail).
+                  </p>
+                </div>
+              ) : fullBody ? (
+                <div className="space-y-3">
+                  <p className="text-[13px] text-muted-foreground">
+                    Thread messages unavailable — showing this email only.
+                  </p>
+                  <div className="text-[13px] leading-relaxed whitespace-pre-wrap border border-border/60 rounded-md p-3 bg-muted/20 max-h-[55vh] overflow-y-auto">
+                    {fullBody.body}
+                  </div>
                 </div>
               ) : null
             ) : (
@@ -388,7 +481,7 @@ function ContentPreviewInsight({
 
                 {!canSummarize ? (
                   <p className="text-[13px] text-muted-foreground">
-                    Preview only — use &ldquo;Read entire email&rdquo; for the full message when available.
+                    Preview only — use Full email / Entire thread for the complete message when Gmail access is available.
                   </p>
                 ) : loading ? (
                   <div className="flex items-center gap-2 text-[13px] text-muted-foreground py-6">
@@ -400,18 +493,6 @@ function ContentPreviewInsight({
                 ) : (
                   <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{summary}</div>
                 )}
-
-                {isEmail && canSummarize ? (
-                  <button
-                    type="button"
-                    onClick={() => void loadFullEmail()}
-                    disabled={fullLoading}
-                    className="mt-4 h-8 px-3 rounded-md border border-border text-xs inline-flex items-center gap-1.5 hover:bg-muted disabled:opacity-50"
-                  >
-                    {fullLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
-                    Read entire email
-                  </button>
-                ) : null}
 
                 <p className="text-[10px] text-muted-foreground mt-4">{labels.footer}</p>
               </>
@@ -446,14 +527,23 @@ function RichActivityTable({
 
   return (
     <TableScroll>
-      <table className="ops-table w-full">
+      <table className="ops-table w-full min-w-[900px]">
         <thead>
           <tr>
             <th align="left" className="w-[10rem]">
               When (IST)
             </th>
             <th align="left">Title / subject</th>
-            {showTo ? <th align="left">To</th> : null}
+            {showTo ? (
+              <>
+                <th align="left" className="min-w-[9rem]">
+                  From
+                </th>
+                <th align="left" className="min-w-[10rem]">
+                  To
+                </th>
+              </>
+            ) : null}
             {showRoom ? <th align="left">Room</th> : null}
             <th align="left" className="w-[5.5rem]">
               Category
@@ -484,9 +574,18 @@ function RichActivityTable({
                 ) : null}
               </td>
               {showTo ? (
-                <td className="text-[12px] text-muted-foreground pt-2 max-w-[10rem] truncate" title={it.to}>
-                  {it.to ?? "—"}
-                </td>
+                <>
+                  <td className="text-[12px] text-muted-foreground pt-2 max-w-[12rem]">
+                    <div className="line-clamp-3 break-words" title={it.from || userEmail}>
+                      {it.from || userEmail}
+                    </div>
+                  </td>
+                  <td className="text-[12px] text-muted-foreground pt-2 max-w-[14rem]">
+                    <div className="line-clamp-3 break-words" title={it.to}>
+                      {it.to ?? "—"}
+                    </div>
+                  </td>
+                </>
               ) : null}
               {showRoom ? (
                 <td className="text-[12px] text-muted-foreground pt-2 max-w-[10rem] truncate" title={it.room}>

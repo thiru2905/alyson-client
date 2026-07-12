@@ -472,7 +472,9 @@ function pushItem(
     bodyChars,
     bodyWords,
     category: extra?.category,
+    from: extra?.from,
     to: extra?.to,
+    cc: extra?.cc,
     room: extra?.room,
     mimeType: extra?.mimeType,
     source: extra?.source ?? "audit",
@@ -650,6 +652,7 @@ export async function fetchWorkspaceUserActivityDetailImpl(data: {
         const stats = auditEmailTextStats(meta, subject || "Outbound email");
         const to = humanEmailRecipient(meta);
         pushItem(emails, at, "email", subject || "Outbound email", {
+          from: userEmail,
           to,
           preview: stats.preview,
           bodyChars: stats.bodyChars,

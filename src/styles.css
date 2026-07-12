@@ -471,24 +471,74 @@
 .ops-dense .ops-table td, .ops-dense .ops-table th { padding: 8px 12px; }
 .ops-dense .ops-table tr { border-bottom: 1px solid var(--border); }
 
-/* Top-3 medal row highlights (Employee Scoring, Workspace Activity) */
+/* Top-3 medal row highlights (Employee Scoring, Workspace Activity, Time Dashboard) */
 .medal-row-gold {
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.18) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(251, 191, 36, 0.28) 0%,
+    rgba(251, 191, 36, 0.14) 42%,
+    rgba(251, 191, 36, 0.04) 100%
+  );
 }
 .medal-row-silver {
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.2) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.3) 0%,
+    rgba(148, 163, 184, 0.14) 42%,
+    rgba(148, 163, 184, 0.04) 100%
+  );
 }
 .medal-row-bronze {
-  background: linear-gradient(90deg, rgba(234, 88, 12, 0.14) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(234, 88, 12, 0.22) 0%,
+    rgba(234, 88, 12, 0.12) 42%,
+    rgba(234, 88, 12, 0.04) 100%
+  );
 }
 .dark .medal-row-gold {
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.12) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(251, 191, 36, 0.2) 0%,
+    rgba(251, 191, 36, 0.1) 45%,
+    rgba(251, 191, 36, 0.03) 100%
+  );
 }
 .dark .medal-row-silver {
-  background: linear-gradient(90deg, rgba(148, 163, 184, 0.1) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.18) 0%,
+    rgba(148, 163, 184, 0.08) 45%,
+    rgba(148, 163, 184, 0.02) 100%
+  );
 }
 .dark .medal-row-bronze {
-  background: linear-gradient(90deg, rgba(234, 88, 12, 0.1) 0%, transparent 55%);
+  background: linear-gradient(
+    90deg,
+    rgba(234, 88, 12, 0.16) 0%,
+    rgba(234, 88, 12, 0.08) 45%,
+    rgba(234, 88, 12, 0.02) 100%
+  );
+}
+
+/* Sticky cells need solid tints so medal shade isn't covered by bg-background */
+.medal-sticky-gold {
+  background-color: color-mix(in oklab, rgb(251 191 36) 22%, var(--color-background));
+}
+.medal-sticky-silver {
+  background-color: color-mix(in oklab, rgb(148 163 184) 24%, var(--color-background));
+}
+.medal-sticky-bronze {
+  background-color: color-mix(in oklab, rgb(234 88 12) 18%, var(--color-background));
+}
+.dark .medal-sticky-gold {
+  background-color: color-mix(in oklab, rgb(251 191 36) 16%, var(--color-background));
+}
+.dark .medal-sticky-silver {
+  background-color: color-mix(in oklab, rgb(148 163 184) 14%, var(--color-background));
+}
+.dark .medal-sticky-bronze {
+  background-color: color-mix(in oklab, rgb(234 88 12) 12%, var(--color-background));
 }
 
 /* Global: pointer cursor for interactive controls */

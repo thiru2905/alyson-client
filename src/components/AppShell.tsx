@@ -55,6 +55,7 @@ const NAV: NavItem[] = [
   { to: "/alyson-notetaker/meeting-hours", label: "Meeting Hours", icon: Clock, group: "Ops" },
   { to: "/alyson-notetaker/meeting-list", label: "Meeting List", icon: List, group: "Ops" },
   { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops" },
+  { to: "/alyson-notetaker/recall-calendar", label: "Recall Calendar", icon: Bot, group: "Ops" },
   { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3, group: "Ops" },
   { to: "/alyson-notetaker/bot-join-report", label: "Bot Join Report", icon: Bot, group: "Ops" },
   { to: "/alyson-notetaker/unified-meetings", label: "Unified Meetings", icon: CalendarDays, group: "Ops" },

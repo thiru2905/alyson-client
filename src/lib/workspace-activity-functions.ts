@@ -64,26 +64,60 @@ export type WorkspaceActivityInsightResult = {
 const EmailBodyInput = superAccessInputSchema.extend({
   userEmail: z.string().email(),
   messageId: z.string().max(200).optional(),
+  threadId: z.string().max(200).optional(),
   title: z.string().min(1).max(500),
   preview: z.string().max(50_000).optional(),
   at: z.string().min(1),
+  /** When true, return every message in the Gmail thread. */
+  includeThread: z.boolean().optional(),
 });
 
 export const getWorkspaceActivityEmailBody = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => EmailBodyInput.parse(data))
   .handler(async ({ data }): Promise<WorkspaceActivityEmailBodyResult> => {
     await requireSuperAccess(data.clerkToken, data.emailHint);
-    const { fetchGmailMessageFullBody } = await import("@/lib/workspace-activity-content.server");
+    const {
+      fetchGmailMessageFullBody,
+      fetchGmailThreadFull,
+      findGmailMessageBySubjectAndTime,
+    } = await import("@/lib/workspace-activity-content.server");
     const { clerkToken: _t, emailHint: _e, ...payload } = data;
+
+    if (payload.includeThread && payload.threadId) {
+      const thread = await fetchGmailThreadFull(payload.userEmail, payload.threadId);
+      if (thread) return thread;
+    }
+
     if (payload.messageId) {
       const fromGmail = await fetchGmailMessageFullBody(payload.userEmail, payload.messageId);
-      if (fromGmail) return fromGmail;
+      if (fromGmail) {
+        if (payload.includeThread && fromGmail.threadId) {
+          const thread = await fetchGmailThreadFull(payload.userEmail, fromGmail.threadId);
+          if (thread) return thread;
+        }
+        return fromGmail;
+      }
     }
+
+    const bySubject = await findGmailMessageBySubjectAndTime(
+      payload.userEmail,
+      payload.title,
+      payload.at,
+    );
+    if (bySubject) {
+      if (payload.includeThread && bySubject.threadId) {
+        const thread = await fetchGmailThreadFull(payload.userEmail, bySubject.threadId);
+        if (thread) return thread;
+      }
+      return bySubject;
+    }
+
     const preview = String(payload.preview || "").trim();
     return {
       subject: payload.title,
+      from: payload.userEmail,
       sentAt: payload.at,
-      body: preview || "(No email body available — Workspace audit only.)",
+      body: preview || "(No email body available — Workspace audit only. Gmail delegation may be required.)",
       source: "preview",
     };
   });

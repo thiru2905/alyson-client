@@ -19,6 +19,15 @@ export function medalRowClass(rank: number): string {
   return "";
 }
 
+/** Sticky cell bg that preserves gold/silver/bronze tint (plain bg-background hides the shade). */
+export function medalStickyCellClass(rank: number): string {
+  const tier = medalTierForRank(rank);
+  if (tier === "gold") return "medal-sticky-gold";
+  if (tier === "silver") return "medal-sticky-silver";
+  if (tier === "bronze") return "medal-sticky-bronze";
+  return "bg-background";
+}
+
 export function MedalBadge({ rank }: { rank: number }) {
   const tier = medalTierForRank(rank);
   const emoji = medalEmojiForRank(rank);

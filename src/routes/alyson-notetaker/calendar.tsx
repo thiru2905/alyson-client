@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, FileText, X } from "lucide-react";
+import { Bot, CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, FileText, X } from "lucide-react";
 import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
@@ -385,6 +385,13 @@ function CalendarPage() {
                 Meeting hours
               </Link>
             ) : null}
+            <Link
+              to="/alyson-notetaker/recall-calendar"
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              Recall Calendar
+            </Link>
             <Link
               to="/alyson-notetaker/cost-tracking"
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"

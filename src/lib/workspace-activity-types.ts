@@ -27,7 +27,10 @@ export type WorkspaceActivityItem = {
   bodyWords?: number;
   /** Heuristic label, e.g. meeting, support, sales, internal, general. */
   category?: string;
+  /** Sender (From header) when known from Gmail. */
+  from?: string;
   to?: string;
+  cc?: string;
   room?: string;
   mimeType?: string;
   source?: "audit" | "gmail" | "drive" | "calendar" | "chat";
@@ -41,6 +44,16 @@ export type WorkspaceActivityDetailStats = {
   meetings: { count: number };
 };
 
+export type WorkspaceActivityEmailMessage = {
+  id?: string;
+  subject: string;
+  to?: string;
+  cc?: string;
+  from?: string;
+  sentAt?: string;
+  body: string;
+};
+
 export type WorkspaceActivityEmailBodyResult = {
   subject: string;
   to?: string;
@@ -49,6 +62,9 @@ export type WorkspaceActivityEmailBodyResult = {
   sentAt?: string;
   body: string;
   source: "gmail" | "preview";
+  threadId?: string;
+  /** Full conversation when thread was requested. */
+  thread?: WorkspaceActivityEmailMessage[];
 };
 
 export type WorkspaceUserActivityDetail = {
@@ -71,7 +87,9 @@ export type GmailSentSnippet = {
   at: string;
   subject: string;
   snippet: string;
+  from?: string;
   to?: string;
+  cc?: string;
   preview?: string;
   bodyChars?: number;
   bodyWords?: number;
