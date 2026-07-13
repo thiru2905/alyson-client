@@ -37,8 +37,17 @@ export type LeaveEmailSyncResult = {
   errors: string[];
 };
 
-function resolveLeaveDays(startDate: string, endDate: string, days: number | null | undefined): number {
-  if (days != null && days > 0) return Math.round(days);
+function resolveLeaveDays(
+  startDate: string,
+  endDate: string,
+  days: number | null | undefined,
+  halfDay?: boolean,
+): number {
+  if (halfDay) return 0.5;
+  if (days != null && days > 0) {
+    if (days > 0 && days < 1) return 0.5;
+    return Math.round(days);
+  }
   return leaveDaysInclusive(startDate, endDate);
 }
 
@@ -141,7 +150,12 @@ async function processLeaveEmailMessage(
     base.matchedEmployeeName = match.employeeName;
 
     const ledger = employees[match.employeeId];
-    const days = resolveLeaveDays(startDate, endDate, extraction.leave.days);
+    const days = resolveLeaveDays(
+      startDate,
+      endDate,
+      extraction.leave.days,
+      extraction.leave.halfDay,
+    );
     const existing = ledger ? findOverlappingLeaveEvent(ledger, startDate, endDate) : null;
     if (existing) {
       base.status = "duplicate";
@@ -647,9 +661,10 @@ export async function approveLeaveEmailQueueItem(args: {
     return { eventId: existing.id, ledgerEmployeeId: employeeId };
   }
 
+  const halfDay = Boolean(extraction.leave.halfDay);
   const days =
     args.days ??
-    resolveLeaveDays(startDate, endDate, extraction.leave.days);
+    resolveLeaveDays(startDate, endDate, extraction.leave.days, halfDay);
 
   const note = [
     "Email leave",
@@ -666,8 +681,9 @@ export async function approveLeaveEmailQueueItem(args: {
     employeeId,
     leaveType: toLeaveType(args.leaveType || extraction.leave.leaveType),
     startDate,
-    endDate,
+    endDate: halfDay ? startDate : endDate,
     days,
+    halfDay,
     note,
     actor: args.actor ?? "leave-email-agent",
     allowOverLimit: args.allowOverLimit ?? item.salaryDeductionRisk ?? false,

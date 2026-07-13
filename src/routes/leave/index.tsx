@@ -65,10 +65,16 @@ function LeaveEmployeesPage() {
       leaveType: "annual" | "sick" | "personal" | "unpaid" | "other";
       startDate: string;
       endDate: string;
+      halfDay?: boolean;
       note?: string;
     }) => recordLeave({ data: { ...payload, actor, ...(await superAuth()) } }),
     onSuccess: (r) => {
-      toast.success(`Recorded ${r.event.days} day(s) leave`);
+      const half = Boolean(r.event.halfDay) || r.event.days === 0.5;
+      toast.success(
+        half
+          ? "Recorded half-day leave (+4h pacing credit)"
+          : `Recorded ${r.event.days} day(s) leave (+${r.event.days * PACING_LEAVE_HOURS_PER_DAY}h pacing)`,
+      );
       setSelected(r.ledger);
       void qc.invalidateQueries({ queryKey: QUERY_KEY });
       void qc.invalidateQueries({ queryKey: ["leave-analytics"] });

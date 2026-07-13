@@ -2,7 +2,7 @@ import { emailLookupKeys } from "@/lib/cintara-email";
 
 export const WEEKLY_HOURS_TARGET = 35;
 
-/** Hours credited per personal/team leave workday (added to logged hours). */
+/** Hours credited per full personal/team leave workday (added to logged hours). Half day = 0.5 × this (= 4h). */
 export const PACING_LEAVE_HOURS_PER_DAY = 8;
 
 /** Expected hours per workday for weekly/monthly/payroll targets (35h ÷ 5). */

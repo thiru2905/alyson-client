@@ -3,17 +3,17 @@ import type { LeaveType } from "@/lib/leave-schema";
 
 export const LEAVE_EMAIL_MAILBOX_DEFAULT = "people-ops@cintara.ai";
 
-/** LLMs often return 2.0 or 1.5 — normalize to whole weekday leave days. */
+/** LLMs may return 0.5 for half day or 1.5 — keep 0.5, otherwise round to whole days. */
 export const leaveDaysFromLlmSchema = z.preprocess(
   (val) => {
     if (val == null || val === "") return null;
     const n = typeof val === "number" ? val : Number(val);
     if (!Number.isFinite(n)) return val;
     if (n < 0) return val;
-    if (n > 0 && n < 1) return 1;
+    if (n > 0 && n < 1) return 0.5;
     return Math.round(n);
   },
-  z.number().int().nonnegative().nullable(),
+  z.number().nonnegative().nullable(),
 );
 
 export const LeaveEmailToneSchema = z.object({

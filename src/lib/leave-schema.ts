@@ -13,6 +13,9 @@ export function leaveTypeLabel(t: LeaveType): string {
   return LEAVE_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t;
 }
 
+/** Half-day leave credit (×8h pacing → +4h). Full day = 1 → +8h. */
+export const HALF_DAY_LEAVE_DAYS = 0.5;
+
 /** Append-only leave record for an employee. */
 export type LeaveRecordEvent = {
   id: string;
@@ -21,7 +24,13 @@ export type LeaveRecordEvent = {
   startDate: string;
   /** ISO date YYYY-MM-DD */
   endDate: string;
+  /**
+   * Leave day credit for balances / pacing.
+   * Full day = 1 per weekday; half day = 0.5 (+4h pacing vs +8h full).
+   */
   days: number;
+  /** When true, recorded as a single half day (days should be 0.5). */
+  halfDay?: boolean;
   note?: string;
   createdAt: string;
   createdBy?: string | null;
@@ -128,28 +137,43 @@ export function matchesTeamLocation(
   );
 }
 
-export type LeaveDateRange = { startDate: string; endDate: string };
+export type LeaveDateRange = {
+  startDate: string;
+  endDate: string;
+  /** Half-day leave credits 0.5 day / +4h pacing instead of 1 / +8h. */
+  halfDay?: boolean;
+};
 
-/** Count unique weekday leave days across overlapping ranges within a report window. */
+/**
+ * Count weekday leave credit across overlapping ranges within a report window.
+ * Overlapping leave on the same date takes the max fraction (full day wins over half).
+ */
 export function countLeaveWorkdaysUnion(
   ranges: LeaveDateRange[],
   rangeStart: string,
   rangeEnd: string,
 ): number {
-  const days = new Set<string>();
+  if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) return 0;
+  const byDay = new Map<string, number>();
   for (const e of ranges) {
     const start = e.startDate > rangeStart ? e.startDate : rangeStart;
     const end = e.endDate < rangeEnd ? e.endDate : rangeEnd;
     if (start > end) continue;
+    const fraction = e.halfDay ? HALF_DAY_LEAVE_DAYS : 1;
     const cur = new Date(`${start}T12:00:00Z`);
     const endD = new Date(`${end}T12:00:00Z`);
     while (cur.getTime() <= endD.getTime()) {
       const dow = cur.getUTCDay();
-      if (dow !== 0 && dow !== 6) days.add(cur.toISOString().slice(0, 10));
+      if (dow !== 0 && dow !== 6) {
+        const iso = cur.toISOString().slice(0, 10);
+        byDay.set(iso, Math.max(byDay.get(iso) ?? 0, fraction));
+      }
       cur.setUTCDate(cur.getUTCDate() + 1);
     }
   }
-  return days.size;
+  let total = 0;
+  for (const v of byDay.values()) total += v;
+  return Math.round(total * 100) / 100;
 }
 
 export function leaveDaysInclusive(startDate: string, endDate: string): number {

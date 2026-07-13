@@ -24,6 +24,7 @@ const appendLeaveSchema = actorWithAuthSchema.extend({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   days: z.number().positive().optional(),
+  halfDay: z.boolean().optional(),
   note: z.string().optional(),
   allowOverLimit: z.boolean().optional(),
 });
@@ -105,6 +106,7 @@ export const recordLeave = createServerFn({ method: "POST" })
       startDate: rest.startDate,
       endDate: rest.endDate,
       days: rest.days,
+      halfDay: rest.halfDay,
       note: rest.note,
       actor: rest.actor ?? null,
       allowOverLimit: rest.allowOverLimit,

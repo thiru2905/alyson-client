@@ -16,6 +16,7 @@ import type {
 } from "@/lib/leave-schema";
 import {
   formatTeamLeaveLabel,
+  HALF_DAY_LEAVE_DAYS,
   leaveDaysInclusive,
   matchesTeamLocation,
   newLeaveEventId,
@@ -296,6 +297,8 @@ export async function appendLeaveRecord(args: {
   startDate: string;
   endDate: string;
   days?: number;
+  /** Half day: single weekday, 0.5 day credit (+4h pacing). */
+  halfDay?: boolean;
   note?: string;
   actor?: string | null;
   /** When true, record leave even if lifetime limit exceeded (salary deduction case). */
@@ -306,9 +309,17 @@ export async function appendLeaveRecord(args: {
   if (!ledger) throw new Error("Employee not found in leave ledger");
   if (!ledger.active) throw new Error("Cannot record leave for inactive employee");
 
-  const days = args.days ?? leaveDaysInclusive(args.startDate, args.endDate);
+  const halfDay = Boolean(args.halfDay);
+  const startDate = args.startDate;
+  const endDate = halfDay ? args.startDate : args.endDate;
+  const days = halfDay
+    ? HALF_DAY_LEAVE_DAYS
+    : (args.days ?? leaveDaysInclusive(startDate, endDate));
   if (days <= 0) {
     throw new Error("Leave range has no weekdays (Sat–Sun are not counted).");
+  }
+  if (halfDay && leaveDaysInclusive(startDate, startDate) <= 0) {
+    throw new Error("Half-day leave must fall on a weekday (Sat–Sun are not counted).");
   }
   if (!args.allowOverLimit) {
     const limitCheck = validateLifetimeLeaveLimit(ledger.leaveEvents, days);
@@ -318,9 +329,10 @@ export async function appendLeaveRecord(args: {
   const event: LeaveRecordEvent = {
     id: newLeaveEventId(),
     leaveType: args.leaveType,
-    startDate: args.startDate,
-    endDate: args.endDate,
+    startDate,
+    endDate,
     days,
+    ...(halfDay ? { halfDay: true } : {}),
     note: args.note?.trim() || undefined,
     createdAt: new Date().toISOString(),
     createdBy: args.actor ?? null,
@@ -341,7 +353,9 @@ export async function appendLeaveRecord(args: {
     actor: args.actor ?? null,
     employeeId: ledger.employeeId,
     employeeName: ledger.employeeName,
-    details: `Recorded ${days} day(s) ${args.leaveType} leave ${args.startDate} – ${args.endDate}`,
+    details: halfDay
+      ? `Recorded half day ${args.leaveType} leave ${startDate} (+4h pacing)`
+      : `Recorded ${days} day(s) ${args.leaveType} leave ${startDate} – ${endDate}`,
     event,
     syncedFromOnboardingAt: data.syncedFromOnboardingAt,
   });

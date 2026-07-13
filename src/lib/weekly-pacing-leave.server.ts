@@ -61,11 +61,21 @@ function personalRangesForEmployee(
   email: string,
 ): LeaveDateRange[] {
   const ledger = employees[employeeId];
-  if (ledger) return ledger.leaveEvents.map((e) => ({ startDate: e.startDate, endDate: e.endDate }));
+  if (ledger) {
+    return ledger.leaveEvents.map((e) => ({
+      startDate: e.startDate,
+      endDate: e.endDate,
+      halfDay: e.halfDay,
+    }));
+  }
   const emailKey = normEmail(email);
   for (const l of Object.values(employees)) {
     if (normEmail(l.officialEmail) === emailKey) {
-      return l.leaveEvents.map((e) => ({ startDate: e.startDate, endDate: e.endDate }));
+      return l.leaveEvents.map((e) => ({
+        startDate: e.startDate,
+        endDate: e.endDate,
+        halfDay: e.halfDay,
+      }));
     }
   }
   return [];
@@ -111,7 +121,11 @@ function leaveDaysForLedger(
 ): number {
   const applicableTeam = teamLeavesForEmployee(teamLeaves, ledger.location, ledger.team);
   const ranges = [
-    ...ledger.leaveEvents.map((e) => ({ startDate: e.startDate, endDate: e.endDate })),
+    ...ledger.leaveEvents.map((e) => ({
+      startDate: e.startDate,
+      endDate: e.endDate,
+      halfDay: e.halfDay,
+    })),
     ...applicableTeam.map((e) => ({ startDate: e.startDate, endDate: e.endDate })),
   ];
   return countLeaveWorkdaysUnion(ranges, rangeStart, rangeEnd);
@@ -167,12 +181,19 @@ export function resolveLeaveBreakdownForPacingEmployee(
   return leaveBreakdownForEmployee(ctx, args);
 }
 
-function isWeekdayOnLeave(ranges: LeaveDateRange[], day: string): boolean {
-  if (!isWeekdayIso(day)) return false;
-  return ranges.some((r) => day >= r.startDate && day <= r.endDate);
+/** Pacing hours credit for a single weekday from leave ranges (half = 4h, full = 8h). */
+function leaveHoursForWeekday(ranges: LeaveDateRange[], day: string): number {
+  if (!isWeekdayIso(day)) return 0;
+  let maxFraction = 0;
+  for (const r of ranges) {
+    if (day >= r.startDate && day <= r.endDate) {
+      maxFraction = Math.max(maxFraction, r.halfDay ? 0.5 : 1);
+    }
+  }
+  return maxFraction * PACING_LEAVE_HOURS_PER_DAY;
 }
 
-/** Per Mon–Thu sample day: +7h credit when that weekday is on personal or team leave. */
+/** Per sample weekday: +8h full leave / +4h half leave when that day is on personal or team leave. */
 export function resolveDailyLeaveHoursForSample(
   ctx: PacingLeaveContext,
   args: {
@@ -191,9 +212,7 @@ export function resolveDailyLeaveHoursForSample(
   ).map((e) => ({ startDate: e.startDate, endDate: e.endDate }));
   const allRanges = [...personalRanges, ...teamRanges];
 
-  return sampleDays.map((day) =>
-    isWeekdayOnLeave(allRanges, day) ? PACING_LEAVE_HOURS_PER_DAY : 0,
-  );
+  return sampleDays.map((day) => leaveHoursForWeekday(allRanges, day));
 }
 
 /** Skip daily leave sample credit for inactive / former employees. */

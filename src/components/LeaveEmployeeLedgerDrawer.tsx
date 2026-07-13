@@ -5,6 +5,7 @@ import { Drawer } from "@/components/Drawer";
 import { Field, FormFooter, GhostBtn, PrimaryBtn, TextArea, TextInput } from "@/components/forms/FormField";
 import type { EmployeeLeaveLedger, LeaveRecordEvent, LeaveType } from "@/lib/leave-schema";
 import {
+  HALF_DAY_LEAVE_DAYS,
   LEAVE_TYPE_OPTIONS,
   LIFETIME_LEAVE_DAYS_LIMIT,
   leaveDaysInclusive,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/leave-schema";
 import { isLeaveEventOverLimit } from "@/lib/leave-calendar";
 import { fmtDate } from "@/lib/format";
+import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 
 type Props = {
   open: boolean;
@@ -26,6 +28,7 @@ type Props = {
     leaveType: LeaveType;
     startDate: string;
     endDate: string;
+    halfDay?: boolean;
     note?: string;
   }) => void;
   onVoidLeave?: (eventId: string) => void;
@@ -44,6 +47,7 @@ export function LeaveEmployeeLedgerDrawer({
   const [voidTarget, setVoidTarget] = useState<LeaveRecordEvent | null>(null);
   const [voidConfirmTyped, setVoidConfirmTyped] = useState("");
   const [leaveType, setLeaveType] = useState<LeaveType>("annual");
+  const [halfDay, setHalfDay] = useState(false);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
@@ -52,6 +56,7 @@ export function LeaveEmployeeLedgerDrawer({
     if (!open) {
       setTab("history");
       setNote("");
+      setHalfDay(false);
       setVoidTarget(null);
       setVoidConfirmTyped("");
     }
@@ -60,6 +65,10 @@ export function LeaveEmployeeLedgerDrawer({
   useEffect(() => {
     if (!voidTarget) setVoidConfirmTyped("");
   }, [voidTarget]);
+
+  useEffect(() => {
+    if (halfDay) setEndDate(startDate);
+  }, [halfDay, startDate]);
 
   const totalDays = useMemo(() => (ledger ? sumLeaveDays(ledger.leaveEvents) : 0), [ledger]);
   const remainingDays = useMemo(
@@ -77,10 +86,15 @@ export function LeaveEmployeeLedgerDrawer({
     [ledger],
   );
 
-  const previewDays = useMemo(
-    () => (startDate && endDate ? leaveDaysInclusive(startDate, endDate) : 0),
-    [startDate, endDate],
-  );
+  const previewDays = useMemo(() => {
+    if (!startDate) return 0;
+    if (halfDay) {
+      return leaveDaysInclusive(startDate, startDate) > 0 ? HALF_DAY_LEAVE_DAYS : 0;
+    }
+    return endDate ? leaveDaysInclusive(startDate, endDate) : 0;
+  }, [startDate, endDate, halfDay]);
+
+  const pacingCreditHours = previewDays * PACING_LEAVE_HOURS_PER_DAY;
 
   const limitError = useMemo(() => {
     if (!ledger || previewDays <= 0) return null;
@@ -89,7 +103,11 @@ export function LeaveEmployeeLedgerDrawer({
   }, [ledger, previewDays]);
 
   const canSubmit =
-    !saving && endDate >= startDate && previewDays > 0 && remainingDays > 0 && !limitError;
+    !saving &&
+    (halfDay || endDate >= startDate) &&
+    previewDays > 0 &&
+    remainingDays > 0 &&
+    !limitError;
 
   if (!open || !ledger) return null;
 
@@ -133,6 +151,7 @@ export function LeaveEmployeeLedgerDrawer({
               ) : (
                 sorted.map((e) => {
                   const overLimit = isLeaveEventOverLimit(ledger.leaveEvents, e.id);
+                  const isHalf = Boolean(e.halfDay) || e.days === HALF_DAY_LEAVE_DAYS;
                   return (
                   <div
                     key={e.id}
@@ -146,8 +165,14 @@ export function LeaveEmployeeLedgerDrawer({
                       <div>
                         <div className="font-medium text-[13px] flex items-center gap-2 flex-wrap">
                           <span>
-                            {leaveTypeLabel(e.leaveType)} · {e.days} day{e.days === 1 ? "" : "s"}
+                            {leaveTypeLabel(e.leaveType)} ·{" "}
+                            {isHalf ? "half day" : `${e.days} day${e.days === 1 ? "" : "s"}`}
                           </span>
+                          {isHalf ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              +{PACING_LEAVE_HOURS_PER_DAY / 2}h
+                            </span>
+                          ) : null}
                           {overLimit ? (
                             <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
                               Over limit
@@ -155,7 +180,9 @@ export function LeaveEmployeeLedgerDrawer({
                           ) : null}
                         </div>
                         <div className="text-[12px] text-muted-foreground mt-0.5">
-                          {fmtDate(e.startDate)} – {fmtDate(e.endDate)}
+                          {isHalf
+                            ? fmtDate(e.startDate)
+                            : `${fmtDate(e.startDate)} – ${fmtDate(e.endDate)}`}
                         </div>
                         {e.note ? <div className="text-[12px] text-muted-foreground mt-1">{e.note}</div> : null}
                         <div className="text-[11px] text-muted-foreground mt-1 font-mono">
@@ -187,7 +214,13 @@ export function LeaveEmployeeLedgerDrawer({
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!canSubmit) return;
-                onRecordLeave({ leaveType, startDate, endDate, note: note.trim() || undefined });
+                onRecordLeave({
+                  leaveType,
+                  startDate,
+                  endDate: halfDay ? startDate : endDate,
+                  halfDay: halfDay || undefined,
+                  note: note.trim() || undefined,
+                });
               }}
             >
               {remainingDays === 0 ? (
@@ -208,21 +241,63 @@ export function LeaveEmployeeLedgerDrawer({
                   ))}
                 </select>
               </Field>
-              <Field label="Start date">
+              <Field label="Duration">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHalfDay(false)}
+                    className={
+                      "h-9 flex-1 rounded-md border text-[12px] font-medium transition-colors " +
+                      (!halfDay
+                        ? "bg-muted border-border text-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/60")
+                    }
+                  >
+                    Full day (+{PACING_LEAVE_HOURS_PER_DAY}h)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHalfDay(true)}
+                    className={
+                      "h-9 flex-1 rounded-md border text-[12px] font-medium transition-colors " +
+                      (halfDay
+                        ? "bg-muted border-border text-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted/60")
+                    }
+                  >
+                    Half day (+{PACING_LEAVE_HOURS_PER_DAY / 2}h)
+                  </button>
+                </div>
+              </Field>
+              <Field label={halfDay ? "Date" : "Start date"}>
                 <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
               </Field>
-              <Field label="End date">
-                <TextInput
-                  type="date"
-                  value={endDate}
-                  min={startDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  required
-                />
-              </Field>
+              {!halfDay ? (
+                <Field label="End date">
+                  <TextInput
+                    type="date"
+                    value={endDate}
+                    min={startDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    required
+                  />
+                </Field>
+              ) : null}
               <div className="text-[12px] text-muted-foreground">
-                Duration: <span className="font-medium text-foreground">{previewDays} workday(s)</span>
-                {previewDays > 0 ? " · weekends excluded" : endDate >= startDate ? " · no weekdays in range" : ""}
+                Duration:{" "}
+                <span className="font-medium text-foreground">
+                  {halfDay ? "half day (0.5)" : `${previewDays} workday(s)`}
+                </span>
+                {previewDays > 0 ? (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">+{pacingCreditHours}h</span> pacing credit
+                  </>
+                ) : endDate >= startDate || halfDay ? (
+                  " · no weekdays in range"
+                ) : (
+                  ""
+                )}
                 {previewDays > 0 ? (
                   <>
                     {" · "}
