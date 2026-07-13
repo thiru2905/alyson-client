@@ -90,7 +90,7 @@ export type LeaveDataFile = {
   updatedAt: string;
   syncedFromOnboardingAt: string | null;
   employees: Record<string, EmployeeLeaveLedger>;
-  /** Location + team leave blocks (auto +7h/day in Weekly Pacing for matching employees). */
+  /** Location + team leave blocks (auto +8h/day in Weekly Pacing for matching employees). */
   teamLeaves?: TeamLeaveEvent[];
 };
 

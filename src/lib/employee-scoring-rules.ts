@@ -3,6 +3,8 @@
  * Each dimension is scored 0–100 via cohort percentile rank, then combined with fixed weights.
  */
 
+import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
+
 export const SCORING_WEIGHTS = {
   workHours: 0.6,
   meetings: 0.167,
@@ -131,7 +133,7 @@ export const SCORING_RULES_SUMMARY = [
   "One scoring window applies to Google Workspace activity and Time Doctor hours.",
   "Meetings = calendar events scheduled in the window (attended or created), not audit create_event only.",
   "Time Doctor uses calendar dates derived from the same window (start date → end date, inclusive).",
-  "Approved leave workdays credit +7h/day toward work hours (same as Weekly/Monthly Pacing) so composite score is not penalized for time off.",
+  `Approved leave workdays credit +${PACING_LEAVE_HOURS_PER_DAY}h/day toward work hours (same as Weekly/Monthly Pacing; half day +${PACING_LEAVE_HOURS_PER_DAY / 2}h) so composite score is not penalized for time off.`,
   "Duplicate directory accounts for the same person (e.g. mohita@revcloud.com + mohita@cintara.ai) are merged before ranking.",
   "Each metric is scored 0–100 as a percentile vs all users in the cohort (fair across scales).",
   `Composite = ${SCORING_WEIGHTS.workHours * 100}% work hours + ${SCORING_WEIGHTS.meetings * 100}% meetings + ${SCORING_WEIGHTS.emails * 100}% emails + ${SCORING_WEIGHTS.chat * 100}% chat + ${SCORING_WEIGHTS.docs * 100}% docs.`,

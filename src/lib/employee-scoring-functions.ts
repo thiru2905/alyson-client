@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { z } from "zod";
 import type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
+import { PACING_LEAVE_HOURS_PER_DAY } from "@/lib/weekly-pacing";
 
 export type { EmployeeScoringResponse } from "@/lib/employee-scoring-types";
 
@@ -141,7 +142,7 @@ export const getEmployeeScoring = createServerFn({ method: "GET" })
     const leaveCreditedCount = creditedInputs.filter((r) => (r.leaveHoursCredit ?? 0) > 0).length;
     if (leaveCreditedCount > 0) {
       warnings.push(
-        `Leave credit (+7h/workday) applied for ${leaveCreditedCount} employee${leaveCreditedCount === 1 ? "" : "s"} with approved leave in range.`,
+        `Leave credit (+${PACING_LEAVE_HOURS_PER_DAY}h/workday) applied for ${leaveCreditedCount} employee${leaveCreditedCount === 1 ? "" : "s"} with approved leave in range.`,
       );
     }
 

@@ -31,7 +31,7 @@ export type WeeklyPacingRow = {
   leaveDaysPersonal: number;
   /** Team/location leave workdays this week. */
   leaveDaysTeam: number;
-  /** Leave credit applied to pacing (leaveDays × 7h). */
+  /** Leave credit applied to pacing (leaveDays × 8h; half day = 0.5 → +4h). */
   leaveHoursCredit: number;
   /** Logged hours + leave credit — used for target / status / remaining. */
   hoursWorked: number;
