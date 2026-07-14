@@ -631,8 +631,8 @@ function MonthlyPacingPage() {
                       <div className="flex flex-wrap gap-1.5">
                         {(
                           [
-                            ["__all__", "All"],
                             ["yes", "Active"],
+                            ["__all__", "All"],
                             ["no", "Inactive"],
                           ] as const
                         ).map(([value, label]) => (

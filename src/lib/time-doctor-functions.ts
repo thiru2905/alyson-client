@@ -929,15 +929,18 @@ async function upstreamFetch<T>(
   path: string,
   init?: RequestInit & { params?: Record<string, string | number | undefined>; auth?: "auto_refresh" | "access_only" },
 ): Promise<T> {
-  const {
-    timeDoctorOAuthEnv,
-    getValidAccessToken,
-    TimeDoctorAuthError,
-  } = await import("@/lib/time-doctor-token-manager.server");
+  // Read env here — do NOT dynamically import `.server` modules from this client-imported file
+  // (TanStack Start import-protection will break the RPC with "Failed to fetch").
+  const API_BASE_URL = (process.env.API_BASE_URL ?? "").trim();
+  const API_ACCESS_TOKEN = (process.env.API_ACCESS_TOKEN ?? "").trim();
+  if (!API_BASE_URL) {
+    throw new Error("Missing env API_BASE_URL (e.g. https://webapi.timedoctor.com/v1.1).");
+  }
+  if (!API_ACCESS_TOKEN) {
+    throw new Error(formatTimeDoctorAuthError("Missing API_ACCESS_TOKEN"));
+  }
 
-  const env = timeDoctorOAuthEnv();
-
-  const url = new URL(path.replace(/^\//, ""), env.API_BASE_URL.replace(/\/+$/, "") + "/");
+  const url = new URL(path.replace(/^\//, ""), API_BASE_URL.replace(/\/+$/, "") + "/");
   if (init?.params) {
     for (const [k, v] of Object.entries(init.params)) {
       if (v === undefined) continue;
@@ -966,19 +969,12 @@ async function upstreamFetch<T>(
     });
   };
 
-  let token: string;
-  try {
-    token = await getValidAccessToken();
-  } catch (e) {
-    throw e instanceof TimeDoctorAuthError ? e : new TimeDoctorAuthError(String(e));
-  }
-
-  const res = await doFetch(token);
+  const res = await doFetch(API_ACCESS_TOKEN);
   const text = await res.text().catch(() => "");
 
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) {
-      throw new TimeDoctorAuthError(formatTimeDoctorAuthError(text || res.statusText));
+      throw new Error(formatTimeDoctorAuthError(text || res.statusText));
     }
     throw new Error(`Upstream error ${res.status} ${res.statusText}: ${text}`.slice(0, 2000));
   }
