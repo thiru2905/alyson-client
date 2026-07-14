@@ -92,6 +92,7 @@ function compactRow(r: WeeklyPacingRow) {
     name: r.name,
     loc: r.location || "?",
     team: r.team || "?",
+    type: r.employmentType || "?",
     mgr: r.managerName || "?",
     hrs: r.hoursWorked,
     logged: r.hoursWorkedLogged,

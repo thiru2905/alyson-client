@@ -37,6 +37,8 @@ import {
   formatLeaveBreakdown,
   pacingFilterExportSlug,
   pacingFilterSummaryLabel,
+  pacingHasNonDefaultFacetFilters,
+  PACING_DEFAULT_ACTIVE_FILTER,
   PACING_LEAVE_HOURS_PER_DAY,
   PACING_TARGET_HOURS_PER_WORKDAY,
   PACING_STATUS_LABEL,
@@ -45,6 +47,7 @@ import {
   type WeeklyPacingSortField,
   type WeeklyPacingStatus,
 } from "@/lib/weekly-pacing";
+import { EMPLOYMENT_TYPE_OPTIONS, formatEmploymentTypeLabel } from "@/lib/employment-type";
 import {
   fetchMonthlyPacingReport,
   setWeeklyPacingActiveOverride,
@@ -133,7 +136,8 @@ function MonthlyPacingPage() {
   const [searchQ, setSearchQ] = useState("");
   const [locationFilter, setLocationFilter] = useState("__all__");
   const [teamFilter, setTeamFilter] = useState("__all__");
-  const [activeFilter, setActiveFilter] = useState("__all__");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState("__all__");
+  const [activeFilter, setActiveFilter] = useState(PACING_DEFAULT_ACTIVE_FILTER);
   const [periodMode, setPeriodMode] = useState<MonthlyPacingPeriodMode>(
     hasCustomRange ? "range" : "month",
   );
@@ -217,17 +221,32 @@ function MonthlyPacingPage() {
     });
   }, [allRows]);
 
+  const employmentTypeOptions = useMemo(() => {
+    const set = new Set<string>(EMPLOYMENT_TYPE_OPTIONS);
+    let hasEmpty = false;
+    for (const r of allRows) {
+      const v = r.employmentType?.trim();
+      if (!v) hasEmpty = true;
+      else set.add(v);
+    }
+    const opts = [...set].sort((a, b) => a.localeCompare(b));
+    if (hasEmpty) opts.push("__empty__");
+    return opts;
+  }, [allRows]);
+
   const facetFilteredRows = useMemo(() => {
     return allRows.filter((r) => {
       const loc = r.location?.trim() || "__empty__";
       const team = r.team?.trim() || "__empty__";
+      const employmentType = r.employmentType?.trim() || "__empty__";
       if (locationFilter !== "__all__" && loc !== locationFilter) return false;
       if (teamFilter !== "__all__" && team !== teamFilter) return false;
+      if (employmentTypeFilter !== "__all__" && employmentType !== employmentTypeFilter) return false;
       if (activeFilter === "yes" && !r.active) return false;
       if (activeFilter === "no" && r.active) return false;
       return true;
     });
-  }, [activeFilter, allRows, locationFilter, teamFilter]);
+  }, [activeFilter, allRows, employmentTypeFilter, locationFilter, teamFilter]);
 
   const filteredRows = useMemo(
     () => filterPacingRows(facetFilteredRows, searchQ),
@@ -240,16 +259,18 @@ function MonthlyPacingPage() {
   );
 
   const facetFilters = useMemo(
-    () => ({ location: locationFilter, team: teamFilter, active: activeFilter }),
-    [activeFilter, locationFilter, teamFilter],
+    () => ({
+      location: locationFilter,
+      team: teamFilter,
+      employmentType: employmentTypeFilter,
+      active: activeFilter,
+    }),
+    [activeFilter, employmentTypeFilter, locationFilter, teamFilter],
   );
 
   const filterSummary = useMemo(() => pacingFilterSummaryLabel(facetFilters), [facetFilters]);
-  const hasAnyFilters =
-    locationFilter !== "__all__" ||
-    teamFilter !== "__all__" ||
-    activeFilter !== "__all__" ||
-    Boolean(searchQ.trim());
+  const hasFacetFilters = pacingHasNonDefaultFacetFilters(facetFilters);
+  const hasAnyFilters = hasFacetFilters || Boolean(searchQ.trim());
 
   const summary = useMemo(() => {
     let metTarget = 0;
@@ -281,9 +302,6 @@ function MonthlyPacingPage() {
       ),
     [locationOptions],
   );
-
-  const hasFacetFilters =
-    locationFilter !== "__all__" || teamFilter !== "__all__" || activeFilter !== "__all__";
 
   function applyPeriod() {
     if (periodMode === "range") {
@@ -342,7 +360,8 @@ function MonthlyPacingPage() {
   function clearFacetFilters() {
     setLocationFilter("__all__");
     setTeamFilter("__all__");
-    setActiveFilter("__all__");
+    setEmploymentTypeFilter("__all__");
+    setActiveFilter(PACING_DEFAULT_ACTIVE_FILTER);
   }
 
   function exportCsv() {
@@ -353,6 +372,7 @@ function MonthlyPacingPage() {
       "name",
       "location",
       "team",
+      "employment_type",
       "manager_name",
       "manager_email",
       "hours_worked",
@@ -377,6 +397,7 @@ function MonthlyPacingPage() {
         name: r.name,
         location: r.location ?? "",
         team: r.team ?? "",
+        employment_type: r.employmentType ?? "",
         manager_name: r.managerName ?? "",
         manager_email: r.managerEmail ?? "",
         hours_worked: r.hoursWorked.toFixed(2),
@@ -485,7 +506,7 @@ function MonthlyPacingPage() {
                 <input
                   value={searchQ}
                   onChange={(e) => setSearchQ(e.target.value)}
-                  placeholder="Search name, email, location, team…"
+                  placeholder="Search name, email, location, team, type…"
                   className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
                 />
               </div>
@@ -497,7 +518,8 @@ function MonthlyPacingPage() {
                   <div className="min-w-0">
                     <h3 className="font-display text-base">Filters</h3>
                     <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
-                      Narrow the table by location, team, or active status. Click column headers to sort A–Z or Z–A.
+                      Narrow the table by location, team, employment type, or active status. Click
+                      column headers to sort A–Z or Z–A.
                     </p>
                   </div>
                   <div className="text-[11px] text-muted-foreground tabular-nums text-right shrink-0">
@@ -577,6 +599,26 @@ function MonthlyPacingPage() {
                         {teamOptions.map((opt) => (
                           <option key={opt} value={opt}>
                             {filterLabel(opt, "team")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-2 min-w-[12rem]">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        Employment type
+                      </div>
+                      <select
+                        value={employmentTypeFilter}
+                        onChange={(e) => setEmploymentTypeFilter(e.target.value)}
+                        className={`h-8 w-full sm:w-auto min-w-[12rem] px-3 rounded-lg border text-[12px] bg-background transition-colors ${
+                          employmentTypeFilter !== "__all__" ? "border-primary" : "border-border"
+                        }`}
+                      >
+                        <option value="__all__">All types</option>
+                        {employmentTypeOptions.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt === "__empty__" ? "Not set" : formatEmploymentTypeLabel(opt)}
                           </option>
                         ))}
                       </select>
@@ -782,6 +824,16 @@ function MonthlyPacingPage() {
                       <th align="left">
                         <button
                           type="button"
+                          onClick={() => applySort("employmentType")}
+                          className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("employmentType")}`}
+                        >
+                          Type
+                          <SortIcon field="employmentType" />
+                        </button>
+                      </th>
+                      <th align="left">
+                        <button
+                          type="button"
                           onClick={() => applySort("managerName")}
                           className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("managerName")}`}
                         >
@@ -920,7 +972,7 @@ function MonthlyPacingPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={16} className="text-center text-muted-foreground py-8">
+                        <td colSpan={17} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
                             : "No employees found for this period."}
@@ -935,6 +987,7 @@ function MonthlyPacingPage() {
                           </td>
                           <td className="text-[13px]">{r.location || "—"}</td>
                           <td className="text-[13px]">{r.team || "—"}</td>
+                          <td className="text-[13px]">{formatEmploymentTypeLabel(r.employmentType)}</td>
                           <td>
                             <div className="text-[13px]">{r.managerName || "—"}</div>
                             {r.managerEmail ? (

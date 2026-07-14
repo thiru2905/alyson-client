@@ -21,7 +21,9 @@ import {
   isFridayOrLater,
   pacingFilterExportSlug,
   pacingFilterSummaryLabel,
+  pacingHasNonDefaultFacetFilters,
   pacingTodayIso,
+  PACING_DEFAULT_ACTIVE_FILTER,
   formatActiveLabel,
   formatLeaveBreakdown,
   buildLeaveSummaryFromRows,
@@ -34,6 +36,7 @@ import {
   type WeeklyPacingSortField,
   type WeeklyPacingStatus,
 } from "@/lib/weekly-pacing";
+import { EMPLOYMENT_TYPE_OPTIONS, formatEmploymentTypeLabel } from "@/lib/employment-type";
 import { fmtDate } from "@/lib/format";
 import { downloadCSV } from "@/lib/csv";
 import { downloadWeeklyPacingPdf } from "@/lib/weekly-pacing-pdf";
@@ -94,7 +97,8 @@ function WeeklyPacingPage() {
   const [searchQ, setSearchQ] = useState("");
   const [locationFilter, setLocationFilter] = useState("__all__");
   const [teamFilter, setTeamFilter] = useState("__all__");
-  const [activeFilter, setActiveFilter] = useState("__all__");
+  const [employmentTypeFilter, setEmploymentTypeFilter] = useState("__all__");
+  const [activeFilter, setActiveFilter] = useState(PACING_DEFAULT_ACTIVE_FILTER);
   const [day, setDay] = useState(search.day ?? defaultDay);
   const [insightsMd, setInsightsMd] = useState<string | null>(null);
 
@@ -108,7 +112,7 @@ function WeeklyPacingPage() {
 
   useEffect(() => {
     setInsightsMd(null);
-  }, [rollupDay, locationFilter, teamFilter, activeFilter, searchQ]);
+  }, [rollupDay, locationFilter, teamFilter, employmentTypeFilter, activeFilter, searchQ]);
 
   const q = useQuery({
     queryKey: ["weekly-pacing-report", rollupDay, managerEmail],
@@ -120,7 +124,7 @@ function WeeklyPacingPage() {
   });
 
   const trendQ = useQuery({
-    queryKey: ["weekly-hours-trend", locationFilter, teamFilter, managerEmail],
+    queryKey: ["weekly-hours-trend", locationFilter, teamFilter, employmentTypeFilter, managerEmail],
     queryFn: () =>
       fetchWeeklyHoursTrend({
         data: {
@@ -128,6 +132,7 @@ function WeeklyPacingPage() {
           targetHours: 35,
           location: locationFilter,
           team: teamFilter,
+          employmentType: employmentTypeFilter,
           active: "yes",
           ...(managerEmail ? { managerEmail } : {}),
         },
@@ -169,17 +174,32 @@ function WeeklyPacingPage() {
     });
   }, [allRows]);
 
+  const employmentTypeOptions = useMemo(() => {
+    const set = new Set<string>(EMPLOYMENT_TYPE_OPTIONS);
+    let hasEmpty = false;
+    for (const r of allRows) {
+      const v = r.employmentType?.trim();
+      if (!v) hasEmpty = true;
+      else set.add(v);
+    }
+    const opts = [...set].sort((a, b) => a.localeCompare(b));
+    if (hasEmpty) opts.push("__empty__");
+    return opts;
+  }, [allRows]);
+
   const facetFilteredRows = useMemo(() => {
     return allRows.filter((r) => {
       const loc = r.location?.trim() || "__empty__";
       const team = r.team?.trim() || "__empty__";
+      const employmentType = r.employmentType?.trim() || "__empty__";
       if (locationFilter !== "__all__" && loc !== locationFilter) return false;
       if (teamFilter !== "__all__" && team !== teamFilter) return false;
+      if (employmentTypeFilter !== "__all__" && employmentType !== employmentTypeFilter) return false;
       if (activeFilter === "yes" && !r.active) return false;
       if (activeFilter === "no" && r.active) return false;
       return true;
     });
-  }, [activeFilter, allRows, locationFilter, teamFilter]);
+  }, [activeFilter, allRows, employmentTypeFilter, locationFilter, teamFilter]);
 
   const filteredRows = useMemo(
     () => filterPacingRows(facetFilteredRows, searchQ),
@@ -192,12 +212,16 @@ function WeeklyPacingPage() {
   );
 
   const facetFilters = useMemo(
-    () => ({ location: locationFilter, team: teamFilter, active: activeFilter }),
-    [activeFilter, locationFilter, teamFilter],
+    () => ({
+      location: locationFilter,
+      team: teamFilter,
+      employmentType: employmentTypeFilter,
+      active: activeFilter,
+    }),
+    [activeFilter, employmentTypeFilter, locationFilter, teamFilter],
   );
 
-  const hasFacetFilters =
-    locationFilter !== "__all__" || teamFilter !== "__all__" || activeFilter !== "__all__";
+  const hasFacetFilters = pacingHasNonDefaultFacetFilters(facetFilters);
   const hasAnyFilters = hasFacetFilters || Boolean(searchQ.trim());
   const filterSummary = useMemo(() => pacingFilterSummaryLabel(facetFilters), [facetFilters]);
 
@@ -337,6 +361,7 @@ function WeeklyPacingPage() {
       "name",
       "location",
       "team",
+      "employment_type",
       "manager_name",
       "manager_email",
       "hours_worked",
@@ -358,6 +383,7 @@ function WeeklyPacingPage() {
         name: r.name,
         location: r.location ?? "",
         team: r.team ?? "",
+        employment_type: r.employmentType ?? "",
         manager_name: r.managerName ?? "",
         manager_email: r.managerEmail ?? "",
         hours_worked: r.hoursWorked.toFixed(2),
@@ -380,7 +406,8 @@ function WeeklyPacingPage() {
   function clearFacetFilters() {
     setLocationFilter("__all__");
     setTeamFilter("__all__");
-    setActiveFilter("__all__");
+    setEmploymentTypeFilter("__all__");
+    setActiveFilter(PACING_DEFAULT_ACTIVE_FILTER);
   }
 
   if (!canAccess) {
@@ -484,7 +511,7 @@ function WeeklyPacingPage() {
                   <input
                     value={searchQ}
                     onChange={(e) => setSearchQ(e.target.value)}
-                    placeholder="Search name, email, location, team…"
+                    placeholder="Search name, email, location, team, type…"
                     className="w-full h-8 pl-8 pr-3 rounded-md border border-border bg-background text-[13px]"
                   />
                 </div>
@@ -498,13 +525,16 @@ function WeeklyPacingPage() {
               isTrendRefetching={isTrendRefetching}
               locationFilter={locationFilter}
               teamFilter={teamFilter}
+              employmentTypeFilter={employmentTypeFilter}
               activeFilter={activeFilter}
               onLocationFilter={setLocationFilter}
               onTeamFilter={setTeamFilter}
+              onEmploymentTypeFilter={setEmploymentTypeFilter}
               onActiveFilter={setActiveFilter}
               onClearFilters={clearFacetFilters}
               locationOptions={locationOptions}
               teamOptions={teamOptions}
+              employmentTypeOptions={employmentTypeOptions}
               filteredEmployeeCount={filteredRows.length}
               totalEmployeeCount={allRows.length}
             />
@@ -722,6 +752,16 @@ function WeeklyPacingPage() {
                       <th align="left">
                         <button
                           type="button"
+                          onClick={() => applySort("employmentType")}
+                          className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("employmentType")}`}
+                        >
+                          Type
+                          <SortIcon field="employmentType" />
+                        </button>
+                      </th>
+                      <th align="left">
+                        <button
+                          type="button"
                           onClick={() => applySort("managerName")}
                           className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${sortHeaderClass("managerName")}`}
                         >
@@ -864,7 +904,7 @@ function WeeklyPacingPage() {
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={16} className="text-center text-muted-foreground py-8">
+                        <td colSpan={17} className="text-center text-muted-foreground py-8">
                           {searchQ.trim()
                             ? "No employees match your search."
                             : "No employees found for this week."}
@@ -879,6 +919,7 @@ function WeeklyPacingPage() {
                           </td>
                           <td className="text-[13px]">{r.location || "—"}</td>
                           <td className="text-[13px]">{r.team || "—"}</td>
+                          <td className="text-[13px]">{formatEmploymentTypeLabel(r.employmentType)}</td>
                           <td>
                             <div className="text-[13px]">{r.managerName || "—"}</div>
                             {r.managerEmail ? (

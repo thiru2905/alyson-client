@@ -16,10 +16,13 @@ import {
   YAxis,
 } from "recharts";
 import {
+  PACING_DEFAULT_ACTIVE_FILTER,
   pacingFilterSummaryLabel,
+  pacingHasNonDefaultFacetFilters,
   type WeeklyHoursTrendPoint,
   type WeeklyHoursTrendReport,
 } from "@/lib/weekly-pacing";
+import { formatEmploymentTypeLabel } from "@/lib/employment-type";
 
 const QUICK_LOCATIONS = ["Pune", "Lahore", "Bahawalpur"] as const;
 
@@ -30,13 +33,16 @@ type Props = {
   isTrendRefetching: boolean;
   locationFilter: string;
   teamFilter: string;
+  employmentTypeFilter: string;
   activeFilter: string;
   onLocationFilter: (value: string) => void;
   onTeamFilter: (value: string) => void;
+  onEmploymentTypeFilter: (value: string) => void;
   onActiveFilter: (value: string) => void;
   onClearFilters: () => void;
   locationOptions: string[];
   teamOptions: string[];
+  employmentTypeOptions: string[];
   filteredEmployeeCount: number;
   totalEmployeeCount: number;
 };
@@ -51,9 +57,18 @@ function shortWeekLabel(weekStart: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function filterLabel(value: string, kind: "location" | "team"): string {
-  if (value === "__all__") return kind === "location" ? "All locations" : "All teams";
-  if (value === "__empty__") return kind === "location" ? "No location" : "No team";
+function filterLabel(value: string, kind: "location" | "team" | "employmentType"): string {
+  if (value === "__all__") {
+    if (kind === "location") return "All locations";
+    if (kind === "team") return "All teams";
+    return "All types";
+  }
+  if (value === "__empty__") {
+    if (kind === "location") return "No location";
+    if (kind === "team") return "No team";
+    return "Not set";
+  }
+  if (kind === "employmentType") return formatEmploymentTypeLabel(value);
   return value;
 }
 
@@ -131,31 +146,38 @@ export function WeeklyPacingTrendPanel({
   isTrendRefetching,
   locationFilter,
   teamFilter,
+  employmentTypeFilter,
   activeFilter,
   onLocationFilter,
   onTeamFilter,
+  onEmploymentTypeFilter,
   onActiveFilter,
   onClearFilters,
   locationOptions,
   teamOptions,
+  employmentTypeOptions,
   filteredEmployeeCount,
   totalEmployeeCount,
 }: Props) {
   const [selected, setSelected] = useState<WeeklyHoursTrendPoint | null>(null);
   const [chartPdfLoading, setChartPdfLoading] = useState(false);
-  const chartFilterKey = `${locationFilter}|${teamFilter}`;
+  const chartFilterKey = `${locationFilter}|${teamFilter}|${employmentTypeFilter}`;
 
   useEffect(() => {
     setSelected(null);
   }, [chartFilterKey]);
 
   const facetFilters = useMemo(
-    () => ({ location: locationFilter, team: teamFilter, active: activeFilter }),
-    [activeFilter, locationFilter, teamFilter],
+    () => ({
+      location: locationFilter,
+      team: teamFilter,
+      employmentType: employmentTypeFilter,
+      active: activeFilter,
+    }),
+    [activeFilter, employmentTypeFilter, locationFilter, teamFilter],
   );
   const filterSummary = pacingFilterSummaryLabel(facetFilters);
-  const hasFacetFilters =
-    locationFilter !== "__all__" || teamFilter !== "__all__" || activeFilter !== "__all__";
+  const hasFacetFilters = pacingHasNonDefaultFacetFilters(facetFilters);
 
   const extraLocations = locationOptions.filter(
     (opt) => opt !== "__empty__" && !QUICK_LOCATIONS.includes(opt as (typeof QUICK_LOCATIONS)[number]),
@@ -209,8 +231,9 @@ export function WeeklyPacingTrendPanel({
               ) : null}
             </div>
             <p className="text-[12px] text-muted-foreground mt-1 max-w-2xl">
-              8-week average logged hours per active employee (Active = Yes). Location and team
-              filters update the chart; the Active filter below applies to the table only.
+              8-week average logged hours per active employee (Active = Yes). Location, team, and
+              employment type filters update the chart; the Active filter below applies to the table
+              only (defaults to Active).
             </p>
           </div>
           <div className="flex flex-col items-end gap-2 shrink-0">
@@ -310,6 +333,26 @@ export function WeeklyPacingTrendPanel({
               </select>
             </div>
 
+            <div className="flex flex-col gap-2 min-w-[12rem]">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Employment type
+              </div>
+              <select
+                value={employmentTypeFilter}
+                onChange={(e) => onEmploymentTypeFilter(e.target.value)}
+                className={`h-8 w-full sm:w-auto min-w-[12rem] px-3 rounded-lg border text-[12px] bg-background transition-colors ${
+                  employmentTypeFilter !== "__all__" ? "border-primary" : "border-border"
+                }`}
+              >
+                <option value="__all__">All types</option>
+                {employmentTypeOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {filterLabel(opt, "employmentType")}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex flex-col gap-2">
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                 Active
@@ -373,13 +416,30 @@ export function WeeklyPacingTrendPanel({
                   </button>
                 </span>
               ) : null}
-              {activeFilter !== "__all__" ? (
+              {employmentTypeFilter !== "__all__" ? (
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[11px]">
-                  {activeFilter === "yes" ? "Active only" : "Inactive only"}
+                  {filterLabel(employmentTypeFilter, "employmentType")}
                   <button
                     type="button"
-                    aria-label="Clear active filter"
-                    onClick={() => onActiveFilter("__all__")}
+                    aria-label="Clear employment type filter"
+                    onClick={() => onEmploymentTypeFilter("__all__")}
+                    className="hover:opacity-70"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ) : null}
+              {activeFilter !== PACING_DEFAULT_ACTIVE_FILTER ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[11px]">
+                  {activeFilter === "__all__"
+                    ? "All active states"
+                    : activeFilter === "yes"
+                      ? "Active only"
+                      : "Inactive only"}
+                  <button
+                    type="button"
+                    aria-label="Reset active filter"
+                    onClick={() => onActiveFilter(PACING_DEFAULT_ACTIVE_FILTER)}
                     className="hover:opacity-70"
                   >
                     <X className="h-3 w-3" />

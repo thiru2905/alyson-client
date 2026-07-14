@@ -10,6 +10,8 @@ import {
 import { getLeaveFromS3 } from "@/lib/leave-s3.server";
 import { getOrgChartRosterLookup } from "@/lib/org-chart-roster.server";
 import { attachManagerToPacingRow } from "@/lib/org-chart-roster";
+import { loadEmploymentTypeLookup } from "@/lib/employment-type.server";
+import { resolveEmploymentType } from "@/lib/employment-type";
 import { rowAllowedForManagerScope } from "@/lib/manager-access-roster";
 import { getCintaraActiveMemberLookup } from "@/lib/cintara-active-members.server";
 import {
@@ -57,15 +59,21 @@ function weekStartSundayIso(day: string): string {
 function matchesTrendFacet(args: {
   location: string | null;
   team: string | null;
+  employmentType: string | null;
   active: boolean;
   locationFilter: string;
   teamFilter: string;
+  employmentTypeFilter: string;
   activeFilter: string;
 }): boolean {
   const loc = args.location?.trim() || "__empty__";
   const team = args.team?.trim() || "__empty__";
+  const employmentType = args.employmentType?.trim() || "__empty__";
   if (args.locationFilter !== "__all__" && loc !== args.locationFilter) return false;
   if (args.teamFilter !== "__all__" && team !== args.teamFilter) return false;
+  if (args.employmentTypeFilter !== "__all__" && employmentType !== args.employmentTypeFilter) {
+    return false;
+  }
   if (args.activeFilter === "yes" && !args.active) return false;
   if (args.activeFilter === "no" && args.active) return false;
   return true;
@@ -89,6 +97,7 @@ type PacingUserContext = {
   rosterLookup: ReturnType<typeof getOrgChartRosterLookup>;
   activeLookup: ReturnType<typeof getCintaraActiveMemberLookup>;
   activeOverrides: Awaited<ReturnType<typeof loadWeeklyPacingActiveOverridesForReport>>;
+  employmentTypeLookup: Awaited<ReturnType<typeof loadEmploymentTypeLookup>>;
 };
 
 function resolveRowActive(
@@ -106,21 +115,29 @@ function resolveRowActive(
 function buildFilteredUserIds(
   users: Awaited<ReturnType<typeof timeDoctorPacingListUsers>>,
   ctx: PacingUserContext,
-  filters: { locationFilter: string; teamFilter: string; activeFilter: string },
+  filters: {
+    locationFilter: string;
+    teamFilter: string;
+    activeFilter: string;
+    employmentTypeFilter: string;
+  },
 ): Set<string> {
   const ids = new Set<string>();
   for (const u of users) {
     const email = (u.email || "").trim();
     const name = (u.name || u.email || "").trim();
     const withMeta = attachManagerToPacingRow({ email, name }, ctx.rosterLookup);
+    const employmentType = resolveEmploymentType(email, name, ctx.employmentTypeLookup);
     const { active } = resolveRowActive(ctx, { employeeId: u.id, email, name });
     if (
       matchesTrendFacet({
         location: withMeta.location,
         team: withMeta.team,
+        employmentType,
         active,
         locationFilter: filters.locationFilter,
         teamFilter: filters.teamFilter,
+        employmentTypeFilter: filters.employmentTypeFilter,
         activeFilter: filters.activeFilter,
       })
     ) {
@@ -189,7 +206,13 @@ export async function buildWeeklyPacingReport(args?: {
   const rosterLookup = getOrgChartRosterLookup();
   const activeLookup = getCintaraActiveMemberLookup();
   const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
-  const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
+  const employmentTypeLookup = await loadEmploymentTypeLookup();
+  const pacingCtx: PacingUserContext = {
+    rosterLookup,
+    activeLookup,
+    activeOverrides,
+    employmentTypeLookup,
+  };
 
   let leaveCtx: Awaited<ReturnType<typeof loadPacingLeaveContext>> = {
     lookup: { byEmployeeId: new Map(), byEmail: new Map() },
@@ -256,6 +279,7 @@ export async function buildWeeklyPacingReport(args?: {
       const withManager = { ...row, ...meta };
       return {
         ...withManager,
+        employmentType: resolveEmploymentType(email, name, employmentTypeLookup),
         active: resolved.active,
         computedActive: resolved.computedActive,
         activeOverridden: resolved.activeOverridden,
@@ -360,7 +384,13 @@ export async function buildMonthlyPacingReport(args?: {
   const rosterLookup = getOrgChartRosterLookup();
   const activeLookup = getCintaraActiveMemberLookup();
   const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
-  const pacingCtx: PacingUserContext = { rosterLookup, activeLookup, activeOverrides };
+  const employmentTypeLookup = await loadEmploymentTypeLookup();
+  const pacingCtx: PacingUserContext = {
+    rosterLookup,
+    activeLookup,
+    activeOverrides,
+    employmentTypeLookup,
+  };
 
   let leaveCtx: Awaited<ReturnType<typeof loadPacingLeaveContext>> = {
     lookup: { byEmployeeId: new Map(), byEmail: new Map() },
@@ -426,6 +456,7 @@ export async function buildMonthlyPacingReport(args?: {
       const withManager = { ...row, ...meta };
       return {
         ...withManager,
+        employmentType: resolveEmploymentType(email, name, employmentTypeLookup),
         active: resolved.active,
         computedActive: resolved.computedActive,
         activeOverridden: resolved.activeOverridden,
@@ -464,6 +495,7 @@ export async function buildWeeklyHoursTrendReport(args?: {
   location?: string;
   team?: string;
   active?: string;
+  employmentType?: string;
   /** When set, limit trend to this manager's direct reports (same rules as pacing rows). */
   managerEmail?: string;
 }): Promise<WeeklyHoursTrendReport> {
@@ -471,6 +503,7 @@ export async function buildWeeklyHoursTrendReport(args?: {
   const targetHours = args?.targetHours ?? 35;
   const locationFilter = args?.location ?? "__all__";
   const teamFilter = args?.team ?? "__all__";
+  const employmentTypeFilter = args?.employmentType ?? "__all__";
   // Trend averages always use Active = Yes employees only (Cintara domain roster).
   const activeFilter = "yes";
   const today = timeDoctorTodayIso();
@@ -488,11 +521,13 @@ export async function buildWeeklyHoursTrendReport(args?: {
     rosterLookup: getOrgChartRosterLookup(),
     activeLookup: getCintaraActiveMemberLookup(),
     activeOverrides: await loadWeeklyPacingActiveOverridesForReport(),
+    employmentTypeLookup: await loadEmploymentTypeLookup(),
   };
   let filteredUserIds = buildFilteredUserIds(users, ctx, {
     locationFilter,
     teamFilter,
     activeFilter,
+    employmentTypeFilter,
   });
   if (args?.managerEmail) {
     const scoped = new Set<string>();
@@ -612,7 +647,12 @@ export async function buildWeeklyHoursTrendReport(args?: {
     targetHours,
     timeZoneLabel: getTimeDoctorTimezoneLabel(),
     weekCount,
-    filters: { location: locationFilter, team: teamFilter, active: activeFilter },
+    filters: {
+      location: locationFilter,
+      team: teamFilter,
+      active: activeFilter,
+      employmentType: employmentTypeFilter,
+    },
     points,
     priorAverageHours,
     latestWeek: latest,

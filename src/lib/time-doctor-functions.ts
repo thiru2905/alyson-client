@@ -692,7 +692,25 @@ export const fetchTimeDoctorEmployeesTable = createServerFn({ method: "GET" })
     const monthHasHours = [...monthly.values()].some((s) => s > 0);
     const monthOverlapsPeriod = isoRangesOverlap(period.start, period.end, calMonth.start, calMonth.end);
 
+    const { getCintaraActiveMemberLookup } = await import("@/lib/cintara-active-members.server");
+    const { getOrgChartRosterLookup } = await import("@/lib/org-chart-roster.server");
+    const { loadWeeklyPacingActiveOverridesForReport, resolvePacingActiveWithOverrides } = await import(
+      "@/lib/weekly-pacing-active.server"
+    );
+    const activeLookup = getCintaraActiveMemberLookup();
+    const rosterLookup = getOrgChartRosterLookup();
+    const activeOverrides = await loadWeeklyPacingActiveOverridesForReport();
+
     const rows: TimeDoctorEmployeeRow[] = users
+      .filter((u) => {
+        const email = (u.email || "").trim();
+        const name = (u.name || u.email || "").trim();
+        return resolvePacingActiveWithOverrides(activeOverrides, activeLookup, rosterLookup, {
+          employeeId: u.id,
+          email,
+          name,
+        }).active;
+      })
       .map((u) => ({
         id: u.id,
         name: u.name,

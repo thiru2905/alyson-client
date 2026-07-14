@@ -220,6 +220,7 @@ export function buildMonthlyPacingRow(args: {
     title: args.title,
     location: null,
     team: null,
+    employmentType: null,
     managerName: null,
     managerEmail: null,
     hoursWorkedLogged,

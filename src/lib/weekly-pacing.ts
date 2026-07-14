@@ -21,6 +21,8 @@ export type WeeklyPacingRow = {
   title: string;
   location: string | null;
   team: string | null;
+  /** From onboarding Employment Type (Part-time, Full-time, Notice, …). */
+  employmentType: string | null;
   managerName: string | null;
   managerEmail: string | null;
   /** Time Doctor logged hours (before leave credit). */
@@ -65,6 +67,7 @@ export type WeeklyPacingSortField =
   | "name"
   | "location"
   | "team"
+  | "employmentType"
   | "managerName"
   | "hoursWorked"
   | "hoursWorkedLogged"
@@ -136,7 +139,7 @@ export type WeeklyHoursTrendReport = {
   targetHours: number;
   timeZoneLabel: string;
   weekCount: number;
-  filters: { location: string; team: string; active: string };
+  filters: { location: string; team: string; active: string; employmentType: string };
   points: WeeklyHoursTrendPoint[];
   /** Average of all weeks before the latest point. */
   priorAverageHours: number;
@@ -242,10 +245,14 @@ export function resolvePacingRollupDay(selectedDay: string, today = pacingTodayI
   return selectedDay;
 }
 
+/** Default Active facet on Weekly / Monthly Pacing (active employees only). */
+export const PACING_DEFAULT_ACTIVE_FILTER = "yes";
+
 export type WeeklyPacingFacetFilters = {
   location?: string;
   team?: string;
   active?: string;
+  employmentType?: string;
 };
 
 export function pacingFilterExportSlug(filters: WeeklyPacingFacetFilters): string {
@@ -255,6 +262,13 @@ export function pacingFilterExportSlug(filters: WeeklyPacingFacetFilters): strin
   }
   if (filters.team && filters.team !== "__all__") {
     parts.push(filters.team === "__empty__" ? "no-team" : filters.team.toLowerCase());
+  }
+  if (filters.employmentType && filters.employmentType !== "__all__") {
+    parts.push(
+      filters.employmentType === "__empty__"
+        ? "no-employment-type"
+        : filters.employmentType.toLowerCase().replace(/\s+/g, "-"),
+    );
   }
   if (filters.active && filters.active !== "__all__") {
     parts.push(filters.active === "yes" ? "active" : "inactive");
@@ -270,10 +284,25 @@ export function pacingFilterSummaryLabel(filters: WeeklyPacingFacetFilters): str
   if (filters.team && filters.team !== "__all__") {
     parts.push(`Team: ${filters.team === "__empty__" ? "Not set" : filters.team}`);
   }
+  if (filters.employmentType && filters.employmentType !== "__all__") {
+    parts.push(
+      `Type: ${filters.employmentType === "__empty__" ? "Not set" : filters.employmentType}`,
+    );
+  }
   if (filters.active && filters.active !== "__all__") {
     parts.push(filters.active === "yes" ? "Active only" : "Inactive only");
   }
   return parts.length ? parts.join(" · ") : null;
+}
+
+/** True when any facet differs from the page defaults (Active = Yes). */
+export function pacingHasNonDefaultFacetFilters(filters: WeeklyPacingFacetFilters): boolean {
+  return (
+    (filters.location != null && filters.location !== "__all__") ||
+    (filters.team != null && filters.team !== "__all__") ||
+    (filters.employmentType != null && filters.employmentType !== "__all__") ||
+    (filters.active != null && filters.active !== PACING_DEFAULT_ACTIVE_FILTER)
+  );
 }
 
 export function filterPacingRows(rows: WeeklyPacingRow[], query: string): WeeklyPacingRow[] {
@@ -286,6 +315,7 @@ export function filterPacingRows(rows: WeeklyPacingRow[], query: string): Weekly
       r.title,
       r.location ?? "",
       r.team ?? "",
+      r.employmentType ?? "",
       r.managerName ?? "",
       r.managerEmail ?? "",
     ]
@@ -455,6 +485,7 @@ export function buildPacingRow(args: {
     title: args.title,
     location: null,
     team: null,
+    employmentType: null,
     managerName: null,
     managerEmail: null,
     hoursWorkedLogged,
@@ -617,6 +648,11 @@ export function sortPacingRows(
         break;
       case "team":
         cmp = (a.team || "").localeCompare(b.team || "") || a.name.localeCompare(b.name);
+        break;
+      case "employmentType":
+        cmp =
+          (a.employmentType || "").localeCompare(b.employmentType || "") ||
+          a.name.localeCompare(b.name);
         break;
       case "status":
         cmp = STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status];

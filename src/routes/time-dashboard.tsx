@@ -338,7 +338,7 @@ function TimeDashboardPage() {
           <PageHeader
             eyebrow="Operations"
             title="Time Dashboard"
-            description="Time Doctor hours by employee. Click any row to open a full time detail page."
+            description="Time Doctor hours for active employees only. Click any row to open a full time detail page."
             dense
             actions={
               <div className="flex items-center gap-2 flex-wrap">
