@@ -35,14 +35,19 @@ async function listUnifiedScheduledSessions(): Promise<{
   };
 }
 
-function scheduleBackgroundMaintenance(sessions: NotetakerSession[]) {
+function scheduleBackgroundMaintenance(sessions: NotetakerSession[], enabled: boolean) {
+  if (!enabled) return;
   // Always backfill S3 when the sessions list loads — do not rely on opening each session.
   scheduleNotetakerCatalogMaintenance(sessions);
 }
 
 /** Fast path: parallel fetch, no per-session upstream probes, maintenance in background. */
-export async function buildNotetakerSessionsList(): Promise<NotetakerSessionsListResult> {
+export async function buildNotetakerSessionsList(options?: {
+  /** When true (e.g. transcript cron), only build the list — skip duplicate S3 persist sweep. */
+  skipMaintenance?: boolean;
+}): Promise<NotetakerSessionsListResult> {
   const source = String(process.env.NOTETAKER_SESSIONS_SOURCE || "").trim().toLowerCase();
+  const runMaintenance = !options?.skipMaintenance;
 
   const [unifiedScheduled, s3Sessions] = await Promise.all([
     listUnifiedScheduledSessions(),
@@ -52,7 +57,7 @@ export async function buildNotetakerSessionsList(): Promise<NotetakerSessionsLis
 
   if (source === "s3") {
     const sessions = mergeNotetakerSessions(s3Sessions, unifiedScheduledSessions);
-    scheduleBackgroundMaintenance(sessions);
+    scheduleBackgroundMaintenance(sessions, runMaintenance);
     return { sessions, hasRecallConfig: true, hasGroqConfig: true, scheduledBotsToday };
   }
 
@@ -68,7 +73,7 @@ export async function buildNotetakerSessionsList(): Promise<NotetakerSessionsLis
       unifiedScheduledSessions,
       s3Sessions,
     );
-    scheduleBackgroundMaintenance(sessions);
+    scheduleBackgroundMaintenance(sessions, runMaintenance);
 
     return {
       sessions,
@@ -79,7 +84,7 @@ export async function buildNotetakerSessionsList(): Promise<NotetakerSessionsLis
   } catch {
     const sessions = mergeNotetakerSessions(s3Sessions, unifiedScheduledSessions);
     if (sessions.length) {
-      scheduleBackgroundMaintenance(sessions);
+      scheduleBackgroundMaintenance(sessions, runMaintenance);
       return { sessions, hasRecallConfig: true, hasGroqConfig: true, scheduledBotsToday };
     }
     throw new Error(

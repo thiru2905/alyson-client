@@ -1,7 +1,6 @@
 import type { NotetakerSession } from "@/lib/alyson-notetaker-functions";
 import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import { notetakerTranscriptCronEnabled } from "@/lib/notetaker-cron-auth.server";
-import { autoPersistUnifiedScheduledBots } from "@/lib/notetaker-session-catalog.server";
 import { driveSessionPersistToS3 } from "@/lib/notetaker-session-persist-drive.server";
 import {
   listPersistedSessionsFromS3,
@@ -86,7 +85,10 @@ const MAX_RECALL_BACKFILLS_PER_CRON = 8;
 
 function isCronFinalizedBot(
   botId: string,
-  indexByBotId: Map<string, { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string }>,
+  indexByBotId: Map<
+    string,
+    { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string; recallCallEndedAt?: string }
+  >,
 ): boolean {
   const index = indexByBotId.get(botId);
   return Boolean(index?.cronFinalized && index.transcriptKey && index.transcriptHash);
@@ -127,7 +129,10 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
   const { botIds, warnings: collectWarnings } = await collectBotIds();
   warnings.push(...collectWarnings);
 
-  let indexByBotId = new Map<string, { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string }>();
+  let indexByBotId = new Map<
+    string,
+    { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string; recallCallEndedAt?: string }
+  >();
   try {
     const docs = await listAllBotIndexDocs();
     indexByBotId = new Map(docs.map((doc) => [String(doc.botId || "").trim(), doc]));
@@ -173,14 +178,17 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
       } else if (driveResult === "unchanged" || driveResult === "skipped_complete") {
         skippedUnchanged += 1;
         if (driveResult === "skipped_complete") skippedFinalized += 1;
-        // Catch-up listener for already-persisted meetings that never got notes emailed.
-        try {
-          const { maybeAutoSendMeetingNotesEmail } = await import(
-            "@/lib/notetaker-meeting-notes-auto-email.server"
-          );
-          await maybeAutoSendMeetingNotesEmail(botId);
-        } catch {
-          // ignore
+        // Catch-up email only when S3 already marks the call ended (no Recall GET).
+        const index = indexByBotId.get(botId);
+        if (index?.recallCallEndedAt || index?.cronFinalized) {
+          try {
+            const { maybeAutoSendMeetingNotesEmail } = await import(
+              "@/lib/notetaker-meeting-notes-auto-email.server"
+            );
+            await maybeAutoSendMeetingNotesEmail(botId);
+          } catch {
+            // ignore
+          }
         }
       } else if (driveResult === "empty") {
         skippedEmpty += 1;
@@ -210,15 +218,12 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     }
   }
 
-  try {
-    await autoPersistUnifiedScheduledBots();
-  } catch (e) {
-    warnings.push(`unified_persist: ${String(e)}`);
-  }
+  // Unified bots are already in collectBotIds(); skip a second persist pass with Recall GETs.
 
   try {
     const { buildNotetakerSessionsList } = await import("@/lib/notetaker-sessions-list.server");
-    const live = await buildNotetakerSessionsList();
+    // skipMaintenance: cron already persisted above — avoid a third full sweep.
+    const live = await buildNotetakerSessionsList({ skipMaintenance: true });
     await mergeSessionsIndexToS3(live.sessions ?? []);
     invalidatePersistedSessionsS3Cache();
   } catch (e) {

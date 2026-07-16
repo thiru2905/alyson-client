@@ -52,16 +52,42 @@ const MAX_INDIVIDUAL_BOT_FETCHES = 40;
 const LIFECYCLE_CACHE_TERMINAL_MS = 24 * 60 * 60_000;
 const LIFECYCLE_CACHE_ACTIVE_MS = 10 * 60_000;
 const LIFECYCLE_CACHE_FAILED_MS = 90_000;
-const MIN_BOT_GET_INTERVAL_MS = 250;
+/** Default ~100/min spacing — leaves headroom under Recall's 300/min Retrieve Bot cap. */
+const MIN_BOT_GET_INTERVAL_MS = 600;
+/** Hard ceiling per process per rolling minute (well under 300). */
+const MAX_BOT_GETS_PER_MINUTE = 100;
 
 let lastBotGetAt = 0;
+let botGetWindowStartedAt = 0;
+let botGetsInWindow = 0;
 
 function recallBotGetMinIntervalMs(): number {
   const n = Number(process.env.RECALL_BOT_GET_MIN_INTERVAL_MS ?? String(MIN_BOT_GET_INTERVAL_MS));
   return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 5000) : MIN_BOT_GET_INTERVAL_MS;
 }
 
+function recallBotGetsPerMinuteCap(): number {
+  const n = Number(process.env.RECALL_BOT_GET_MAX_PER_MINUTE ?? String(MAX_BOT_GETS_PER_MINUTE));
+  return Number.isFinite(n) && n >= 10 ? Math.min(Math.floor(n), 250) : MAX_BOT_GETS_PER_MINUTE;
+}
+
+function consumeBotGetBudget(): boolean {
+  const now = Date.now();
+  if (now - botGetWindowStartedAt >= 60_000) {
+    botGetWindowStartedAt = now;
+    botGetsInWindow = 0;
+  }
+  if (botGetsInWindow >= recallBotGetsPerMinuteCap()) return false;
+  botGetsInWindow += 1;
+  return true;
+}
+
 async function throttledRecallBotGet(path: string, init?: { timeoutMs?: number; maxRetries?: number }) {
+  if (!consumeBotGetBudget()) {
+    const err = new Error("Recall bot GET budget exhausted this minute (rate-limit protection)");
+    (err as Error & { status?: number }).status = 429;
+    throw err;
+  }
   const minInterval = recallBotGetMinIntervalMs();
   if (minInterval > 0) {
     const wait = lastBotGetAt + minInterval - Date.now();
@@ -259,7 +285,8 @@ export async function fetchRecallBotLifecycle(botId: string): Promise<RecallBotL
   try {
     const bot = await throttledRecallBotGet(`/api/v1/bot/${encodeURIComponent(id)}/`, {
       timeoutMs: 20_000,
-      maxRetries: 2,
+      // One retry only — 429 retries amplify Retrieve Bot usage under load.
+      maxRetries: 1,
     });
     const lifecycle = parseRecallBotLifecycle(id, bot);
     setCachedLifecycle(lifecycle);

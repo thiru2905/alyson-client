@@ -3,8 +3,6 @@ import { sendMeetingNotesEmail } from "@/lib/meeting-notes-email.server";
 import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import { buildS3Metadata } from "@/lib/s3-metadata.server";
 import { s3CostAllocationTagging } from "@/lib/s3-cost-tags.server";
-import { fetchRecallBotLifecycle } from "@/lib/recall/recall-bot-status.server";
-import { recallCallEnded } from "@/lib/recall/recall-transcript-backfill.server";
 import { loadBotIndexDoc, listAllBotIndexDocs } from "@/lib/notetaker-sessions-history.server";
 
 export type AutoMeetingNotesEmailResult = {
@@ -78,27 +76,9 @@ async function markNotesEmailSent(
 async function meetingLooksEnded(botId: string): Promise<boolean> {
   const index = await loadBotIndexDoc(botId).catch(() => null);
   if (index?.recallCallEndedAt || index?.cronFinalized) return true;
-
-  if (index?.finalizedAt && index?.notesKey) {
-    try {
-      const lifecycle = await fetchRecallBotLifecycle(botId);
-      if (recallCallEnded(lifecycle)) return true;
-      const last = lifecycle.finalStatusCode;
-      if (last && !["done", "fatal", "call_ended", "unknown", "fetch_failed"].includes(last)) {
-        return false;
-      }
-    } catch {
-      // finalized + notes is enough when Recall status is unavailable
-    }
-    return true;
-  }
-
-  try {
-    const lifecycle = await fetchRecallBotLifecycle(botId);
-    return recallCallEnded(lifecycle);
-  } catch {
-    return false;
-  }
+  // Prefer S3 markers only — Retrieve Bot here was a major rate-limit amplifier.
+  if (index?.finalizedAt && index?.notesKey) return true;
+  return false;
 }
 
 /**

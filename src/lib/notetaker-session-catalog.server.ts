@@ -8,23 +8,25 @@ export { ENDED_SESSION_STATUSES };
 let lastCatalogMaintenanceAt = 0;
 
 function catalogMaintenanceMinMs() {
-  const n = Number(process.env.NOTETAKER_CATALOG_MAINTENANCE_MIN_MS || 30_000);
-  return Number.isFinite(n) && n >= 10_000 ? Math.min(n, 120_000) : 30_000;
+  // Default 2 min — UI refetch is 30s; avoid overlapping Persist sweeps.
+  const n = Number(process.env.NOTETAKER_CATALOG_MAINTENANCE_MIN_MS || 120_000);
+  return Number.isFinite(n) && n >= 10_000 ? Math.min(n, 300_000) : 120_000;
 }
 
 /** Persist every discoverable bot transcript to S3 (upstream status + idle heuristics). */
 export async function autoPersistDiscoverableSessions(sessions: NotetakerSession[]) {
   const botIds = sessions.map((s) => String(s.botId || "").trim()).filter(Boolean);
-  await drivePersistForBotIds(botIds, { bypassThrottle: true });
+  // UI catalog must not Retrieve Bot — cron owns throttled lifecycle checks.
+  await drivePersistForBotIds(botIds, { bypassThrottle: true, skipRecallFetch: true });
 }
 
 /** Persist transcripts for unified-scheduled bots once their meeting window has passed. */
-export async function autoPersistUnifiedScheduledBots() {
+export async function autoPersistUnifiedScheduledBots(options?: { skipRecallFetch?: boolean }) {
   const rows = await listAllUnifiedScheduledBotSessions();
-  await drivePersistForBotIds(
-    rows.map((r) => r.botId),
-    { bypassThrottle: true },
-  );
+  await drivePersistForBotIds(rows.map((r) => r.botId), {
+    bypassThrottle: true,
+    skipRecallFetch: options?.skipRecallFetch !== false,
+  });
 }
 
 /** S3 persist + index merge (slow). Runs in background after fast session list returns. */
