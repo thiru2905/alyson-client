@@ -310,6 +310,22 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     warnings.push(`notes_auto_email: ${String(e)}`);
   }
 
+  // Optional Knowledge Graph sync (knowledge-graph branch). Off unless KNOWLEDGE_GRAPH_ENABLED=true.
+  try {
+    const { knowledgeGraphEnabled } = await import("@/lib/knowledge-graph/kg-config.server");
+    if (knowledgeGraphEnabled()) {
+      const { runKnowledgeGraphMeetingSync } = await import(
+        "@/lib/knowledge-graph/kg-sync-meetings.server"
+      );
+      const kg = await runKnowledgeGraphMeetingSync();
+      if (kg.synced > 0 || kg.errors > 0) {
+        warnings.push(`knowledge_graph: synced=${kg.synced} errors=${kg.errors}`);
+      }
+    }
+  } catch (e) {
+    warnings.push(`knowledge_graph: ${String(e)}`);
+  }
+
   return {
     ok: errors === 0,
     ranAt,

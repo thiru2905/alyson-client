@@ -78,6 +78,10 @@ type BotIndexDoc = {
   integrityCheckedAt?: string | null;
   supersededByBotId?: string | null;
   supersededAt?: string | null;
+  /** Knowledge-graph sync markers (knowledge-graph branch). */
+  kgSyncedAt?: string;
+  kgSyncedTranscriptHash?: string | null;
+  kgSyncedNotesHash?: string | null;
   notesEmailSentAt?: string | null;
   notesEmailMessageId?: string | null;
   notesEmailRecipients?: string[] | null;

@@ -19,7 +19,12 @@
     "cron:notetaker-transcripts": "node scripts/cron-notetaker-transcripts.mjs",
     "cron:notetaker-meeting-integrity": "node scripts/cron-notetaker-meeting-integrity.mjs",
     "audit:notetaker-notes": "dotenv -e .env -- node scripts/audit-notetaker-s3-notes.mjs",
-    "backfill:notetaker-notes": "dotenv -e .env -- npx tsx scripts/backfill-notetaker-notes.ts"
+    "backfill:notetaker-notes": "dotenv -e .env -- npx tsx scripts/backfill-notetaker-notes.ts",
+    "kg:up": "docker compose -f docker/neo4j/docker-compose.yml up -d",
+    "kg:down": "docker compose -f docker/neo4j/docker-compose.yml down",
+    "kg:schema": "dotenv -e .env -- npx tsx scripts/kg-schema.ts",
+    "kg:sync": "dotenv -e .env -- npx tsx scripts/kg-sync.ts",
+    "kg:status": "dotenv -e .env -- npx tsx scripts/kg-status.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1043.0",
@@ -72,6 +77,7 @@
     "jspdf-autotable": "^5.0.8",
     "jszip": "^3.10.1",
     "lucide-react": "^0.575.0",
+    "neo4j-driver": "^6.2.0",
     "react": "^19.2.0",
     "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.0",
