@@ -1,7 +1,7 @@
 import { recallFetch } from "@/lib/recall/recall-client.server";
 
-/** Keep Recall recording media 3 days after S3 transcript exists, then delete from Recall. */
-export const RECALL_MEDIA_DELETE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+/** Keep Recall recording media ≥2 days after S3 transcript exists, then delete from Recall. */
+export const RECALL_MEDIA_DELETE_AFTER_MS = 2 * 24 * 60 * 60 * 1000;
 
 export function getRecallMediaDeleteAfterMs(): number {
   return RECALL_MEDIA_DELETE_AFTER_MS;

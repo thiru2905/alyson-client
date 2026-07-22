@@ -57,11 +57,14 @@ export function resolveRecallTranscriptWebhookUrl(): string {
   return resolveRecallNotetakerTranscriptWebhookUrl();
 }
 
-/** Hours Recall keeps recording media (min 1). Alyson copies to S3 — keep this low. */
+/**
+ * Hours Recall keeps recording media (min 1, max 168).
+ * Default 48h (2 days) — within Recall’s free ~7d retention window; Alyson still copies to S3.
+ */
 export function recallRecordingRetentionHours(): number {
   const raw = process.env.RECALL_RECORDING_RETENTION_HOURS?.trim();
-  const n = raw ? Number(raw) : 1;
-  if (!Number.isFinite(n) || n < 1) return 1;
+  const n = raw ? Number(raw) : 48;
+  if (!Number.isFinite(n) || n < 1) return 48;
   return Math.min(Math.round(n), 168);
 }
 
@@ -100,7 +103,7 @@ export function recallBotRecordingConfig() {
 
   return {
     recording_config: {
-      /** Short TTL on Recall — we persist to S3; avoids "Recording Retention Usage" after 7d free window. */
+      /** Timed TTL on Recall (default 2 days) — we persist to S3; stays inside free ~7d window. */
       retention: {
         type: "timed",
         hours: retentionHours,
