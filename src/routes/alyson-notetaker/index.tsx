@@ -664,8 +664,12 @@ function SessionPanel({
   const notesM = useMutation({
     mutationFn: async () => {
       const title = session?.title || "Meeting";
+      const transcriptText = plainTranscript.trim();
+      if (!transcriptText) {
+        throw new Error("No transcript text to summarize. Wait for lines or Sync Recall first.");
+      }
       return generateSmartMeetingNotes({
-        data: { title, transcriptText: plainTranscript },
+        data: { title, transcriptText },
       });
     },
     onSuccess: (res) => {
@@ -680,6 +684,15 @@ function SessionPanel({
           // ignore
         }
       }
+    },
+    onError: (e) => {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : e && typeof e === "object" && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "Failed to generate notes.";
+      toast.error(msg);
     },
   });
 
@@ -1062,7 +1075,13 @@ function SessionPanel({
           <div className="p-4">
             {notesM.isError && (
               <div className="text-[12px] text-red-500 whitespace-pre-wrap mb-3">
-                {notesM.error instanceof Error ? notesM.error.message : "Failed to generate notes."}
+                {notesM.error instanceof Error
+                  ? notesM.error.message
+                  : notesM.error &&
+                      typeof notesM.error === "object" &&
+                      "message" in notesM.error
+                    ? String((notesM.error as { message: unknown }).message)
+                    : "Failed to generate notes."}
               </div>
             )}
             {notes ? (

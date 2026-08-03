@@ -189,11 +189,23 @@ async function deepseekChatOnce(
   messages: GroqMessage[],
   temperature: number,
   model: string,
+  opts?: { thinking?: "enabled" | "disabled"; maxTokens?: number },
 ): Promise<string> {
   const apiKey = deepseekApiKey();
   if (!apiKey) {
     throw new Error("DeepSeek is not configured (set DEEPSEEK_API_KEY).");
   }
+
+  // V4 defaults to thinking=enabled, which is extremely slow and often times out serverless.
+  // Meeting notes / chat should use non-thinking unless explicitly requested.
+  const thinkingType = opts?.thinking ?? "disabled";
+  const body: Record<string, unknown> = {
+    model,
+    temperature,
+    messages,
+    thinking: { type: thinkingType },
+  };
+  if (opts?.maxTokens != null && opts.maxTokens > 0) body.max_tokens = opts.maxTokens;
 
   const r = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
@@ -201,16 +213,14 @@ async function deepseekChatOnce(
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      temperature,
-      messages,
-    }),
+    body: JSON.stringify(body),
   });
 
   const text = await r.text();
   let json: {
-    choices?: { message?: { content?: string } }[];
+    choices?: {
+      message?: { content?: string; reasoning_content?: string };
+    }[];
     error?: { message?: string };
   } | null = null;
   try {
@@ -223,20 +233,32 @@ async function deepseekChatOnce(
       json?.error?.message || text.slice(0, 300) || `DeepSeek request failed (${r.status})`;
     throw new Error(String(msg));
   }
-  return String(json?.choices?.[0]?.message?.content || "").trim();
+  const message = json?.choices?.[0]?.message;
+  const content = String(message?.content || "").trim();
+  if (content) return content;
+  // Thinking mode may put text in reasoning_content only.
+  return String(message?.reasoning_content || "").trim();
 }
 
 export async function deepseekChat(
   messages: GroqMessage[],
   temperature = 0.2,
-  opts?: { model?: string; maxRetries?: number },
+  opts?: {
+    model?: string;
+    maxRetries?: number;
+    thinking?: "enabled" | "disabled";
+    maxTokens?: number;
+  },
 ): Promise<string> {
   const model = opts?.model || deepseekModel();
   const maxRetries = opts?.maxRetries ?? 2;
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await deepseekChatOnce(messages, temperature, model);
+      return await deepseekChatOnce(messages, temperature, model, {
+        thinking: opts?.thinking,
+        maxTokens: opts?.maxTokens,
+      });
     } catch (e) {
       lastError = e;
       const msg = e instanceof Error ? e.message : String(e);
