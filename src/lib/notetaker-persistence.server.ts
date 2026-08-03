@@ -41,12 +41,56 @@ export type NotetakerBotIndexDoc = {
   notesEmailSentAt?: string | null;
   notesEmailMessageId?: string | null;
   notesEmailRecipients?: string[] | null;
+  /**
+   * When the current transcriptHash was first observed.
+   * Notes + auto-email wait until this is ≥ NOTETAKER_NOTES_IDLE_STABLE_MS (default 15 min).
+   */
+  transcriptUnchangedSince?: string | null;
 };
 
-/** Consecutive 5-min cron runs with identical hash after Recall call_ended (~15–20 min stable). */
+/** How long the live transcript must stay unchanged before notes + email (default 15 min). */
+export function notesIdleStableMs(): number {
+  const n = Number(process.env.NOTETAKER_NOTES_IDLE_STABLE_MS ?? String(15 * 60_000));
+  return Number.isFinite(n) && n >= 60_000 ? Math.min(Math.floor(n), 60 * 60_000) : 15 * 60_000;
+}
+
+/** Consecutive 5-min cron runs with identical hash after Recall call_ended. */
 export function cronStablePassesRequired(): number {
   const n = Number(process.env.NOTETAKER_CRON_STABLE_PASSES_REQUIRED ?? "2");
   return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 6) : 2;
+}
+
+export function nextTranscriptIdleFields(args: {
+  previousHash?: string | null;
+  previousUnchangedSince?: string | null;
+  currentHash: string;
+  nowIso?: string;
+}): { transcriptUnchangedSince: string } {
+  const nowIso = args.nowIso || new Date().toISOString();
+  if (
+    args.previousHash &&
+    args.previousHash === args.currentHash &&
+    args.previousUnchangedSince &&
+    Number.isFinite(Date.parse(args.previousUnchangedSince))
+  ) {
+    return { transcriptUnchangedSince: args.previousUnchangedSince };
+  }
+  return { transcriptUnchangedSince: nowIso };
+}
+
+export function isTranscriptIdleStable(
+  index: {
+    transcriptHash?: string | null;
+    transcriptUnchangedSince?: string | null;
+  } | null | undefined,
+  options?: { minMs?: number; nowMs?: number },
+): boolean {
+  if (!index?.transcriptHash) return false;
+  const since = Date.parse(String(index.transcriptUnchangedSince || ""));
+  if (!Number.isFinite(since)) return false;
+  const minMs = options?.minMs ?? notesIdleStableMs();
+  const nowMs = options?.nowMs ?? Date.now();
+  return nowMs - since >= minMs;
 }
 
 export function nextCronStabilityState(args: {
@@ -302,6 +346,12 @@ export async function persistMeetingToS3({
           wordCount: transcript.wordCount,
           transcriptHash,
           notesHash: notesHash ?? existingIndex?.notesHash ?? null,
+          ...nextTranscriptIdleFields({
+            previousHash: existingIndex?.transcriptHash,
+            previousUnchangedSince: existingIndex?.transcriptUnchangedSince,
+            currentHash: transcriptHash,
+            nowIso: endedAt,
+          }),
           cronLastHash: existingIndex?.cronLastHash,
           cronStablePasses: existingIndex?.cronStablePasses,
           cronFinalized: existingIndex?.cronFinalized,
@@ -313,6 +363,9 @@ export async function persistMeetingToS3({
           integrityCheckedAt: endedAt,
           supersededByBotId: existingIndex?.supersededByBotId ?? null,
           supersededAt: existingIndex?.supersededAt ?? null,
+          notesEmailSentAt: existingIndex?.notesEmailSentAt ?? null,
+          notesEmailMessageId: existingIndex?.notesEmailMessageId ?? null,
+          notesEmailRecipients: existingIndex?.notesEmailRecipients ?? null,
         },
         null,
         2,
@@ -406,6 +459,20 @@ export async function patchBotIndexCronStability(
     currentHash,
     callEnded: options?.callEnded,
   });
+  const idle = nextTranscriptIdleFields({
+    previousHash: index.cronLastHash || index.transcriptHash,
+    previousUnchangedSince: index.transcriptUnchangedSince,
+    currentHash,
+  });
+  // Also finalize once the transcript has been idle for the notes window (default 15 min).
+  const idleStable = isTranscriptIdleStable({
+    transcriptHash: currentHash,
+    transcriptUnchangedSince: idle.transcriptUnchangedSince,
+  });
+  const cronFinalized = next.cronFinalized || (Boolean(options?.callEnded) && idleStable);
+  const cronFinalizedAt = cronFinalized
+    ? index.cronFinalizedAt || next.cronFinalizedAt || new Date().toISOString()
+    : undefined;
 
   const bucket = requireEnvAlias("AWS_S3_BUCKET", ["S3_BUCKET"]);
   const botIndexKey = `alyson-notetaker/bot-index/${encodeURIComponent(botId)}.json`;
@@ -418,10 +485,11 @@ export async function patchBotIndexCronStability(
         {
           ...index,
           ...next,
+          ...idle,
+          transcriptHash: index.transcriptHash || currentHash,
+          cronFinalized,
+          cronFinalizedAt,
           recallCallEndedAt: options?.recallCallEndedAt ?? index.recallCallEndedAt ?? null,
-          cronFinalizedAt: next.cronFinalized
-            ? index.cronFinalizedAt || next.cronFinalizedAt
-            : undefined,
         },
         null,
         2,
@@ -433,9 +501,9 @@ export async function patchBotIndexCronStability(
   );
 
   return {
-    cronFinalized: next.cronFinalized,
+    cronFinalized,
     cronStablePasses: next.cronStablePasses,
-    newlyFinalized: next.cronFinalized && !wasFinalized,
+    newlyFinalized: cronFinalized && !wasFinalized,
   };
 }
 

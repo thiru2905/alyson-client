@@ -80,32 +80,30 @@ export const finalizeNotetakerSession = createServerFn({ method: "POST" })
 export const createNotetakerRecallBot = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => CreateBotInput.parse(data))
   .handler(async ({ data }) => {
-    const payload: any = { meeting_url: data.meeting_url, bot_name: data.bot_name, title: data.title ?? "Live meeting" };
-    if (data.avatar_jpeg_b64) {
-      payload.automatic_video_output = {
-        in_call_recording: { kind: "jpeg", b64_data: data.avatar_jpeg_b64 },
-        in_call_not_recording: { kind: "jpeg", b64_data: data.avatar_jpeg_b64 },
-      };
-    }
-    const res = (await upstream("/api/create-bot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })) as { botId?: string; id?: string };
+    const { dispatchBotWithLiveTranscripts } = await import("@/lib/notetaker-bot-dispatch.server");
 
-    const botId = String(res?.botId || res?.id || "").trim();
-    if (botId) {
-      const { registerScheduledBotInSessionsCatalog } = await import("@/lib/notetaker-scheduled-catalog.server");
-      await registerScheduledBotInSessionsCatalog({
-        botId,
-        title: data.title?.trim() || "Live meeting",
-        meetingUrl: data.meeting_url,
-        createdAt: new Date().toISOString(),
-        status: "scheduled",
-      });
-    }
+    // Same “join now” rule as unified meetings — Recall needs a short join_at, not “no join_at”.
+    const botJoinAt = new Date(Date.now() + 20_000).toISOString();
 
-    return res;
+    // Full-res 1280×720 JPEG often exceeds upstream timeouts; keep a modest tile or skip.
+    const avatar =
+      data.avatar_jpeg_b64 && data.avatar_jpeg_b64.length <= 180_000
+        ? data.avatar_jpeg_b64
+        : undefined;
+
+    const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
+      meetingUrl: data.meeting_url.trim(),
+      botJoinAt,
+      title: data.title?.trim() || "Live meeting",
+      botName: data.bot_name.trim(),
+      avatarJpegB64: avatar,
+      metadata: {
+        source: "manual_create",
+        meeting_url: data.meeting_url.trim(),
+      },
+    });
+
+    return { botId, creationSource, joinAt: botJoinAt };
   });
 
 export const generateNotetakerNotes = createServerFn({ method: "POST" })

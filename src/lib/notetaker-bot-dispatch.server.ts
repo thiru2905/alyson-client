@@ -153,15 +153,24 @@ async function createViaNotetaker(args: {
   title: string;
   botName: string;
   metadata: Record<string, unknown>;
+  avatarJpegB64?: string;
 }): Promise<{ botId: string }> {
-  const res = await notetakerPost("/api/create-bot", {
+  const payload: Record<string, unknown> = {
     meeting_url: args.meetingUrl,
     bot_name: args.botName,
     title: args.title,
     join_at: args.botJoinAt,
     metadata: args.metadata,
     ...recallBotRecordingConfig(),
-  });
+  };
+  if (args.avatarJpegB64) {
+    payload.automatic_video_output = {
+      in_call_recording: { kind: "jpeg", b64_data: args.avatarJpegB64 },
+      in_call_not_recording: { kind: "jpeg", b64_data: args.avatarJpegB64 },
+    };
+  }
+
+  const res = await notetakerPost("/api/create-bot", payload, args.avatarJpegB64 ? 45_000 : 25_000);
 
   const txt = await res.text();
   let body: unknown = null;
@@ -252,10 +261,14 @@ export async function dispatchBotWithLiveTranscripts(args: {
   title: string;
   metadata: Record<string, unknown>;
   joinOffsetMinutes?: number;
+  /** Override BOT_NAME env (e.g. manual create form). */
+  botName?: string;
+  /** Optional JPEG base64 for bot video tile — omit large payloads to avoid timeouts. */
+  avatarJpegB64?: string;
   /** @deprecated Ignored — Notetaker is always tried first for scheduled and immediate joins. */
   preferScheduledJoin?: boolean;
 }): Promise<{ botId: string; creationSource: BotDispatchSource }> {
-  const botName = process.env.BOT_NAME?.trim() || "Alyson Notetaker";
+  const botName = args.botName?.trim() || process.env.BOT_NAME?.trim() || "Alyson Notetaker";
   const displayTitle = resolveDisplayTitle(args.title, args.metadata);
   const meetingStartAt = resolveMeetingStartFromMetadata(args.metadata);
   const metadata = {
@@ -293,6 +306,7 @@ export async function dispatchBotWithLiveTranscripts(args: {
       title: displayTitle,
       botName,
       metadata,
+      avatarJpegB64: args.avatarJpegB64,
     });
     await registerScheduledBotInSessionsCatalog({
       botId,

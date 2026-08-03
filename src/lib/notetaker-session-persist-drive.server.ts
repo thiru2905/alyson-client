@@ -268,6 +268,8 @@ export async function driveSessionPersistToS3(
 
   try {
     if (ended) {
+      // Persist transcript immediately; notes wait until transcript is idle ≥15 min
+      // (unless caller passes forceNotes for a manual regenerate).
       let result = await autoPersistEndedMeetingToS3({
         session,
         lines,
@@ -275,7 +277,10 @@ export async function driveSessionPersistToS3(
         existingNotesModel: payload.notesModel,
         forceNotes: options?.forceNotes,
       });
-      if (result.skipped === "unchanged" || result.skipped === "notes_generation_failed") {
+      if (
+        (result.skipped === "unchanged" || result.skipped === "notes_generation_failed") &&
+        options?.forceNotes
+      ) {
         const backfill = await ensureMeetingNotesInS3(id);
         if (backfill.ok && backfill.notesMd?.trim()) {
           result = { persisted: true, notesMd: backfill.notesMd };
@@ -285,12 +290,22 @@ export async function driveSessionPersistToS3(
         const recallOnly = await backfillTranscriptFromRecall(id);
         if (recallOnly.ok) result = { persisted: true };
       }
-      if (recallCallEndedAt) {
-        await patchBotIndexCronStability(id, upstreamHash, {
-          callEnded: true,
-          recallCallEndedAt,
-        }).catch(() => {});
+      // Always refresh idle/stability markers from the current transcript hash.
+      await patchBotIndexCronStability(id, upstreamHash, {
+        callEnded: Boolean(recallCallEndedAt) || ended,
+        recallCallEndedAt,
+      }).catch(() => {});
+
+      // Pipeline: idle ≥15m → notes → email (no-op until stable).
+      try {
+        const { maybeAutoSendMeetingNotesEmail } = await import(
+          "@/lib/notetaker-meeting-notes-auto-email.server"
+        );
+        await maybeAutoSendMeetingNotesEmail(id);
+      } catch {
+        // best-effort
       }
+
       if (result.persisted) return "written";
       if (result.skipped === "unchanged") return "unchanged";
       return "unchanged";
@@ -299,6 +314,18 @@ export async function driveSessionPersistToS3(
     await maybeCheckpointTranscriptToS3(session, lines, {
       bypassThrottle: options?.bypassThrottle ?? true,
     });
+    // Live meetings: still advance idle clock / try notes+email once transcript stops changing.
+    await patchBotIndexCronStability(id, upstreamHash, {
+      callEnded: false,
+    }).catch(() => {});
+    try {
+      const { maybeAutoSendMeetingNotesEmail } = await import(
+        "@/lib/notetaker-meeting-notes-auto-email.server"
+      );
+      await maybeAutoSendMeetingNotesEmail(id);
+    } catch {
+      // ignore until idle
+    }
     return "unchanged";
   } catch {
     return "error";

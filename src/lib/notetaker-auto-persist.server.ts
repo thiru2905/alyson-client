@@ -1,5 +1,10 @@
 import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-notetaker-functions";
-import { composeTranscript, contentHash, persistMeetingToS3 } from "@/lib/notetaker-persistence.server";
+import {
+  composeTranscript,
+  contentHash,
+  isTranscriptIdleStable,
+  persistMeetingToS3,
+} from "@/lib/notetaker-persistence.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
 import { runSmartMeetingNotes } from "@/lib/notetaker-smart-notes.server";
 import {
@@ -173,7 +178,22 @@ async function maybeGenerateNotesAfterCheckpoint(
   existingIndex: Awaited<ReturnType<typeof loadBotIndexDoc>>,
 ) {
   if (!endedStatus(session.status)) return;
-  if (!(await notesAbsentFromS3(existingIndex))) return;
+  // Wait until live transcript has been unchanged for ≥15 min before generating notes.
+  if (
+    !isTranscriptIdleStable({
+      transcriptHash: existingIndex?.transcriptHash,
+      transcriptUnchangedSince: existingIndex?.transcriptUnchangedSince,
+    })
+  ) {
+    return;
+  }
+  if (!(await notesAbsentFromS3(existingIndex))) {
+    // Notes already exist — still try the email pipeline once idle.
+    void import("@/lib/notetaker-meeting-notes-auto-email.server")
+      .then(({ maybeAutoSendMeetingNotesEmail }) => maybeAutoSendMeetingNotesEmail(session.botId))
+      .catch(() => {});
+    return;
+  }
   try {
     const result = await autoPersistEndedMeetingToS3({
       session: await withResolvedMeetingTitle(session),
@@ -308,13 +328,25 @@ export async function autoPersistEndedMeetingToS3(args: {
   const transcriptHash = contentHash(transcript.transcriptText);
   const notesAbsent = await notesAbsentFromS3(existingIndex);
 
+  const idleForNotes = isTranscriptIdleStable({
+    transcriptHash:
+      existingIndex?.transcriptHash === transcriptHash ? existingIndex.transcriptHash : null,
+    transcriptUnchangedSince:
+      existingIndex?.transcriptHash === transcriptHash
+        ? existingIndex.transcriptUnchangedSince
+        : null,
+  });
+
+  // Pipeline: persist transcript always; generate notes only after 15m idle (or explicit force).
+  const shouldGenerateNotes = Boolean(args.forceNotes || args.force) || (notesAbsent && idleForNotes);
+
   const notes = await resolveNotesForS3({
     botId,
     session,
     lines: args.lines,
     existingNotesMd: args.existingNotesMd,
     existingNotesModel: args.existingNotesModel,
-    forceNotes: Boolean(args.forceNotes || args.force || notesAbsent),
+    forceNotes: shouldGenerateNotes,
   });
 
   if (!args.force) {
@@ -388,7 +420,7 @@ export async function autoPersistEndedMeetingToS3(args: {
     void maybeGenerateMeetingTasksWhenReady(botId);
   }
 
-  // Listener: bot left / meeting ended → auto-email notes to participants (+ default monitor).
+  // Listener: transcript idle ≥15 min → generate notes (if needed) → email participants.
   void import("@/lib/notetaker-meeting-notes-auto-email.server")
     .then(({ maybeAutoSendMeetingNotesEmail }) => maybeAutoSendMeetingNotesEmail(botId))
     .catch(() => {});

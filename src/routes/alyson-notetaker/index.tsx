@@ -349,8 +349,8 @@ function CreateBotForm({ onCreated }: { onCreated: (botId: string | null) => voi
         });
         URL.revokeObjectURL(objUrl);
 
-        const w = 1280;
-        const h = 720;
+        const w = 640;
+        const h = 360;
         const canvas = document.createElement("canvas");
         canvas.width = w;
         canvas.height = h;
@@ -361,7 +361,7 @@ function CreateBotForm({ onCreated }: { onCreated: (botId: string | null) => voi
         ctx.fillStyle = "#0b1020";
         ctx.fillRect(0, 0, w, h);
 
-        const padding = 96;
+        const padding = 48;
         const maxW = w - padding * 2;
         const maxH = h - padding * 2;
         const scale = Math.min(maxW / img.width, maxH / img.height);
@@ -371,7 +371,8 @@ function CreateBotForm({ onCreated }: { onCreated: (botId: string | null) => voi
         const dy = (h - dh) / 2;
         ctx.drawImage(img, dx, dy, dw, dh);
 
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        // Keep payload small — large base64 avatars were timing out manual create.
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
         const b64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
         if (!cancelled) setAvatarB64(b64);
       } catch {
@@ -393,7 +394,20 @@ function CreateBotForm({ onCreated }: { onCreated: (botId: string | null) => voi
           avatar_jpeg_b64: avatarB64 || undefined,
         },
       }),
-    onSuccess: (res: any) => onCreated(res?.botId ? String(res.botId) : null),
+    onSuccess: (res: { botId?: string }) => {
+      const botId = String(res?.botId || "").trim();
+      if (!botId) {
+        toast.error("Bot was created but no bot id came back — check Notetaker / Recall.");
+        onCreated(null);
+        return;
+      }
+      toast.success("Alyson is joining in ~20s — admit the bot if the meeting has a waiting room.");
+      setMeetingUrl("");
+      onCreated(botId);
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Failed to create bot");
+    },
   });
 
   return (

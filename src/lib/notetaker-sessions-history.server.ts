@@ -81,6 +81,8 @@ type BotIndexDoc = {
   notesEmailSentAt?: string | null;
   notesEmailMessageId?: string | null;
   notesEmailRecipients?: string[] | null;
+  /** When current transcriptHash was first observed — notes/email wait ≥15m idle. */
+  transcriptUnchangedSince?: string | null;
 };
 
 function linesFromPlainTranscript(transcriptText: string) {

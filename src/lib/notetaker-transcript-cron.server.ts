@@ -1,5 +1,4 @@
 import type { NotetakerSession } from "@/lib/alyson-notetaker-functions";
-import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import { notetakerTranscriptCronEnabled } from "@/lib/notetaker-cron-auth.server";
 import { driveSessionPersistToS3 } from "@/lib/notetaker-session-persist-drive.server";
 import {
@@ -159,36 +158,32 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
       });
       if (driveResult === "written") {
         written += 1;
-        const notes = await ensureMeetingNotesInS3(botId);
-        if (notes.ok && notes.notesMd?.trim()) {
-          notesWritten += 1;
-          const { maybeGenerateMeetingTasksWhenReady } = await import(
-            "@/lib/notetaker-meeting-list-tasks.server"
-          );
-          void maybeGenerateMeetingTasksWhenReady(botId);
-        }
+        // Notes + email only after transcript idle ≥15m (pipeline inside maybeAutoSend).
         try {
           const { maybeAutoSendMeetingNotesEmail } = await import(
             "@/lib/notetaker-meeting-notes-auto-email.server"
           );
-          await maybeAutoSendMeetingNotesEmail(botId);
+          const emailed = await maybeAutoSendMeetingNotesEmail(botId);
+          if (emailed.notesGenerated) notesWritten += 1;
         } catch {
-          // email listener is best-effort
+          // email/notes listener is best-effort
         }
+        const { maybeGenerateMeetingTasksWhenReady } = await import(
+          "@/lib/notetaker-meeting-list-tasks.server"
+        );
+        void maybeGenerateMeetingTasksWhenReady(botId);
       } else if (driveResult === "unchanged" || driveResult === "skipped_complete") {
         skippedUnchanged += 1;
         if (driveResult === "skipped_complete") skippedFinalized += 1;
-        // Catch-up email only when S3 already marks the call ended (no Recall GET).
-        const index = indexByBotId.get(botId);
-        if (index?.recallCallEndedAt || index?.cronFinalized) {
-          try {
-            const { maybeAutoSendMeetingNotesEmail } = await import(
-              "@/lib/notetaker-meeting-notes-auto-email.server"
-            );
-            await maybeAutoSendMeetingNotesEmail(botId);
-          } catch {
-            // ignore
-          }
+        // Catch-up: once idle ≥15m, generate notes (if needed) and email.
+        try {
+          const { maybeAutoSendMeetingNotesEmail } = await import(
+            "@/lib/notetaker-meeting-notes-auto-email.server"
+          );
+          const emailed = await maybeAutoSendMeetingNotesEmail(botId);
+          if (emailed.notesGenerated) notesWritten += 1;
+        } catch {
+          // ignore
         }
       } else if (driveResult === "empty") {
         skippedEmpty += 1;
@@ -200,8 +195,15 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
             if (backfill.ok && backfill.persisted) {
               written += 1;
               skippedEmpty -= 1;
-              const notes = await ensureMeetingNotesInS3(botId);
-              if (notes.ok && notes.notesMd?.trim()) notesWritten += 1;
+              try {
+                const { maybeAutoSendMeetingNotesEmail } = await import(
+                  "@/lib/notetaker-meeting-notes-auto-email.server"
+                );
+                const emailed = await maybeAutoSendMeetingNotesEmail(botId);
+                if (emailed.notesGenerated) notesWritten += 1;
+              } catch {
+                // wait for idle window
+              }
             }
           } catch {
             // backfill is best-effort
