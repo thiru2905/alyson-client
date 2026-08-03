@@ -81,6 +81,9 @@ type BotIndexDoc = {
   notesEmailSentAt?: string | null;
   notesEmailMessageId?: string | null;
   notesEmailRecipients?: string[] | null;
+  /** Claim timestamp before SES (ops visibility; lock object is source of truth). */
+  notesEmailClaimAt?: string | null;
+  notesEmailClaimId?: string | null;
   /** When current transcriptHash was first observed — notes/email wait ≥15m idle. */
   transcriptUnchangedSince?: string | null;
 };

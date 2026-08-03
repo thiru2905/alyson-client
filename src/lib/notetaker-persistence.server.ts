@@ -41,6 +41,8 @@ export type NotetakerBotIndexDoc = {
   notesEmailSentAt?: string | null;
   notesEmailMessageId?: string | null;
   notesEmailRecipients?: string[] | null;
+  notesEmailClaimAt?: string | null;
+  notesEmailClaimId?: string | null;
   /**
    * When the current transcriptHash was first observed.
    * Notes + auto-email wait until this is ≥ NOTETAKER_NOTES_IDLE_STABLE_MS (default 15 min).
@@ -366,6 +368,8 @@ export async function persistMeetingToS3({
           notesEmailSentAt: existingIndex?.notesEmailSentAt ?? null,
           notesEmailMessageId: existingIndex?.notesEmailMessageId ?? null,
           notesEmailRecipients: existingIndex?.notesEmailRecipients ?? null,
+          notesEmailClaimAt: existingIndex?.notesEmailClaimAt ?? null,
+          notesEmailClaimId: existingIndex?.notesEmailClaimId ?? null,
         },
         null,
         2,

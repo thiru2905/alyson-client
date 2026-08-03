@@ -24,4 +24,20 @@ export const previewMeetingNotesEmailFn = createServerFn({ method: "POST" })
 
 export const sendMeetingNotesEmailFn = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => BotNotesInput.parse(data))
-  .handler(async ({ data }) => sendMeetingNotesEmail(data));
+  .handler(async ({ data }) => {
+    const sent = await sendMeetingNotesEmail(data);
+    // Mark S3 so auto-email never re-sends after a manual send.
+    try {
+      const { recordMeetingNotesEmailSent } = await import(
+        "@/lib/notetaker-meeting-notes-auto-email.server"
+      );
+      await recordMeetingNotesEmailSent(data.botId, {
+        sentAt: new Date().toISOString(),
+        messageId: sent.messageId,
+        recipients: sent.recipients,
+      });
+    } catch {
+      // Delivery already succeeded; index mark is best-effort.
+    }
+    return sent;
+  });

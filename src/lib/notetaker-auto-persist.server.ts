@@ -188,10 +188,8 @@ async function maybeGenerateNotesAfterCheckpoint(
     return;
   }
   if (!(await notesAbsentFromS3(existingIndex))) {
-    // Notes already exist — still try the email pipeline once idle.
-    void import("@/lib/notetaker-meeting-notes-auto-email.server")
-      .then(({ maybeAutoSendMeetingNotesEmail }) => maybeAutoSendMeetingNotesEmail(session.botId))
-      .catch(() => {});
+    // Notes already exist — cron / driveSessionPersist own the email pipeline
+    // (avoid a parallel fire-and-forget race that can double-send).
     return;
   }
   try {
@@ -420,10 +418,8 @@ export async function autoPersistEndedMeetingToS3(args: {
     void maybeGenerateMeetingTasksWhenReady(botId);
   }
 
-  // Listener: transcript idle ≥15 min → generate notes (if needed) → email participants.
-  void import("@/lib/notetaker-meeting-notes-auto-email.server")
-    .then(({ maybeAutoSendMeetingNotesEmail }) => maybeAutoSendMeetingNotesEmail(botId))
-    .catch(() => {});
+  // Email is claimed+sent from driveSessionPersist / transcript cron only
+  // (not here) so concurrent listeners cannot race SES.
 
   return {
     persisted: true,
