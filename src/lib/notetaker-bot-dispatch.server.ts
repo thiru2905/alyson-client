@@ -253,7 +253,9 @@ export async function cancelScheduledRecallBot(botId: string): Promise<void> {
 
 /**
  * Create a Recall bot with live transcript pipeline.
- * Deferred joins (>~90s): Recall first (honors join_at). Near-term: Notetaker first (transcripts).
+ * Always create via Recall first so `recording_config.retention` (timed 48h) is applied.
+ * Notetaker `/api/create-bot` has been observed to leave retention as `forever`, which
+ * drives billable Recording Retention Usage (hour_hours) after the free 7-day window.
  */
 export async function dispatchBotWithLiveTranscripts(args: {
   meetingUrl: string;
@@ -265,7 +267,7 @@ export async function dispatchBotWithLiveTranscripts(args: {
   botName?: string;
   /** Optional JPEG base64 for bot video tile — omit large payloads to avoid timeouts. */
   avatarJpegB64?: string;
-  /** @deprecated Ignored — Notetaker is always tried first for scheduled and immediate joins. */
+  /** @deprecated Ignored — Recall is always tried first so timed retention is applied. */
   preferScheduledJoin?: boolean;
 }): Promise<{ botId: string; creationSource: BotDispatchSource }> {
   const botName = args.botName?.trim() || process.env.BOT_NAME?.trim() || "Alyson Notetaker";
@@ -319,31 +321,15 @@ export async function dispatchBotWithLiveTranscripts(args: {
     return { botId, creationSource: "notetaker_managed" as const };
   };
 
-  const deferredJoin = isDeferredBotJoin(args.botJoinAt);
-
-  if (deferredJoin) {
-    try {
-      return await recallDispatch();
-    } catch (recallErr) {
-      try {
-        return await notetakerDispatch();
-      } catch (notetakerErr) {
-        const rc = recallErr instanceof Error ? recallErr.message : String(recallErr);
-        const nt = notetakerErr instanceof Error ? notetakerErr.message : String(notetakerErr);
-        throw new Error(`Recall (deferred): ${rc}; Notetaker fallback: ${nt}`);
-      }
-    }
-  }
-
   try {
-    return await notetakerDispatch();
-  } catch (notetakerErr) {
+    return await recallDispatch();
+  } catch (recallErr) {
     try {
-      return await recallDispatch();
-    } catch (recallErr) {
-      const nt = notetakerErr instanceof Error ? notetakerErr.message : String(notetakerErr);
+      return await notetakerDispatch();
+    } catch (notetakerErr) {
       const rc = recallErr instanceof Error ? recallErr.message : String(recallErr);
-      throw new Error(`Notetaker: ${nt}; Recall fallback: ${rc}`);
+      const nt = notetakerErr instanceof Error ? notetakerErr.message : String(notetakerErr);
+      throw new Error(`Recall: ${rc}; Notetaker fallback: ${nt}`);
     }
   }
 }
