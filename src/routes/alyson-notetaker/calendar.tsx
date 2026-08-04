@@ -6,6 +6,7 @@ import { Bot, CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, File
 import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
+import { MeetingNotesEmailControl } from "@/components/MeetingNotesEmailControl";
 import { toast } from "sonner";
 import { z } from "zod";
 import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
@@ -122,6 +123,7 @@ function CalendarPage() {
     hasTranscript?: boolean;
     hasTasks?: boolean;
   } | null>(null);
+  const [notesEmailOpen, setNotesEmailOpen] = useState(false);
 
   useEffect(() => {
     const { day, transcriptKey, open } = search;
@@ -235,7 +237,9 @@ function CalendarPage() {
   }
 
   function closeMeetingDoc() {
+    if (notesEmailOpen) return;
     setViewDoc(null);
+    setNotesEmailOpen(false);
   }
 
   useEffect(() => {
@@ -254,7 +258,10 @@ function CalendarPage() {
   useEffect(() => {
     if (!viewDoc) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") closeMeetingDoc();
+      if (e.key === "Escape") {
+        if (notesEmailOpen) return;
+        closeMeetingDoc();
+      }
     }
     document.addEventListener("keydown", onKeyDown);
     const prev = document.body.style.overflow;
@@ -263,7 +270,7 @@ function CalendarPage() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prev;
     };
-  }, [viewDoc]);
+  }, [viewDoc, notesEmailOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -758,6 +765,15 @@ function CalendarPage() {
                   >
                     <Copy className="h-4 w-4" />
                   </button>
+                )}
+                {viewDoc.kind === "notes" && (
+                  <MeetingNotesEmailControl
+                    botId={viewDoc.botId}
+                    notesMd={notesQ.data?.text ?? ""}
+                    title={viewDoc.meetingTitle}
+                    size="md"
+                    onOpenChange={setNotesEmailOpen}
+                  />
                 )}
                 <button
                   onClick={closeMeetingDoc}
