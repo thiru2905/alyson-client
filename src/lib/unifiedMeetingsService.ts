@@ -386,6 +386,7 @@ export type UnifiedScheduledBotSession = {
   createdAt: string;
   status: string;
   creationSource?: StateEntry["creationSource"];
+  transcriptLineCount?: number;
 };
 
 /**
@@ -431,6 +432,7 @@ export async function listAllUnifiedScheduledBotSessions(): Promise<UnifiedSched
       createdAt: String(row.scheduledAt || row.startTime || new Date().toISOString()),
       status: unifiedScheduledStatusForUi(row),
       creationSource: row.creationSource,
+      transcriptLineCount: Number(row.transcriptLineCount || 0) || undefined,
     });
   }
 

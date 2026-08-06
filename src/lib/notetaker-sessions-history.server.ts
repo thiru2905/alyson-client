@@ -75,6 +75,7 @@ type BotIndexDoc = {
   recallMediaDeletedAt?: string;
   meetingDay?: string | null;
   meetingStartedAt?: string | null;
+  meetingUrl?: string | null;
   integrityCheckedAt?: string | null;
   supersededByBotId?: string | null;
   supersededAt?: string | null;

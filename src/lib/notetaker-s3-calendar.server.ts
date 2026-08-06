@@ -59,12 +59,14 @@ export type S3Meeting = {
   hasNotes: boolean;
   hasTranscript: boolean;
   hasTasks: boolean;
+  lineCount?: number;
 };
 
 type S3MeetingBuildRow = S3Meeting & {
   folderDate: string;
   isCanonical?: boolean;
   daySource?: "title" | "event" | "folder";
+  lineCount?: number;
 };
 
 type BotIndexDoc = {
@@ -78,6 +80,7 @@ type BotIndexDoc = {
   meetingDay?: string | null;
   meetingStartedAt?: string | null;
   supersededByBotId?: string | null;
+  lineCount?: number;
 };
 
 let botIndexCache: { at: number; docs: BotIndexDoc[] } | null = null;
@@ -304,6 +307,7 @@ export async function listMeetingsFromS3({ start, end }: { start: string; end: s
       folderDate: schedule.folderDate,
       isCanonical: true,
       daySource: schedule.daySource,
+      lineCount: Number(idx?.lineCount || 0) || undefined,
     });
   }
 

@@ -34,6 +34,7 @@ export type NotetakerBotIndexDoc = {
   /** Authentic calendar day (integrity / listing). */
   meetingDay?: string | null;
   meetingStartedAt?: string | null;
+  meetingUrl?: string | null;
   integrityCheckedAt?: string | null;
   supersededByBotId?: string | null;
   supersededAt?: string | null;
@@ -362,6 +363,7 @@ export async function persistMeetingToS3({
           recallCallEndedAt: existingIndex?.recallCallEndedAt ?? null,
           meetingDay: authentic.meetingDay,
           meetingStartedAt: authentic.meetingStartedAt || session.createdAt || null,
+          meetingUrl: session.meetingUrl || existingIndex?.meetingUrl || null,
           integrityCheckedAt: endedAt,
           supersededByBotId: existingIndex?.supersededByBotId ?? null,
           supersededAt: existingIndex?.supersededAt ?? null,

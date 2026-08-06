@@ -10,6 +10,8 @@ export type NotetakerMeetingRow = {
   hasNotes?: boolean;
   hasTranscript?: boolean;
   hasTasks?: boolean;
+  /** When set, duplicate collapse prefers the higher count. */
+  lineCount?: number;
 };
 
 export type MeetingListParticipant = {
@@ -202,9 +204,15 @@ export function dedupeMeetingRowsForDisplay(meetings: NotetakerMeetingRow[]): No
       if (!close) continue;
 
       const prevScore =
-        (prev.hasTranscript ? 4 : 0) + (prev.hasNotes ? 2 : 0) + (prev.hasTasks ? 1 : 0);
+        Math.max(0, Number(prev.lineCount || 0)) * 1000 +
+        (prev.hasTranscript ? 40 : 0) +
+        (prev.hasNotes ? 20 : 0) +
+        (prev.hasTasks ? 5 : 0);
       const nextScore =
-        (meeting.hasTranscript ? 4 : 0) + (meeting.hasNotes ? 2 : 0) + (meeting.hasTasks ? 1 : 0);
+        Math.max(0, Number(meeting.lineCount || 0)) * 1000 +
+        (meeting.hasTranscript ? 40 : 0) +
+        (meeting.hasNotes ? 20 : 0) +
+        (meeting.hasTasks ? 5 : 0);
       if (nextScore > prevScore) kept[i] = meeting;
       else if (
         nextScore === prevScore &&

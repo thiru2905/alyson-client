@@ -10,6 +10,7 @@ import {
 } from "@/lib/notetaker-meeting-schedule.server";
 import { listAllBotIndexDocs } from "@/lib/notetaker-sessions-history.server";
 import { invalidateNotetakerCalendarS3Cache } from "@/lib/notetaker-s3-calendar.server";
+import { readUnifiedScheduledStateFromS3 } from "@/lib/unified-scheduled-s3.server";
 
 export type MeetingIntegrityIssue = {
   code:
@@ -52,6 +53,7 @@ type BotIndexIntegrityDoc = {
   /** Canonical calendar day — authenticity source for listing. */
   meetingDay?: string | null;
   meetingStartedAt?: string | null;
+  meetingUrl?: string | null;
   integrityCheckedAt?: string | null;
   /** Soft-delete duplicate: another bot is the canonical copy. */
   supersededByBotId?: string | null;
@@ -88,15 +90,48 @@ function bucketName() {
 }
 
 const NEAR_DUPLICATE_MS = 15 * 60_000;
+/** Same Meet/Zoom URL can still get two bots with skewed start times — keep a wider window. */
+const SAME_URL_NEAR_DUPLICATE_MS = 2 * 60 * 60_000;
 
+/**
+ * Rank duplicate bots. Longer transcript wins so we keep the richer copy when two bots join.
+ * Notes / finalized are tie-breakers only (do not outweigh hundreds of transcript lines).
+ */
 function contentScore(doc: BotIndexIntegrityDoc): number {
+  const lines = Math.max(0, Number(doc.lineCount || 0));
   return (
-    (doc.transcriptKey ? 4 : 0) +
-    (doc.notesKey ? 2 : 0) +
-    (Number(doc.lineCount || 0) > 0 ? Math.min(Number(doc.lineCount), 50) : 0) +
-    (doc.cronFinalized ? 3 : 0) +
-    (doc.supersededByBotId ? -100 : 0)
+    lines * 1000 +
+    (doc.transcriptKey ? 40 : 0) +
+    (doc.notesKey ? 20 : 0) +
+    (doc.cronFinalized ? 10 : 0) +
+    (doc.supersededByBotId ? -1_000_000 : 0)
   );
+}
+
+function meetingStartMs(doc: BotIndexIntegrityDoc): number {
+  return Date.parse(
+    String(doc.meetingStartedAt || parseS3MeetingPrefix(doc.prefix).folderStartedAt || ""),
+  );
+}
+
+async function markSuperseded(args: {
+  winner: BotIndexIntegrityDoc;
+  loser: BotIndexIntegrityDoc;
+  ranAt: string;
+}): Promise<void> {
+  const { winner, loser, ranAt } = args;
+  await writeBotIndexDoc({
+    ...loser,
+    supersededByBotId: String(winner.botId),
+    supersededAt: ranAt,
+    integrityCheckedAt: ranAt,
+    meetingDay:
+      loser.meetingDay ||
+      computeAuthenticMeetingDay({
+        title: String(loser.title || ""),
+        prefix: String(loser.prefix),
+      }).meetingDay,
+  });
 }
 
 async function writeBotIndexDoc(doc: BotIndexIntegrityDoc): Promise<void> {
@@ -289,13 +324,21 @@ export async function runNotetakerMeetingIntegrityCheck(options?: {
     }
   }
 
-  // Pass 2: soft-supersede near-duplicates (same day + title within 15m)
+  // Pass 2: soft-supersede near-duplicates — keep the bot with the longer transcript.
+  // Groups: (a) same day + title within 15m, (b) same meeting URL within 2h (skewed start times).
   const fresh = repair ? ((await listAllBotIndexDocs()) as BotIndexIntegrityDoc[]) : active;
   const candidates = fresh.filter(
     (d) => String(d.botId || "").trim() && String(d.prefix || "").trim() && !d.supersededByBotId,
   );
+  const byBotId = new Map(candidates.map((d) => [String(d.botId).trim(), d]));
 
   const groups = new Map<string, BotIndexIntegrityDoc[]>();
+  const addToGroup = (key: string, doc: BotIndexIntegrityDoc) => {
+    const arr = groups.get(key) ?? [];
+    arr.push(doc);
+    groups.set(key, arr);
+  };
+
   for (const doc of candidates) {
     const title = String(doc.title || "").trim() || parseS3MeetingPrefix(doc.prefix).displayName;
     const titleKey = normalizeMeetingTitleKey(title);
@@ -304,53 +347,81 @@ export async function runNotetakerMeetingIntegrityCheck(options?: {
       doc.meetingDay ||
       computeAuthenticMeetingDay({ title, prefix: doc.prefix }).meetingDay ||
       parseS3MeetingPrefix(doc.prefix).folderDate;
-    const key = `${day}|${titleKey}`;
-    const arr = groups.get(key) ?? [];
-    arr.push(doc);
-    groups.set(key, arr);
+    addToGroup(`title|${day}|${titleKey}`, doc);
   }
 
-  for (const [, group] of groups) {
-    if (group.length < 2) continue;
-    const ranked = [...group].sort((a, b) => contentScore(b) - contentScore(a));
+  try {
+    const state = await readUnifiedScheduledStateFromS3();
+    const urlGroups = new Map<string, BotIndexIntegrityDoc[]>();
+    const addUrlDoc = (url: string, doc: BotIndexIntegrityDoc) => {
+      const key = url.trim().toLowerCase().replace(/\?.*$/, "");
+      if (!key) return;
+      const arr = urlGroups.get(key) ?? [];
+      if (!arr.some((d) => String(d.botId) === String(doc.botId))) arr.push(doc);
+      urlGroups.set(key, arr);
+    };
+    for (const row of state.scheduled) {
+      const botId = String(row.recallBotId || "").trim();
+      const url = String(row.meetingUrl || "").trim();
+      if (!botId || !url) continue;
+      const doc = byBotId.get(botId);
+      if (!doc) continue;
+      addUrlDoc(url, doc);
+    }
+    for (const doc of candidates) {
+      const url = String(doc.meetingUrl || "").trim();
+      if (url) addUrlDoc(url, doc);
+    }
+    for (const [url, docs] of urlGroups) {
+      if (docs.length < 2) continue;
+      groups.set(`url|${url}`, docs);
+    }
+  } catch (e) {
+    warnings.push(`url_dedupe_lookup: ${String(e)}`);
+  }
+
+  const alreadySuperseded = new Set<string>();
+
+  for (const [groupKey, group] of groups) {
+    const live = group.filter((d) => !alreadySuperseded.has(String(d.botId)));
+    if (live.length < 2) continue;
+
+    const ranked = [...live].sort((a, b) => {
+      const scoreDiff = contentScore(b) - contentScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return String(a.botId).localeCompare(String(b.botId));
+    });
     const winner = ranked[0]!;
-    const winnerStart = Date.parse(
-      String(winner.meetingStartedAt || parseS3MeetingPrefix(winner.prefix).folderStartedAt || ""),
-    );
+    const winnerStart = meetingStartMs(winner);
+    const sameUrl = groupKey.startsWith("url|");
+    const windowMs = sameUrl ? SAME_URL_NEAR_DUPLICATE_MS : NEAR_DUPLICATE_MS;
 
     for (const loser of ranked.slice(1)) {
-      const loserStart = Date.parse(
-        String(loser.meetingStartedAt || parseS3MeetingPrefix(loser.prefix).folderStartedAt || ""),
-      );
+      if (alreadySuperseded.has(String(loser.botId))) continue;
+      const loserStart = meetingStartMs(loser);
       const close =
         Number.isFinite(winnerStart) && Number.isFinite(loserStart)
-          ? Math.abs(winnerStart - loserStart) <= NEAR_DUPLICATE_MS
-          : true;
+          ? Math.abs(winnerStart - loserStart) <= windowMs
+          : sameUrl;
       if (!close) continue;
 
+      const winnerLines = Number(winner.lineCount || 0);
+      const loserLines = Number(loser.lineCount || 0);
       issues.push({
         code: "near_duplicate",
         severity: "warn",
         botId: String(loser.botId),
         prefix: String(loser.prefix),
         title: String(loser.title || ""),
-        detail: `Near-duplicate of ${winner.botId} (same title/day within 15m)`,
+        detail: sameUrl
+          ? `Same meeting URL as ${winner.botId} within 2h — keeping longer transcript (${winnerLines} vs ${loserLines} lines)`
+          : `Near-duplicate of ${winner.botId} (same title/day within 15m) — keeping longer transcript (${winnerLines} vs ${loserLines} lines)`,
         repaired: false,
       });
 
       if (repair) {
-        await writeBotIndexDoc({
-          ...loser,
-          supersededByBotId: String(winner.botId),
-          supersededAt: ranAt,
-          integrityCheckedAt: ranAt,
-          meetingDay:
-            loser.meetingDay ||
-            computeAuthenticMeetingDay({
-              title: String(loser.title || ""),
-              prefix: String(loser.prefix),
-            }).meetingDay,
-        });
+        await markSuperseded({ winner, loser, ranAt });
+        alreadySuperseded.add(String(loser.botId));
         superseded += 1;
         issues[issues.length - 1]!.repaired = true;
       }

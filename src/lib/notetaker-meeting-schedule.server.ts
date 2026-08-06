@@ -132,13 +132,17 @@ export type MeetingScheduleRow = {
   hasTasks?: boolean;
   isCanonical?: boolean;
   daySource?: "title" | "event" | "folder";
+  /** Prefer higher when collapsing duplicate bots for the same meeting. */
+  lineCount?: number;
 };
 
 function contentScore(row: MeetingScheduleRow): number {
+  const lines = Math.max(0, Number(row.lineCount || 0));
   return (
-    (row.hasTranscript ? 4 : 0) +
-    (row.hasNotes ? 2 : 0) +
-    (row.hasTasks ? 1 : 0) +
+    lines * 1000 +
+    (row.hasTranscript ? 40 : 0) +
+    (row.hasNotes ? 20 : 0) +
+    (row.hasTasks ? 5 : 0) +
     (row.isCanonical ? 8 : 0) +
     (row.daySource === "title" ? 2 : 0)
   );
