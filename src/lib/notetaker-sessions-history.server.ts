@@ -119,9 +119,10 @@ export function mergeNotetakerSessions(...lists: NotetakerSession[][]): Notetake
       }
       const a = Date.parse(String(prev.createdAt || ""));
       const b = Date.parse(String(s.createdAt || ""));
-      const earliestCreatedAt =
+      // Prefer the later timestamp so meeting-start times win over early schedule seeds.
+      const preferredCreatedAt =
         Number.isFinite(a) && Number.isFinite(b)
-          ? a <= b
+          ? a >= b
             ? prev.createdAt
             : s.createdAt
           : s.createdAt || prev.createdAt;
@@ -129,7 +130,7 @@ export function mergeNotetakerSessions(...lists: NotetakerSession[][]): Notetake
         ...prev,
         ...s,
         title: s.title || prev.title,
-        createdAt: earliestCreatedAt,
+        createdAt: preferredCreatedAt,
         status: s.status || prev.status,
         meetingUrl: s.meetingUrl || prev.meetingUrl,
         botName: s.botName || prev.botName,

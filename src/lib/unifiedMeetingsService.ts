@@ -429,7 +429,8 @@ export async function listAllUnifiedScheduledBotSessions(): Promise<UnifiedSched
       title: buildDatedMeetingTitle(String(row.title || "Unified meeting"), row.startTime),
       meetingUrl: row.meetingUrl ? String(row.meetingUrl) : undefined,
       meetingStartAt: row.startTime ? String(row.startTime) : undefined,
-      createdAt: String(row.scheduledAt || row.startTime || new Date().toISOString()),
+      // Prefer meeting start so today's recurring bots sort near the top (not schedule-created weeks ago).
+      createdAt: String(row.startTime || row.scheduledAt || new Date().toISOString()),
       status: unifiedScheduledStatusForUi(row),
       creationSource: row.creationSource,
       transcriptLineCount: Number(row.transcriptLineCount || 0) || undefined,
