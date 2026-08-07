@@ -5,43 +5,58 @@ import { resolveMeetingParticipants, buildCalendarAttendeesByBotId } from "@/lib
 import { resolveMeetingListTasks, backfillAllMeetingTasksFromS3 } from "@/lib/notetaker-meeting-list-tasks.server";
 import { ensureMeetingNotesInS3, ensureMeetingNotesByPrefix, backfillAllMissingNotesFromS3 } from "@/lib/notetaker-auto-persist.server";
 import { requireMeetingTasksBackfillAdmin } from "@/lib/clerk-auth.server";
+import {
+  assertViewerCanAccessMeetingAsset,
+  filterMeetingsForViewer,
+  resolveMeetingVisibilityViewer,
+} from "@/lib/meeting-visibility.server";
 
-const RangeInput = z.object({
+const MeetingAuthInput = z.object({
+  clerkToken: z.string().min(1),
+  emailHint: z.string().min(1).optional(),
+});
+
+const RangeInput = MeetingAuthInput.extend({
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-export const listMeetingsFromS3Range = createServerFn({ method: "GET" })
+/** POST — auth required; non-admins only see invited/attended meetings. */
+export const listMeetingsFromS3Range = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => RangeInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
     const meetings = await listMeetingsFromS3({ start: data.start, end: data.end });
-    return { meetings };
+    const visible = await filterMeetingsForViewer(meetings, viewer);
+    return { meetings: visible };
   });
 
-const NotesInput = z.object({ notesKey: z.string().min(1) });
+const NotesInput = MeetingAuthInput.extend({ notesKey: z.string().min(1) });
 
 /** POST — faster and more reliable than GET for TanStack Start server fns (S3 read only). */
 export const getMeetingNotesMdFromS3 = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => NotesInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    await assertViewerCanAccessMeetingAsset({ viewer, notesKey: data.notesKey });
     const notesMd = await getNotesMdFromS3({ notesKey: data.notesKey });
     return { notesMd };
   });
 
-const TranscriptInput = z.object({ transcriptKey: z.string().min(1) });
+const TranscriptInput = MeetingAuthInput.extend({ transcriptKey: z.string().min(1) });
 
-const ParticipantsInput = z
-  .object({
-    transcriptKey: z.string().min(1).optional(),
-    botId: z.string().min(1).nullable().optional(),
-    hasTranscript: z.boolean().optional(),
-  })
-  .refine((d) => Boolean(d.transcriptKey || d.botId), { message: "transcriptKey or botId required" });
+const ParticipantsInput = MeetingAuthInput.extend({
+  transcriptKey: z.string().min(1).optional(),
+  botId: z.string().min(1).nullable().optional(),
+  hasTranscript: z.boolean().optional(),
+}).refine((d) => Boolean(d.transcriptKey || d.botId), { message: "transcriptKey or botId required" });
 
 /** POST — direct S3 read, no LLM generation. */
 export const getMeetingTranscriptTextFromS3 = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => TranscriptInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    await assertViewerCanAccessMeetingAsset({ viewer, transcriptKey: data.transcriptKey });
     const transcriptText = await getTranscriptTextFromS3({ transcriptKey: data.transcriptKey });
     return { transcriptText };
   });
@@ -50,6 +65,12 @@ export const getMeetingTranscriptTextFromS3 = createServerFn({ method: "POST" })
 export const getMeetingParticipantsFromS3 = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => ParticipantsInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    await assertViewerCanAccessMeetingAsset({
+      viewer,
+      botId: data.botId,
+      transcriptKey: data.transcriptKey,
+    });
     const participants = await resolveMeetingParticipants({
       transcriptKey: data.transcriptKey,
       botId: data.botId,
@@ -58,7 +79,7 @@ export const getMeetingParticipantsFromS3 = createServerFn({ method: "POST" })
     return { participants };
   });
 
-const ParticipantsBatchInput = z.object({
+const ParticipantsBatchInput = MeetingAuthInput.extend({
   meetings: z
     .array(
       z.object({
@@ -75,22 +96,27 @@ const ParticipantsBatchInput = z.object({
 export const getMeetingParticipantsBatch = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => ParticipantsBatchInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    const allowed = await filterMeetingsForViewer(data.meetings, viewer);
+    const allowedPrefixes = new Set(allowed.map((m) => m.prefix));
     const calendarByBot = await buildCalendarAttendeesByBotId();
     const entries = await Promise.all(
-      data.meetings.map(async (meeting) => {
-        const participants = await resolveMeetingParticipants({
-          transcriptKey: meeting.transcriptKey,
-          botId: meeting.botId,
-          hasTranscript: meeting.hasTranscript,
-          calendarByBot,
-        });
-        return [meeting.prefix, participants] as const;
-      }),
+      data.meetings
+        .filter((m) => allowedPrefixes.has(m.prefix))
+        .map(async (meeting) => {
+          const participants = await resolveMeetingParticipants({
+            transcriptKey: meeting.transcriptKey,
+            botId: meeting.botId,
+            hasTranscript: meeting.hasTranscript,
+            calendarByBot,
+          });
+          return [meeting.prefix, participants] as const;
+        }),
     );
     return { participantsByPrefix: Object.fromEntries(entries) };
   });
 
-const MeetingTasksInput = z.object({
+const MeetingTasksInput = MeetingAuthInput.extend({
   prefix: z.string().min(1),
   title: z.string().min(1),
   day: z.string().min(1),
@@ -106,12 +132,21 @@ const MeetingTasksInput = z.object({
 export const getMeetingTasksFromS3 = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => MeetingTasksInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
     const notesKey =
       data.notesKey ??
       `alyson-notetaker/meetingnotes/${data.prefix}/notes.md`;
     const transcriptKey =
       data.transcriptKey ??
       `alyson-notetaker/transcripts/${data.prefix}/transcript.txt`;
+
+    await assertViewerCanAccessMeetingAsset({
+      viewer,
+      botId: data.botId,
+      prefix: data.prefix,
+      notesKey,
+      transcriptKey,
+    });
 
     const payload = await resolveMeetingListTasks({
       prefix: data.prefix,
@@ -127,17 +162,21 @@ export const getMeetingTasksFromS3 = createServerFn({ method: "POST" })
     return payload;
   });
 
-const EnsureNotesInput = z
-  .object({
-    botId: z.string().min(1).optional(),
-    prefix: z.string().min(1).optional(),
-  })
-  .refine((d) => Boolean(d.botId || d.prefix), { message: "botId or prefix required" });
+const EnsureNotesInput = MeetingAuthInput.extend({
+  botId: z.string().min(1).optional(),
+  prefix: z.string().min(1).optional(),
+}).refine((d) => Boolean(d.botId || d.prefix), { message: "botId or prefix required" });
 
 /** Generate notes from S3 transcript and persist notes.md when missing. */
 export const ensureMeetingNotesInS3Fn = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => EnsureNotesInput.parse(data))
   .handler(async ({ data }) => {
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    await assertViewerCanAccessMeetingAsset({
+      viewer,
+      botId: data.botId,
+      prefix: data.prefix,
+    });
     if (data.botId) {
       const r = await ensureMeetingNotesInS3(data.botId);
       if (r.ok) return r;

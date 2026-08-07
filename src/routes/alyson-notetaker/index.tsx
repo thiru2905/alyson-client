@@ -9,23 +9,24 @@ import {
 } from "@/lib/alyson-notetaker-functions";
 import { getNotetakerSession, loadNotetakerSessionArchive } from "@/lib/notetaker-get-session-functions";
 import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-functions";
-import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, Trash2, X, Bot } from "lucide-react";
+import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, X, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { finalizeAndPersistNotetakerSession, syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
 import { syncNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3-functions";
-import { deleteNotetakerSessionFromS3 } from "@/lib/notetaker-delete-functions";
 import { generateSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
 import { MeetingNotesEmailControl } from "@/components/MeetingNotesEmailControl";
+import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
 
 export const Route = createFileRoute("/alyson-notetaker/")({
   component: AlysonNotetakerPage,
 });
 
 function AlysonNotetakerPage() {
+  const meetingAuth = useMeetingVisibilityAuth();
   const sessionsQ = useQuery({
     queryKey: ["alyson-notetaker", "sessions"],
-    queryFn: () => listNotetakerSessions(),
+    queryFn: async () => listNotetakerSessions({ data: await meetingAuth() }),
     staleTime: 20_000,
     gcTime: 5 * 60_000,
     refetchInterval: 30_000,
@@ -33,27 +34,6 @@ function AlysonNotetakerPage() {
   });
   const [picked, setPicked] = useState<string | null>(null);
   const [sessionsSearch, setSessionsSearch] = useState("");
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteBotId, setDeleteBotId] = useState<string | null>(null);
-  const [deleteTitle, setDeleteTitle] = useState<string>("");
-  const [deleteCode, setDeleteCode] = useState("");
-
-  const deleteM = useMutation({
-    mutationFn: async () =>
-      deleteNotetakerSessionFromS3({
-        data: { botId: deleteBotId!, code: deleteCode.trim() },
-      }),
-    onSuccess: async (res) => {
-      toast.success(res.deleted ? "Deleted from S3" : "Nothing to delete");
-      setDeleteOpen(false);
-      setDeleteBotId(null);
-      setDeleteTitle("");
-      setDeleteCode("");
-      if (picked && deleteBotId && picked === deleteBotId) setPicked(null);
-      await sessionsQ.refetch();
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Delete failed"),
-  });
 
   useEffect(() => {
     if (!picked && sessionsQ.data?.sessions?.[0]?.botId) {
@@ -100,82 +80,6 @@ function AlysonNotetakerPage() {
 
   return (
     <div className="ops-dense">
-      {deleteOpen && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 px-4">
-          <div className="w-full max-w-sm rounded-lg border border-border bg-background shadow-xl p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-medium text-[14px]">Delete session from S3</div>
-                <div className="mt-1 text-[12px] text-muted-foreground">
-                  This removes the persisted transcript/notes from S3 so it disappears from the calendar.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (deleteM.isPending) return;
-                  setDeleteOpen(false);
-                  setDeleteBotId(null);
-                  setDeleteTitle("");
-                  setDeleteCode("");
-                }}
-                className="h-8 w-8 grid place-items-center rounded-md hover:bg-muted text-muted-foreground"
-                aria-label="Close"
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-3 text-[12px] text-muted-foreground">
-              Session: <span className="font-mono text-foreground">{deleteBotId}</span>
-              {deleteTitle ? <span className="block mt-1 truncate">Title: {deleteTitle}</span> : null}
-            </div>
-
-            <div className="mt-3">
-              <div className="text-[12px] font-medium">Enter Super Admin code to confirm</div>
-              <input
-                value={deleteCode}
-                onChange={(e) => setDeleteCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                inputMode="numeric"
-                placeholder="•••••"
-                className="mt-2 w-full h-10 rounded-md border border-border bg-background px-3 font-mono text-[16px] tracking-[0.25em]"
-                autoFocus
-              />
-              {deleteM.isError && (
-                <div className="mt-2 text-[12px] text-destructive whitespace-pre-wrap">
-                  {deleteM.error instanceof Error ? deleteM.error.message : "Delete failed"}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (deleteM.isPending) return;
-                  setDeleteOpen(false);
-                  setDeleteBotId(null);
-                  setDeleteTitle("");
-                  setDeleteCode("");
-                }}
-                className="h-9 px-3 rounded-md border border-border text-[12px] hover:bg-muted"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!deleteBotId || deleteCode.trim().length !== 5 || deleteM.isPending}
-                onClick={() => deleteM.mutate()}
-                className="h-9 px-3 rounded-md bg-destructive text-destructive-foreground text-[12px] hover:opacity-90 disabled:opacity-50"
-              >
-                {deleteM.isPending ? "Deleting…" : "Delete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <PageHeader
         eyebrow="Operations"
         title="Alyson Notetaker"
@@ -284,21 +188,6 @@ function AlysonNotetakerPage() {
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate">{s.botId}</div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteOpen(true);
-                            setDeleteBotId(String(s.botId));
-                            setDeleteTitle(String(s.title || ""));
-                            setDeleteCode("");
-                          }}
-                          className="shrink-0 h-7 w-7 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10"
-                          aria-label="Delete session"
-                          title="Delete session from S3"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
                       </div>
                     </button>
                   ))}
@@ -459,6 +348,7 @@ function SessionPanel({
   deferLoad?: boolean;
 }) {
   const qc = useQueryClient();
+  const meetingAuth = useMeetingVisibilityAuth();
   const autoPersistToastRef = useRef<string | null>(null);
   const base =
     (import.meta as any).env?.VITE_ALYSON_NOTETAKER_BASE_URL ||
@@ -468,8 +358,9 @@ function SessionPanel({
   const q = useQuery({
     queryKey: ["alyson-notetaker", "session", botId],
     queryFn: async () => {
+      const auth = await meetingAuth();
       try {
-        const res = await getNotetakerSession({ data: { botId: botId! } });
+        const res = await getNotetakerSession({ data: { botId: botId!, ...auth } });
         if (!res?.session) {
           throw new Error(
             "Session data was empty. Stop the dev server, run npm run dev again, then hard-refresh the page (Ctrl+Shift+R).",
@@ -477,9 +368,11 @@ function SessionPanel({
         }
         return res as any;
       } catch (e) {
+        if (e instanceof Error && /forbidden/i.test(e.message)) throw e;
         try {
-          return (await loadNotetakerSessionArchive({ data: { botId: botId! } })) as any;
-        } catch {
+          return (await loadNotetakerSessionArchive({ data: { botId: botId!, ...auth } })) as any;
+        } catch (archiveErr) {
+          if (archiveErr instanceof Error && /forbidden/i.test(archiveErr.message)) throw archiveErr;
           const message = e instanceof Error ? e.message : "Session metadata unavailable";
           return {
             session: {
@@ -673,7 +566,8 @@ function SessionPanel({
   });
 
   const persistM = useMutation({
-    mutationFn: async () => finalizeAndPersistNotetakerSession({ data: { botId: botId! } }),
+    mutationFn: async () =>
+      finalizeAndPersistNotetakerSession({ data: { botId: botId!, ...(await meetingAuth()) } }),
     onSuccess: () => {
       toast.success("Meeting persisted to S3");
       void q.refetch();
@@ -684,7 +578,8 @@ function SessionPanel({
   });
 
   const syncRecallM = useMutation({
-    mutationFn: async () => syncNotetakerTranscriptFromRecall({ data: { botId: botId! } }),
+    mutationFn: async () =>
+      syncNotetakerTranscriptFromRecall({ data: { botId: botId!, ...(await meetingAuth()) } }),
     onSuccess: (res) => {
       if (res.result.ok && res.result.persisted) {
         toast.success(

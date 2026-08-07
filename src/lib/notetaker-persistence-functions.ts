@@ -4,13 +4,23 @@ import { z } from "zod";
 import { getNotetakerSession } from "@/lib/notetaker-get-session-functions";
 import { autoPersistEndedMeetingToS3 } from "@/lib/notetaker-auto-persist.server";
 
-const BotIdInput = z.object({ botId: z.string().min(1) });
+const BotIdAuthInput = z.object({
+  botId: z.string().min(1),
+  clerkToken: z.string().min(1),
+  emailHint: z.string().min(1).optional(),
+});
 
 /** Manual persist (overwrites S3, regenerates notes). Auto-persist runs when a meeting ends. */
 export const finalizeAndPersistNotetakerSession = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => BotIdInput.parse(data))
+  .inputValidator((data: unknown) => BotIdAuthInput.parse(data))
   .handler(async ({ data }) => {
-    const sess = await getNotetakerSession({ data: { botId: data.botId } });
+    const sess = await getNotetakerSession({
+      data: {
+        botId: data.botId,
+        clerkToken: data.clerkToken,
+        emailHint: data.emailHint,
+      },
+    });
 
     const result = await autoPersistEndedMeetingToS3({
       session: sess.session,
@@ -36,8 +46,14 @@ export const finalizeAndPersistNotetakerSession = createServerFn({ method: "POST
 
 /** Pull full transcript from Recall post-meeting artifact when live capture was partial. */
 export const syncNotetakerTranscriptFromRecall = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => BotIdInput.parse(data))
+  .inputValidator((data: unknown) => BotIdAuthInput.parse(data))
   .handler(async ({ data }) => {
+    const { resolveMeetingVisibilityViewer, assertViewerCanAccessMeetingAsset } = await import(
+      "@/lib/meeting-visibility.server"
+    );
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    await assertViewerCanAccessMeetingAsset({ viewer, botId: data.botId });
+
     const { backfillTranscriptFromRecall, inspectRecallTranscriptBackfill } = await import(
       "@/lib/recall/recall-transcript-backfill.server"
     );

@@ -13,7 +13,19 @@ import { loadPersistedSessionPayloadFromS3 } from "@/lib/notetaker-sessions-hist
 import { patchRecallBotRecordingConfig } from "@/lib/recall/recall-bot-config.server";
 import { notetakerUpstream } from "@/lib/notetaker-upstream.server";
 
-const BotIdInput = z.object({ botId: z.string().min(1) });
+const BotIdInput = z.object({
+  botId: z.string().min(1),
+  clerkToken: z.string().min(1),
+  emailHint: z.string().min(1).optional(),
+});
+
+async function assertSessionVisible(data: z.infer<typeof BotIdInput>) {
+  const { resolveMeetingVisibilityViewer, assertViewerCanAccessMeetingAsset } = await import(
+    "@/lib/meeting-visibility.server"
+  );
+  const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+  await assertViewerCanAccessMeetingAsset({ viewer, botId: data.botId });
+}
 
 const transcriptRepairAt = new Map<string, number>();
 const TRANSCRIPT_REPAIR_COOLDOWN_MS = 120_000;
@@ -105,6 +117,7 @@ function normalizeSessionPayload(res: unknown, botId: string): NotetakerSessionP
 export const loadNotetakerSessionArchive = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => BotIdInput.parse(data))
   .handler(async ({ data }): Promise<NotetakerSessionPayload> => {
+    await assertSessionVisible(data);
     const fallback = await loadSessionFallback(data.botId);
     if (!fallback) {
       throw new Error(`No archived transcript found for bot ${data.botId}.`);
@@ -117,6 +130,7 @@ export const loadNotetakerSessionArchive = createServerFn({ method: "POST" })
 export const getNotetakerSession = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => BotIdInput.parse(data))
   .handler(async ({ data }): Promise<NotetakerSessionPayload> => {
+    await assertSessionVisible(data);
     try {
       const res = await notetakerUpstream(`/api/session/${encodeURIComponent(data.botId)}`);
       const typed = normalizeSessionPayload(res, data.botId);

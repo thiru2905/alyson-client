@@ -294,19 +294,44 @@ export async function sendMeetingNotesEmail(args: {
     String(args.subject || "").trim() ||
     buildEmailSubject(defaultTitle, indexDoc?.finalizedAt || null);
   const bodyHtml = markdownToEmailHtml(notesMd);
+
+  const meetingDay =
+    (indexDoc?.meetingDay && /^\d{4}-\d{2}-\d{2}$/.test(String(indexDoc.meetingDay))
+      ? String(indexDoc.meetingDay)
+      : null) ||
+    (indexDoc?.finalizedAt && Number.isFinite(Date.parse(indexDoc.finalizedAt))
+      ? new Date(indexDoc.finalizedAt).toISOString().slice(0, 10)
+      : null);
+
+  const { buildNotetakerMeetingCalendarDeepLink } = await import(
+    "@/lib/meeting-notes-email-deeplink.server"
+  );
+  const appUrl = buildNotetakerMeetingCalendarDeepLink({
+    botId: args.botId,
+    meetingDay,
+    prefix: indexDoc?.prefix ?? null,
+    transcriptKey: indexDoc?.transcriptKey ?? null,
+    notesKey: indexDoc?.notesKey ?? null,
+    open: "transcript",
+  });
+
   const html = wrapMeetingNotesEmailHtml({
     title: heading,
     meetingDateLabel: meetingDateLabel(indexDoc?.finalizedAt || null),
     bodyHtml,
-    appUrl: process.env.ALYSON_APP_BASE_URL?.trim() || process.env.VITE_ALYSON_APP_BASE_URL?.trim(),
+    appUrl,
   });
   const text = [
     heading,
     "",
     markdownToPlainEmailText(notesMd),
     "",
+    appUrl ? `View transcript: ${appUrl}` : "",
+    "",
     "— Alyson Notetaker",
-  ].join("\n");
+  ]
+    .filter((line, i, arr) => !(line === "" && arr[i - 1] === ""))
+    .join("\n");
 
   const sent = await sendSesEmail({
     to: recipients.map((r) => r.email),

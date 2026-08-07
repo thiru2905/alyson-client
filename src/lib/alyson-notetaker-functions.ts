@@ -50,9 +50,22 @@ export type NotetakerSessionPayload = {
   autoPersistedToS3?: boolean;
 };
 
-export const listNotetakerSessions = createServerFn({ method: "GET" }).handler(async () => {
-  return buildNotetakerSessionsList();
+const ListSessionsInput = z.object({
+  clerkToken: z.string().min(1),
+  emailHint: z.string().min(1).optional(),
 });
+
+export const listNotetakerSessions = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => ListSessionsInput.parse(data))
+  .handler(async ({ data }) => {
+    const { resolveMeetingVisibilityViewer, filterSessionsForViewer } = await import(
+      "@/lib/meeting-visibility.server"
+    );
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    const payload = await buildNotetakerSessionsList();
+    const sessions = await filterSessionsForViewer(payload.sessions ?? [], viewer);
+    return { ...payload, sessions };
+  });
 
 export { getNotetakerSession } from "@/lib/notetaker-get-session-functions";
 

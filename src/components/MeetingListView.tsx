@@ -21,6 +21,7 @@ import {
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
 import { toast } from "sonner";
+import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
 
 type PanelKind = "participants" | "notes" | "transcript" | "tasks";
 
@@ -47,6 +48,7 @@ function MeetingListCard({
   onTogglePanel: (kind: PanelKind) => void;
 }) {
   const qc = useQueryClient();
+  const meetingAuth = useMeetingVisibilityAuth();
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
   const tasksKey = meetingTasksKey(meeting);
@@ -61,6 +63,7 @@ function MeetingListCard({
           transcriptKey,
           botId: meeting.botId,
           hasTranscript: meeting.hasTranscript,
+          ...(await meetingAuth()),
         },
       });
       saveMeetingParticipantsCache(meeting.prefix, result.participants as MeetingListParticipant[]);
@@ -87,6 +90,7 @@ function MeetingListCard({
           botId: meeting.botId,
           hasNotes: meeting.hasNotes,
           hasTranscript: meeting.hasTranscript,
+          ...(await meetingAuth()),
         },
       });
       saveMeetingTasksCache(meeting.prefix, payload);
@@ -101,7 +105,8 @@ function MeetingListCard({
 
   const notesQ = useQuery({
     queryKey: ["meeting-list-notes", notesKey],
-    queryFn: () => getMeetingNotesMdFromS3({ data: { notesKey } }),
+    queryFn: async () =>
+      getMeetingNotesMdFromS3({ data: { notesKey, ...(await meetingAuth()) } }),
     enabled: openPanel === "notes",
     staleTime: 10 * 60_000,
     retry: false,
@@ -109,14 +114,18 @@ function MeetingListCard({
 
   const transcriptQ = useQuery({
     queryKey: ["meeting-list-transcript", transcriptKey],
-    queryFn: () => getMeetingTranscriptTextFromS3({ data: { transcriptKey } }),
+    queryFn: async () =>
+      getMeetingTranscriptTextFromS3({ data: { transcriptKey, ...(await meetingAuth()) } }),
     enabled: openPanel === "transcript",
     staleTime: 10 * 60_000,
     retry: false,
   });
 
   const syncRecallM = useMutation({
-    mutationFn: () => syncNotetakerTranscriptFromRecall({ data: { botId: meeting.botId! } }),
+    mutationFn: async () =>
+      syncNotetakerTranscriptFromRecall({
+        data: { botId: meeting.botId!, ...(await meetingAuth()) },
+      }),
     onSuccess: async (res) => {
       if (res.result.ok && res.result.persisted) {
         toast.success(

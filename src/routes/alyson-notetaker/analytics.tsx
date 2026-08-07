@@ -34,6 +34,7 @@ import { getNotetakerAnalyticsInsights, getNotetakerAnalyticsReport } from "@/li
 import { listMeetingsFromS3Range } from "@/lib/notetaker-s3-calendar-functions";
 import { dateMatchesSearchQuery, textMatchesSearchQuery } from "@/lib/fuzzy-text-search";
 import { toast } from "sonner";
+import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
 
 export const Route = createFileRoute("/alyson-notetaker/analytics")({
   head: () => ({ meta: [{ title: "Meeting Analytics — Alyson Notetaker" }] }),
@@ -187,6 +188,7 @@ function bootstrapFromSession() {
 
 function AnalyticsPage() {
   const navigate = useNavigate();
+  const meetingAuth = useMeetingVisibilityAuth();
   const boot = useMemo(() => bootstrapFromSession(), []);
 
   const [periodMode, setPeriodMode] = useState<PeriodMode>(() => boot?.periodMode ?? "preset");
@@ -220,7 +222,8 @@ function AnalyticsPage() {
 
   const meetingsQ = useQuery({
     queryKey: ["notetaker-analytics-meetings", draftRange.start, draftRange.end],
-    queryFn: () => listMeetingsFromS3Range({ data: draftRange }),
+    queryFn: async () =>
+      listMeetingsFromS3Range({ data: { ...draftRange, ...(await meetingAuth()) } }),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -238,7 +241,7 @@ function AnalyticsPage() {
           }
         : null,
     ),
-    queryFn: () => {
+    queryFn: async () => {
       if (!applied) throw new Error("No filters applied");
       return getNotetakerAnalyticsReport({
         data: {
@@ -247,6 +250,7 @@ function AnalyticsPage() {
           speakerFilters: applied.speakers.length ? applied.speakers : undefined,
           meetingPrefixes: applied.meetingPrefixes.length ? applied.meetingPrefixes : undefined,
           maxMeetings: 100,
+          ...(await meetingAuth()),
         },
       });
     },

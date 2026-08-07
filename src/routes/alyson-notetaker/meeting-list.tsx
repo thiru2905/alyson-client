@@ -20,6 +20,7 @@ import {
   type MeetingListParticipant,
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
+import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
 
 export const Route = createFileRoute("/alyson-notetaker/meeting-list")({
   head: () => ({ meta: [{ title: "Meeting List — Alyson Notetaker" }] }),
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/alyson-notetaker/meeting-list")({
 
 function MeetingListPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const meetingAuth = useMeetingVisibilityAuth();
 
   const range = useMemo(() => {
     const s = startOfMonth(month);
@@ -37,7 +39,7 @@ function MeetingListPage() {
 
   const q = useQuery({
     queryKey: ["notetaker-meeting-list", range.start, range.end],
-    queryFn: () => listMeetingsFromS3Range({ data: range }),
+    queryFn: async () => listMeetingsFromS3Range({ data: { ...range, ...(await meetingAuth()) } }),
     staleTime: 60_000,
   });
 
@@ -59,6 +61,7 @@ function MeetingListPage() {
             botId: m.botId,
             hasTranscript: m.hasTranscript,
           })),
+          ...(await meetingAuth()),
         },
       });
       saveMeetingParticipantsCacheBatch(

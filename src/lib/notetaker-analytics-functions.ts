@@ -4,6 +4,8 @@ import { buildNotetakerAnalyticsReport } from "@/lib/notetaker-analytics.server"
 import { generateNotetakerAnalyticsInsights } from "@/lib/notetaker-analytics-insights.server";
 
 const ReportInput = z.object({
+  clerkToken: z.string().min(1),
+  emailHint: z.string().min(1).optional(),
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   speakerFilters: z.array(z.string()).optional(),
@@ -15,15 +17,30 @@ const ReportInput = z.object({
   maxMeetings: z.number().int().min(1).max(100).optional(),
 });
 
-export const getNotetakerAnalyticsReport = createServerFn({ method: "GET" })
+export const getNotetakerAnalyticsReport = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => ReportInput.parse(data))
   .handler(async ({ data }) => {
+    const { resolveMeetingVisibilityViewer, filterMeetingsForViewer } = await import(
+      "@/lib/meeting-visibility.server"
+    );
+    const { listMeetingsFromS3 } = await import("@/lib/notetaker-s3-calendar.server");
+    const viewer = await resolveMeetingVisibilityViewer(data.clerkToken, data.emailHint);
+    const allInRange = await listMeetingsFromS3({ start: data.start, end: data.end });
+    const visible = await filterMeetingsForViewer(allInRange, viewer);
+    const visiblePrefixes = new Set(visible.map((m) => m.prefix));
+    const requested = data.meetingPrefixes?.filter((p) => visiblePrefixes.has(p));
+    const meetingPrefixes = viewer.fullAccess
+      ? data.meetingPrefixes
+      : requested?.length
+        ? requested
+        : [...visiblePrefixes];
+
     const report = await buildNotetakerAnalyticsReport({
       start: data.start,
       end: data.end,
       speakerFilters: data.speakerFilters ?? (data.speakerFilter ? [data.speakerFilter] : undefined),
       meetingTitleFilter: data.meetingTitleFilter,
-      meetingPrefixes: data.meetingPrefixes,
+      meetingPrefixes,
       maxMeetings: data.maxMeetings,
     });
     return { report };

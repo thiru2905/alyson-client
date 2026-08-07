@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
+import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
 
 type MeetingRow = {
   prefix: string;
@@ -28,7 +29,10 @@ type MeetingRow = {
 
 const calendarSearchSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  botId: z.string().min(1).optional(),
+  prefix: z.string().min(1).optional(),
   transcriptKey: z.string().min(1).optional(),
+  notesKey: z.string().min(1).optional(),
   open: z.enum(["transcript", "notes", "tasks"]).optional(),
 });
 
@@ -104,6 +108,7 @@ function meetingTasksKey(m: MeetingRow): string {
 
 function CalendarPage() {
   const meetingHoursVisible = useSuperAccessNavVisible();
+  const meetingAuth = useMeetingVisibilityAuth();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const qc = useQueryClient();
@@ -124,10 +129,19 @@ function CalendarPage() {
     hasTasks?: boolean;
   } | null>(null);
   const [notesEmailOpen, setNotesEmailOpen] = useState(false);
+  const [pendingDeepLink, setPendingDeepLink] = useState<{
+    day?: string;
+    botId?: string;
+    prefix?: string;
+    transcriptKey?: string;
+    notesKey?: string;
+    open: "transcript" | "notes" | "tasks";
+  } | null>(null);
 
+  // Capture deep-link search params once, then clear the URL.
   useEffect(() => {
-    const { day, transcriptKey, open } = search;
-    if (!day && !transcriptKey) {
+    const { day, botId, prefix, transcriptKey, notesKey, open } = search;
+    if (!day && !botId && !prefix && !transcriptKey && !notesKey) {
       deepLinkHandled.current = false;
       return;
     }
@@ -142,29 +156,15 @@ function CalendarPage() {
       }
     }
 
-    const deepLinkDay = day ?? "";
-    if (transcriptKey && (open === "transcript" || open === undefined)) {
-      setViewDoc({
-        kind: "transcript",
-        key: transcriptKey,
-        meetingTitle: "Meeting transcript",
-        botId: null,
-        prefix: "",
-        day: deepLinkDay,
-      });
-      toast.message("Opening transcript…");
-    } else if (transcriptKey && open === "notes") {
-      setViewDoc({
-        kind: "notes",
-        key: transcriptKey,
-        meetingTitle: "Meeting notes",
-        botId: null,
-        prefix: "",
-        day: deepLinkDay,
-      });
-      toast.message("Opening notes…");
-    }
-
+    setPendingDeepLink({
+      day,
+      botId,
+      prefix,
+      transcriptKey,
+      notesKey,
+      open: open ?? "transcript",
+    });
+    toast.message(open === "notes" ? "Opening notes…" : open === "tasks" ? "Opening tasks…" : "Opening transcript…");
     navigate({ search: {}, replace: true });
   }, [search, navigate]);
 
@@ -176,7 +176,7 @@ function CalendarPage() {
 
   const q = useQuery({
     queryKey: ["notetaker-calendar", range.start, range.end],
-    queryFn: () => listMeetingsFromS3Range({ data: range }),
+    queryFn: async () => listMeetingsFromS3Range({ data: { ...range, ...(await meetingAuth()) } }),
     staleTime: 60_000,
   });
 
@@ -184,6 +184,51 @@ function CalendarPage() {
     () => dedupeMeetingRowsForDisplay((q.data?.meetings ?? []) as NotetakerMeetingRow[]),
     [q.data?.meetings],
   );
+
+  // After meetings load, resolve the deep-linked meeting and open its transcript/notes/tasks.
+  useEffect(() => {
+    if (!pendingDeepLink || q.isLoading) return;
+
+    const { botId, prefix, transcriptKey, notesKey, open, day } = pendingDeepLink;
+    const match =
+      meetings.find((m) => botId && m.botId === botId) ||
+      meetings.find((m) => prefix && m.prefix === prefix) ||
+      meetings.find((m) => transcriptKey && meetingTranscriptKey(m) === transcriptKey) ||
+      meetings.find((m) => notesKey && meetingNotesKey(m) === notesKey) ||
+      null;
+
+    if (match) {
+      if (!picked) setPicked(match.day);
+      const kind = open;
+      setViewDoc({
+        kind,
+        key:
+          kind === "notes"
+            ? meetingNotesKey(match)
+            : kind === "transcript"
+              ? meetingTranscriptKey(match)
+              : meetingTasksKey(match),
+        meetingTitle: match.title,
+        botId: match.botId,
+        prefix: match.prefix,
+        day: match.day,
+        hasNotes: match.hasNotes,
+        hasTranscript: match.hasTranscript,
+        hasTasks: match.hasTasks,
+      });
+      setPendingDeepLink(null);
+      return;
+    }
+
+    // Wait until the month list has loaded. If the meeting isn't visible, do not
+    // open by raw S3 key (privacy) — server reads are gated too, but avoid a flash.
+    if (q.isFetched) {
+      setPendingDeepLink(null);
+      toast.error(
+        "Could not open that meeting. It may be private, outside this month, or the link is outdated.",
+      );
+    }
+  }, [pendingDeepLink, meetings, q.isLoading, q.isFetched, picked]);
 
   const byDay = useMemo(() => {
     const m = new Map<string, MeetingRow[]>();
@@ -293,12 +338,13 @@ function CalendarPage() {
     queryKey: ["notetaker-s3-doc", viewDoc?.kind, viewDoc?.key],
     queryFn: async () => {
       if (!viewDoc) return { text: "" };
+      const auth = await meetingAuth();
       if (viewDoc.kind === "notes") {
-        const r = await getMeetingNotesMdFromS3({ data: { notesKey: viewDoc.key } });
+        const r = await getMeetingNotesMdFromS3({ data: { notesKey: viewDoc.key, ...auth } });
         return { text: r.notesMd };
       }
       if (viewDoc.kind === "transcript") {
-        const r = await getMeetingTranscriptTextFromS3({ data: { transcriptKey: viewDoc.key } });
+        const r = await getMeetingTranscriptTextFromS3({ data: { transcriptKey: viewDoc.key, ...auth } });
         return { text: r.transcriptText };
       }
       return { text: "" };
@@ -322,6 +368,7 @@ function CalendarPage() {
           botId: viewDoc.botId,
           hasNotes: viewDoc.hasNotes,
           hasTranscript: viewDoc.hasTranscript,
+          ...(await meetingAuth()),
         },
       });
     },
@@ -334,7 +381,11 @@ function CalendarPage() {
     mutationFn: async () => {
       if (!viewDoc) throw new Error("No meeting selected");
       return ensureMeetingNotesInS3Fn({
-        data: { botId: viewDoc.botId ?? undefined, prefix: viewDoc.prefix },
+        data: {
+          botId: viewDoc.botId ?? undefined,
+          prefix: viewDoc.prefix,
+          ...(await meetingAuth()),
+        },
       });
     },
     onSuccess: (res) => {
@@ -830,9 +881,16 @@ function CalendarPage() {
               {notesQ.isError && !generateNotesM.isPending && (
                 <div className="text-sm space-y-3">
                   <p className="text-muted-foreground">
-                    Notes are not in S3 yet for this meeting.
+                    {notesQ.error instanceof Error && /forbidden/i.test(notesQ.error.message)
+                      ? notesQ.error.message
+                      : viewDoc.kind === "notes"
+                        ? "Notes are not in S3 yet for this meeting."
+                        : notesQ.error instanceof Error
+                          ? notesQ.error.message
+                          : "Could not load this document."}
                   </p>
-                  {viewDoc.kind === "notes" && (
+                  {viewDoc.kind === "notes" &&
+                    !(notesQ.error instanceof Error && /forbidden/i.test(notesQ.error.message)) && (
                     <button
                       type="button"
                       onClick={() => generateNotesM.mutate()}
