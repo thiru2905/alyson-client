@@ -9,7 +9,7 @@ import {
 } from "@/lib/alyson-notetaker-functions";
 import { getNotetakerSession, loadNotetakerSessionArchive } from "@/lib/notetaker-get-session-functions";
 import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-functions";
-import { Captions, Plus, RefreshCw, Sparkles, Copy, Send, X, Bot } from "lucide-react";
+import { Captions, Plus, RefreshCw, Sparkles, Copy, Download, Send, X, Bot } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { finalizeAndPersistNotetakerSession, syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
@@ -17,6 +17,7 @@ import { syncNotetakerSessionsIndexToS3 } from "@/lib/notetaker-sessions-s3-func
 import { generateSmartMeetingNotes } from "@/lib/notetaker-smart-notes";
 import { MeetingNotesEmailControl } from "@/components/MeetingNotesEmailControl";
 import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
+import { downloadTextFile, meetingExportFilenameStem } from "@/lib/download-text-file";
 
 export const Route = createFileRoute("/alyson-notetaker/")({
   component: AlysonNotetakerPage,
@@ -743,6 +744,22 @@ function SessionPanel({
               </span>
               <button
                 type="button"
+                onClick={() => {
+                  if (!plainTranscript.trim()) return;
+                  const stem = meetingExportFilenameStem(String(q.data?.session?.title || "meeting"));
+                  downloadTextFile(`${stem}-transcript.txt`, plainTranscript);
+                  toast.success("Transcript exported");
+                }}
+                disabled={!plainTranscript.trim()}
+                className="h-6 px-1.5 rounded-md border border-border bg-background text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50 inline-flex items-center gap-1"
+                title="Export transcript"
+                aria-label="Export transcript"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
+              <button
+                type="button"
                 onClick={async () => {
                   if (!plainTranscript.trim()) return;
                   await navigator.clipboard.writeText(plainTranscript);
@@ -790,6 +807,22 @@ function SessionPanel({
               Notes {notesModel ? <span className="normal-case tracking-normal text-[11px] ml-1 opacity-70">({notesModel})</span> : null}
             </div>
             <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!plainNotes.trim()) return;
+                  const stem = meetingExportFilenameStem(String(q.data?.session?.title || "meeting"));
+                  downloadTextFile(`${stem}-notes.md`, plainNotes, "text/markdown;charset=utf-8");
+                  toast.success("Notes exported");
+                }}
+                disabled={!plainNotes.trim()}
+                className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50 inline-flex items-center gap-1"
+                title="Export notes"
+                aria-label="Export notes"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </button>
               <button
                 type="button"
                 onClick={async () => {

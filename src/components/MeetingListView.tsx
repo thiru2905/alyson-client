@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Captions, CheckSquare, ChevronDown, Copy, FileText, Loader2, RefreshCw, Users } from "lucide-react";
+import { Captions, CheckSquare, ChevronDown, Copy, Download, FileText, Loader2, RefreshCw, Users } from "lucide-react";
 import {
   getMeetingNotesMdFromS3,
   getMeetingParticipantsFromS3,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/notetaker-meeting-ui";
 import { toast } from "sonner";
 import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
+import { downloadTextFile, meetingExportFilenameStem } from "@/lib/download-text-file";
 
 type PanelKind = "participants" | "notes" | "transcript" | "tasks";
 
@@ -178,6 +179,23 @@ function MeetingListCard({
     }
   }
 
+  function exportPanelContent() {
+    if (!copyableText) {
+      toast.error("Nothing to export");
+      return;
+    }
+    const stem = meetingExportFilenameStem(meeting.title);
+    const day = meeting.day ? `${meeting.day}-` : "";
+    const kind = openPanel === "notes" ? "notes" : "transcript";
+    const ext = openPanel === "notes" ? "md" : "txt";
+    downloadTextFile(
+      `${day}${stem}-${kind}.${ext}`,
+      copyableText,
+      openPanel === "notes" ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8",
+    );
+    toast.success(openPanel === "notes" ? "Notes exported" : "Transcript exported");
+  }
+
   return (
     <article className="surface-card flex flex-col overflow-hidden font-sans text-[12px]">
       <div className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -257,6 +275,17 @@ function MeetingListCard({
                     Sync Recall
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => exportPanelContent()}
+                  disabled={panelLoading || panelError || !copyableText}
+                  className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40 inline-flex items-center gap-1"
+                  title="Export"
+                  aria-label={openPanel === "notes" ? "Export notes" : "Export transcript"}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export
+                </button>
                 <button
                   type="button"
                   onClick={() => void copyPanelContent()}

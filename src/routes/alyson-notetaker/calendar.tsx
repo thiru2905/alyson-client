@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { Bot, CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, FileText, X } from "lucide-react";
+import { Bot, CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, Download, FileText, X } from "lucide-react";
 import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
@@ -12,6 +12,7 @@ import { z } from "zod";
 import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
+import { downloadTextFile, meetingExportFilenameStem } from "@/lib/download-text-file";
 
 type MeetingRow = {
   prefix: string;
@@ -798,24 +799,53 @@ function CalendarPage() {
               </div>
               <div className="ml-auto flex items-center gap-2 shrink-0">
                 {viewDoc.kind !== "tasks" && (
-                  <button
-                    onClick={async () => {
-                      const text = notesQ.data?.text ?? "";
-                      if (!text.trim()) return toast.error("Nothing to copy");
-                      try {
-                        await navigator.clipboard.writeText(text);
-                        toast.success(viewDoc.kind === "notes" ? "Notes copied" : "Transcript copied");
-                      } catch (e) {
-                        toast.error(e instanceof Error ? e.message : "Failed to copy");
-                      }
-                    }}
-                    disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
-                    className="h-8 w-8 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                    title="Copy"
-                    aria-label="Copy"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = notesQ.data?.text ?? "";
+                        if (!text.trim()) return toast.error("Nothing to export");
+                        const stem = meetingExportFilenameStem(viewDoc.meetingTitle);
+                        const day = viewDoc.day ? `${viewDoc.day}-` : "";
+                        const kind = viewDoc.kind === "notes" ? "notes" : "transcript";
+                        const ext = viewDoc.kind === "notes" ? "md" : "txt";
+                        downloadTextFile(
+                          `${day}${stem}-${kind}.${ext}`,
+                          text,
+                          viewDoc.kind === "notes"
+                            ? "text/markdown;charset=utf-8"
+                            : "text/plain;charset=utf-8",
+                        );
+                        toast.success(viewDoc.kind === "notes" ? "Notes exported" : "Transcript exported");
+                      }}
+                      disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
+                      className="h-8 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50 inline-flex items-center gap-1.5"
+                      title="Export"
+                      aria-label={viewDoc.kind === "notes" ? "Export notes" : "Export transcript"}
+                    >
+                      <Download className="h-4 w-4" />
+                      Export
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const text = notesQ.data?.text ?? "";
+                        if (!text.trim()) return toast.error("Nothing to copy");
+                        try {
+                          await navigator.clipboard.writeText(text);
+                          toast.success(viewDoc.kind === "notes" ? "Notes copied" : "Transcript copied");
+                        } catch (e) {
+                          toast.error(e instanceof Error ? e.message : "Failed to copy");
+                        }
+                      }}
+                      disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
+                      className="h-8 w-8 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
+                      title="Copy"
+                      aria-label="Copy"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </>
                 )}
                 {viewDoc.kind === "notes" && (
                   <MeetingNotesEmailControl
