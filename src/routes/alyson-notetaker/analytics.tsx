@@ -418,14 +418,15 @@ function AnalyticsPage() {
   };
 
   const confirmGoToMeeting = () => {
-    if (!goToMeeting) return;
+    if (!goToMeeting?.transcriptKey) return;
     setGoToMeeting(null);
     navigate({
-      to: "/alyson-notetaker/calendar",
+      to: "/alyson-notetaker/transcript",
       search: {
         day: goToMeeting.day,
         transcriptKey: goToMeeting.transcriptKey,
-        open: "transcript",
+        title: goToMeeting.title,
+        prefix: goToMeeting.prefix,
       },
     });
   };

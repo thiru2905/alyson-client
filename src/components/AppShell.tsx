@@ -4,7 +4,9 @@ import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
   Moon, Sun, ChevronsLeft, ChevronsRight, LogOut, Search, Bot, Menu, X, Send, Link2, Activity, Trophy,
-  Captions, UserPlus, CalendarDays, Paintbrush, ListTodo, Sparkles, List, ChevronDown,
+  Captions, UserPlus, CalendarDays, Paintbrush, Sparkles, List, ChevronDown,
+  // ListTodo — used by commented-out Tasks nav item; keep import handy to restore
+  // ListTodo,
 } from "lucide-react";
 import { useAuth, ROLE_LABEL, type AppRole } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
@@ -21,14 +23,19 @@ import { toast } from "sonner";
 declare const __BUILD_SHA__: string;
 declare const __BUILD_ENV__: string;
 
-type NavItem = {
+type NavLeaf = {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
   end?: boolean;
   roles?: AppRole[];
   superAccess?: boolean;
+};
+
+type NavItem = NavLeaf & {
   group: "Workspace" | "People" | "Money" | "Ops" | "Admin";
+  /** Nested under this item in the sidebar (e.g. Alyson Notetaker children). */
+  children?: NavLeaf[];
 };
 
 const NAV: NavItem[] = [
@@ -51,15 +58,24 @@ const NAV: NavItem[] = [
   { to: "/workspace-activity", label: "Workspace Activity", icon: Activity, group: "Ops", superAccess: true },
   { to: "/employee-scoring", label: "Employee Scoring", icon: Trophy, group: "Ops", roles: ["super_admin", "ceo", "hr"] },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "Ops", roles: ["super_admin", "ceo", "finance", "hr"] },
-  { to: "/alyson-notetaker", label: "Alyson Notetaker", icon: Captions, group: "Ops" },
-  { to: "/alyson-notetaker/meeting-hours", label: "Meeting Hours", icon: Clock, group: "Ops" },
-  { to: "/alyson-notetaker/meeting-list", label: "Meeting List", icon: List, group: "Ops" },
-  { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays, group: "Ops" },
-  { to: "/alyson-notetaker/recall-calendar", label: "Recall Calendar", icon: Bot, group: "Ops" },
-  { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3, group: "Ops" },
-  { to: "/alyson-notetaker/bot-join-report", label: "Bot Join Report", icon: Bot, group: "Ops" },
-  { to: "/alyson-notetaker/unified-meetings", label: "Unified Meetings", icon: CalendarDays, group: "Ops" },
-  { to: "/alyson-notetaker/tasks", label: "Tasks", icon: ListTodo, group: "Ops" },
+  {
+    to: "/alyson-notetaker",
+    label: "Alyson Notetaker",
+    icon: Captions,
+    group: "Ops",
+    end: true,
+    children: [
+      { to: "/alyson-notetaker/meeting-hours", label: "Meeting Hours", icon: Clock },
+      { to: "/alyson-notetaker/meeting-list", label: "Meeting List", icon: List },
+      { to: "/alyson-notetaker/calendar", label: "Meeting Calendar", icon: CalendarDays },
+      { to: "/alyson-notetaker/recall-calendar", label: "Recall Calendar", icon: Bot },
+      { to: "/alyson-notetaker/analytics", label: "Analytics", icon: BarChart3 },
+      { to: "/alyson-notetaker/bot-join-report", label: "Bot Join Report", icon: Bot },
+      { to: "/alyson-notetaker/unified-meetings", label: "Unified Meetings", icon: CalendarDays },
+      // Tasks module — outdated; commented out so it stays out of the sidebar (route/code kept).
+      // { to: "/alyson-notetaker/tasks", label: "Tasks", icon: ListTodo },
+    ],
+  },
   { to: "/admin", label: "Admin", icon: Shield, group: "Admin", roles: ["super_admin"] },
   { to: "/help", label: "Help", icon: HelpCircle, group: "Admin" },
 ];
@@ -68,6 +84,7 @@ const ROLES: AppRole[] = ["super_admin", "ceo", "finance", "hr", "manager", "emp
 const SIDEBAR_COLLAPSED_KEY = "alyson-sidebar-collapsed";
 const SIDEBAR_WIDTH_KEY = "alyson-sidebar-width-v3";
 const NAV_GROUPS_COLLAPSED_KEY = "alyson-nav-groups-collapsed";
+const NAV_BRANCHES_COLLAPSED_KEY = "alyson-nav-branches-collapsed";
 const SIDEBAR_WIDTH_MIN = 220;
 const SIDEBAR_WIDTH_MAX = 380;
 const SIDEBAR_WIDTH_DEFAULT = 268;
@@ -127,8 +144,36 @@ function persistNavGroupsCollapsed(next: Partial<Record<NavGroup, boolean>>) {
   }
 }
 
-function isNavItemActive(pathname: string, item: NavItem): boolean {
-  return item.end ? pathname === item.to : pathname.startsWith(item.to);
+function readNavBranchesCollapsed(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(NAV_BRANCHES_COLLAPSED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, boolean>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistNavBranchesCollapsed(next: Record<string, boolean>) {
+  try {
+    window.localStorage.setItem(NAV_BRANCHES_COLLAPSED_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function isNavItemActive(pathname: string, item: Pick<NavLeaf, "to" | "end">): boolean {
+  if (item.end) {
+    return pathname === item.to || pathname === `${item.to}/`;
+  }
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
+
+function navItemOrChildActive(pathname: string, item: NavItem): boolean {
+  if (isNavItemActive(pathname, item)) return true;
+  return Boolean(item.children?.some((child) => isNavItemActive(pathname, child)));
 }
 
 function clampNavScrollTop(nav: HTMLElement, scrollTop: number) {
@@ -155,17 +200,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [superAdminError, setSuperAdminError] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<AppRole | null>(null);
   const [groupsCollapsed, setGroupsCollapsed] = useState<Partial<Record<NavGroup, boolean>>>({});
+  const [branchesCollapsed, setBranchesCollapsed] = useState<Record<string, boolean>>({});
   const prevPathRef = useRef<string | null>(null);
   const navScrollRef = useRef<HTMLElement>(null);
   const navScrollTopRef = useRef(0);
 
-  const visible = NAV.filter((n) => {
-    if (n.superAccess) return superAccessNavVisible;
-    if (n.to === "/time-dashboard" || n.to.startsWith("/time-dashboard/")) {
-      return timeDashboardNavVisible;
-    }
-    return !n.roles || hasAnyRole(n.roles);
-  });
+  const visible = useMemo(() => {
+    const allowed = (n: NavLeaf) => {
+      if (n.superAccess) return superAccessNavVisible;
+      if (n.to === "/time-dashboard" || n.to.startsWith("/time-dashboard/")) {
+        return timeDashboardNavVisible;
+      }
+      return !n.roles || hasAnyRole(n.roles);
+    };
+    return NAV.filter(allowed).map((n) => ({
+      ...n,
+      children: n.children?.filter(allowed),
+    }));
+  }, [superAccessNavVisible, timeDashboardNavVisible, hasAnyRole]);
   const grouped = useMemo(() => groupBy(visible, (n) => n.group), [visible]);
 
   useEffect(() => { setMobileOpen(false); }, [location.pathname]);
@@ -174,6 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setCollapsed(readSidebarCollapsed());
     setSidebarWidth(readSidebarWidth());
     setGroupsCollapsed(readNavGroupsCollapsed());
+    setBranchesCollapsed(readNavBranchesCollapsed());
   }, []);
 
   const asideWidth =
@@ -246,6 +299,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const toggleNavBranch = (parentTo: string) => {
+    setBranchesCollapsed((prev) => {
+      const next = { ...prev, [parentTo]: !(prev[parentTo] ?? false) };
+      persistNavBranchesCollapsed(next);
+      return next;
+    });
+  };
+
   // Expand the group for the new page only when the route changes (not when user collapses in place).
   useEffect(() => {
     const path = location.pathname;
@@ -257,14 +318,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       for (const g of NAV_GROUPS) {
         const items = grouped[g];
         if (!items?.length) continue;
-        if (!items.some((item) => isNavItemActive(path, item))) continue;
+        if (!items.some((item) => navItemOrChildActive(path, item))) continue;
         if (!next) next = { ...prev };
         next[g] = false;
       }
       if (next) persistNavGroupsCollapsed(next);
       return next ?? prev;
     });
-  }, [location.pathname, grouped]);
+
+    // Auto-open nested branches when landing on a child route.
+    setBranchesCollapsed((prev) => {
+      let next: Record<string, boolean> | null = null;
+      for (const item of visible) {
+        if (!item.children?.length) continue;
+        const onChild = item.children.some((c) => isNavItemActive(path, c));
+        if (!onChild) continue;
+        if (prev[item.to] !== true) continue;
+        if (!next) next = { ...prev };
+        next[item.to] = false;
+      }
+      if (next) persistNavBranchesCollapsed(next);
+      return next ?? prev;
+    });
+  }, [location.pathname, grouped, visible]);
 
   // Keep sidebar scroll position when switching modules (avoid jumping to top).
   useEffect(() => {
@@ -274,7 +350,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (nav) nav.scrollTop = clampNavScrollTop(nav, top);
     });
     return () => cancelAnimationFrame(frame);
-  }, [location.pathname, groupsCollapsed]);
+  }, [location.pathname, groupsCollapsed, branchesCollapsed]);
 
   const onSidebarNavScroll = () => {
     const nav = navScrollRef.current;
@@ -467,24 +543,123 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       const active = isNavItemActive(location.pathname, item);
                       const Icon = item.icon;
                       const iconOnly = collapsed && !mobileOpen;
+                      const childLinks = item.children?.length ? item.children : null;
+                      const onChild = Boolean(
+                        childLinks?.some((c) => isNavItemActive(location.pathname, c)),
+                      );
+                      const branchOpen =
+                        Boolean(childLinks) &&
+                        (iconOnly || !(branchesCollapsed[item.to] ?? false));
+                      const parentLit = active || onChild;
+
                       return (
-                        <Link
-                          key={item.to}
-                          to={item.to as "/"}
-                          title={iconOnly ? item.label : undefined}
-                          className={
-                            "flex items-center gap-2.5 py-1.5 rounded-md text-[13px] transition-colors " +
-                            (iconOnly ? "justify-center px-2" : "px-2") +
-                            (active
-                              ? " bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                              : " text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")
-                          }
-                        >
-                          <Icon className="h-4 w-4 shrink-0" />
-                          {showLabel && (
-                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        <div key={item.to} className="space-y-0.5">
+                          <div
+                            className={
+                              "group/nav-parent flex items-center gap-0.5 rounded-md transition-colors " +
+                              (parentLit && !active
+                                ? "bg-sidebar-accent/35"
+                                : "")
+                            }
+                          >
+                            <Link
+                              to={item.to as "/"}
+                              title={iconOnly ? item.label : undefined}
+                              className={
+                                "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 rounded-md text-[13px] transition-colors " +
+                                (iconOnly ? "justify-center px-2" : "px-2") +
+                                (active
+                                  ? " bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                  : parentLit
+                                    ? " text-foreground/85 hover:bg-sidebar-accent/50"
+                                    : " text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")
+                              }
+                            >
+                              <Icon className="h-4 w-4 shrink-0" />
+                              {showLabel && (
+                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                              )}
+                            </Link>
+                            {childLinks && showLabel && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleNavBranch(item.to);
+                                }}
+                                aria-expanded={branchOpen}
+                                aria-label={
+                                  branchOpen
+                                    ? `Collapse ${item.label}`
+                                    : `Expand ${item.label}`
+                                }
+                                title={branchOpen ? "Collapse" : "Expand"}
+                                className={
+                                  "mr-1 h-6 w-6 shrink-0 grid place-items-center rounded-md text-muted-foreground " +
+                                  "hover:bg-sidebar-accent hover:text-foreground transition-colors " +
+                                  "opacity-70 group-hover/nav-parent:opacity-100 " +
+                                  (onChild || active ? "opacity-100" : "")
+                                }
+                              >
+                                <ChevronDown
+                                  className={
+                                    "h-3.5 w-3.5 transition-transform duration-200 ease-out " +
+                                    (branchOpen ? "" : "-rotate-90")
+                                  }
+                                />
+                              </button>
+                            )}
+                          </div>
+
+                          {childLinks && (
+                            <div
+                              className={
+                                "grid transition-[grid-template-rows] duration-200 ease-out " +
+                                (branchOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]")
+                              }
+                            >
+                              <div className="overflow-hidden min-h-0">
+                                <div
+                                  className={iconOnly ? "space-y-0.5 pt-0.5" : "ml-2 space-y-0.5 border-l border-sidebar-border/70 pl-2"}
+                                  role="group"
+                                  aria-label={`${item.label} pages`}
+                                >
+                                  {childLinks.map((child) => {
+                                    const childActive = isNavItemActive(
+                                      location.pathname,
+                                      child,
+                                    );
+                                    const ChildIcon = child.icon;
+                                    return (
+                                      <Link
+                                        key={child.to}
+                                        to={child.to as "/"}
+                                        title={iconOnly ? child.label : undefined}
+                                        className={
+                                          "flex items-center gap-2.5 rounded-md text-[12.5px] transition-colors " +
+                                          (iconOnly
+                                            ? "justify-center px-2 py-1.5"
+                                            : "px-2 py-1.5") +
+                                          (childActive
+                                            ? " bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                                            : " text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground")
+                                        }
+                                      >
+                                        <ChildIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                                        {showLabel && (
+                                          <span className="min-w-0 flex-1 truncate">
+                                            {child.label}
+                                          </span>
+                                        )}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
                           )}
-                        </Link>
+                        </div>
                       );
                     })}
                   </div>
@@ -595,7 +770,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div
           id={APP_MAIN_SCROLL_ID}
-          className="flex-1 min-h-0 w-full min-w-0 overflow-y-auto overflow-x-hidden overscroll-x-none"
+          className="flex flex-1 min-h-0 w-full min-w-0 flex-col overflow-y-auto overflow-x-hidden overscroll-x-none"
         >
           {children}
         </div>
