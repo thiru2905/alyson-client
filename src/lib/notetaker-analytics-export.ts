@@ -2,15 +2,17 @@ import type { NotetakerAnalyticsReport } from "@/lib/notetaker-analytics.server"
 
 export function buildMeetingTranscriptUrl(
   origin: string,
-  meeting: { day: string; transcriptKey: string },
+  meeting: { day: string; transcriptKey: string; title?: string; botId?: string | null; prefix?: string },
 ): string {
   const base = origin.replace(/\/$/, "");
   const params = new URLSearchParams({
     day: meeting.day,
     transcriptKey: meeting.transcriptKey,
-    open: "transcript",
   });
-  return `${base}/alyson-notetaker/calendar?${params.toString()}`;
+  if (meeting.title?.trim()) params.set("title", meeting.title.trim());
+  if (meeting.botId?.trim()) params.set("botId", meeting.botId.trim());
+  if (meeting.prefix?.trim()) params.set("prefix", meeting.prefix.trim());
+  return `${base}/alyson-notetaker/transcript?${params.toString()}`;
 }
 
 function escapeHtml(s: string) {

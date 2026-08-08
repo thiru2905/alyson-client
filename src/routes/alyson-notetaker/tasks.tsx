@@ -96,8 +96,12 @@ function TaskRow({ task }: { task: MeetingTask }) {
       <div className="flex flex-wrap gap-2 pt-0.5">
         {task.transcriptKey ? (
           <Link
-            to="/alyson-notetaker/calendar"
-            search={{ day: task.meetingDay, transcriptKey: task.transcriptKey, open: "transcript" }}
+            to="/alyson-notetaker/transcript"
+            search={{
+              day: task.meetingDay,
+              transcriptKey: task.transcriptKey,
+              title: task.meetingTitle,
+            }}
             className="text-[11px] text-foreground underline underline-offset-2"
           >
             View transcript
@@ -105,8 +109,12 @@ function TaskRow({ task }: { task: MeetingTask }) {
         ) : null}
         {task.notesKey ? (
           <Link
-            to="/alyson-notetaker/calendar"
-            search={{ day: task.meetingDay, transcriptKey: task.notesKey, open: "notes" }}
+            to="/alyson-notetaker/notes"
+            search={{
+              day: task.meetingDay,
+              notesKey: task.notesKey,
+              title: task.meetingTitle,
+            }}
             className="text-[11px] text-foreground underline underline-offset-2"
           >
             View notes

@@ -2,17 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/AppShell";
-import { Bot, CalendarDays, Captions, CheckSquare, Clock, Copy, DollarSign, Download, FileText, X } from "lucide-react";
-import { listMeetingsFromS3Range, getMeetingNotesMdFromS3, getMeetingTranscriptTextFromS3, getMeetingTasksFromS3, ensureMeetingNotesInS3Fn, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
+import { Bot, CalendarDays, Captions, CheckSquare, Clock, DollarSign, FileText, X } from "lucide-react";
+import { listMeetingsFromS3Range, getMeetingTasksFromS3, auditNotetakerNotesCoverage, backfillMissingNotetakerNotes } from "@/lib/notetaker-s3-calendar-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import { MeetingTasksBackfillButton } from "@/components/MeetingTasksBackfillButton";
-import { MeetingNotesEmailControl } from "@/components/MeetingNotesEmailControl";
 import { toast } from "sonner";
 import { z } from "zod";
 import { dedupeMeetingRowsForDisplay, type NotetakerMeetingRow } from "@/lib/notetaker-meeting-ui";
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
-import { downloadTextFile, meetingExportFilenameStem } from "@/lib/download-text-file";
 
 type MeetingRow = {
   prefix: string;
@@ -119,7 +117,7 @@ function CalendarPage() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [picked, setPicked] = useState<string | null>(null);
   const [viewDoc, setViewDoc] = useState<{
-    kind: "notes" | "transcript" | "tasks";
+    kind: "tasks";
     key: string;
     meetingTitle: string;
     botId: string | null;
@@ -129,7 +127,6 @@ function CalendarPage() {
     hasTranscript?: boolean;
     hasTasks?: boolean;
   } | null>(null);
-  const [notesEmailOpen, setNotesEmailOpen] = useState(false);
   const [pendingDeepLink, setPendingDeepLink] = useState<{
     day?: string;
     botId?: string;
@@ -157,6 +154,13 @@ function CalendarPage() {
       }
     }
 
+    // Day-only links (e.g. back from notes/transcript) just select the date — don't try to open a doc.
+    const hasMeetingTarget = Boolean(botId || prefix || transcriptKey || notesKey);
+    if (!hasMeetingTarget) {
+      navigate({ search: {}, replace: true });
+      return;
+    }
+
     setPendingDeepLink({
       day,
       botId,
@@ -165,7 +169,9 @@ function CalendarPage() {
       notesKey,
       open: open ?? "transcript",
     });
-    toast.message(open === "notes" ? "Opening notes…" : open === "tasks" ? "Opening tasks…" : "Opening transcript…");
+    toast.message(
+      open === "notes" ? "Opening notes…" : open === "tasks" ? "Opening tasks…" : "Opening transcript…",
+    );
     navigate({ search: {}, replace: true });
   }, [search, navigate]);
 
@@ -200,15 +206,39 @@ function CalendarPage() {
 
     if (match) {
       if (!picked) setPicked(match.day);
-      const kind = open;
+      if (open === "transcript") {
+        setPendingDeepLink(null);
+        void navigate({
+          to: "/alyson-notetaker/transcript",
+          search: {
+            transcriptKey: meetingTranscriptKey(match),
+            day: match.day,
+            title: match.title,
+            ...(match.botId ? { botId: match.botId } : {}),
+            ...(match.prefix ? { prefix: match.prefix } : {}),
+          },
+          replace: true,
+        });
+        return;
+      }
+      if (open === "notes") {
+        setPendingDeepLink(null);
+        void navigate({
+          to: "/alyson-notetaker/notes",
+          search: {
+            notesKey: meetingNotesKey(match),
+            day: match.day,
+            title: match.title,
+            ...(match.botId ? { botId: match.botId } : {}),
+            ...(match.prefix ? { prefix: match.prefix } : {}),
+          },
+          replace: true,
+        });
+        return;
+      }
       setViewDoc({
-        kind,
-        key:
-          kind === "notes"
-            ? meetingNotesKey(match)
-            : kind === "transcript"
-              ? meetingTranscriptKey(match)
-              : meetingTasksKey(match),
+        kind: "tasks",
+        key: meetingTasksKey(match),
         meetingTitle: match.title,
         botId: match.botId,
         prefix: match.prefix,
@@ -229,7 +259,7 @@ function CalendarPage() {
         "Could not open that meeting. It may be private, outside this month, or the link is outdated.",
       );
     }
-  }, [pendingDeepLink, meetings, q.isLoading, q.isFetched, picked]);
+  }, [pendingDeepLink, meetings, q.isLoading, q.isFetched, picked, navigate]);
 
   const byDay = useMemo(() => {
     const m = new Map<string, MeetingRow[]>();
@@ -263,15 +293,10 @@ function CalendarPage() {
     setViewDoc(null);
   }
 
-  function openMeetingDoc(kind: "notes" | "transcript" | "tasks", m: MeetingRow) {
+  function openTasksDoc(m: MeetingRow) {
     setViewDoc({
-      kind,
-      key:
-        kind === "notes"
-          ? meetingNotesKey(m)
-          : kind === "transcript"
-            ? meetingTranscriptKey(m)
-            : meetingTasksKey(m),
+      kind: "tasks",
+      key: meetingTasksKey(m),
       meetingTitle: m.title,
       botId: m.botId,
       prefix: m.prefix,
@@ -282,10 +307,34 @@ function CalendarPage() {
     });
   }
 
+  function openNotesPage(m: MeetingRow) {
+    void navigate({
+      to: "/alyson-notetaker/notes",
+      search: {
+        notesKey: meetingNotesKey(m),
+        day: m.day,
+        title: m.title,
+        ...(m.botId ? { botId: m.botId } : {}),
+        ...(m.prefix ? { prefix: m.prefix } : {}),
+      },
+    });
+  }
+
+  function openTranscriptPage(m: MeetingRow) {
+    void navigate({
+      to: "/alyson-notetaker/transcript",
+      search: {
+        transcriptKey: meetingTranscriptKey(m),
+        day: m.day,
+        title: m.title,
+        ...(m.botId ? { botId: m.botId } : {}),
+        ...(m.prefix ? { prefix: m.prefix } : {}),
+      },
+    });
+  }
+
   function closeMeetingDoc() {
-    if (notesEmailOpen) return;
     setViewDoc(null);
-    setNotesEmailOpen(false);
   }
 
   useEffect(() => {
@@ -304,10 +353,7 @@ function CalendarPage() {
   useEffect(() => {
     if (!viewDoc) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        if (notesEmailOpen) return;
-        closeMeetingDoc();
-      }
+      if (e.key === "Escape") closeMeetingDoc();
     }
     document.addEventListener("keydown", onKeyDown);
     const prev = document.body.style.overflow;
@@ -316,7 +362,7 @@ function CalendarPage() {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = prev;
     };
-  }, [viewDoc, notesEmailOpen]);
+  }, [viewDoc]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -334,26 +380,6 @@ function CalendarPage() {
       })),
     };
   }, [month, range, total, picked, pickedMeetings, meetings]);
-
-  const notesQ = useQuery({
-    queryKey: ["notetaker-s3-doc", viewDoc?.kind, viewDoc?.key],
-    queryFn: async () => {
-      if (!viewDoc) return { text: "" };
-      const auth = await meetingAuth();
-      if (viewDoc.kind === "notes") {
-        const r = await getMeetingNotesMdFromS3({ data: { notesKey: viewDoc.key, ...auth } });
-        return { text: r.notesMd };
-      }
-      if (viewDoc.kind === "transcript") {
-        const r = await getMeetingTranscriptTextFromS3({ data: { transcriptKey: viewDoc.key, ...auth } });
-        return { text: r.transcriptText };
-      }
-      return { text: "" };
-    },
-    enabled: Boolean(viewDoc?.key) && viewDoc?.kind !== "tasks",
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
 
   const tasksQ = useQuery({
     queryKey: ["notetaker-s3-tasks", viewDoc?.prefix, viewDoc?.key],
@@ -376,34 +402,6 @@ function CalendarPage() {
     enabled: Boolean(viewDoc?.key) && viewDoc?.kind === "tasks",
     staleTime: 30 * 60_000,
     retry: false,
-  });
-
-  const generateNotesM = useMutation({
-    mutationFn: async () => {
-      if (!viewDoc) throw new Error("No meeting selected");
-      return ensureMeetingNotesInS3Fn({
-        data: {
-          botId: viewDoc.botId ?? undefined,
-          prefix: viewDoc.prefix,
-          ...(await meetingAuth()),
-        },
-      });
-    },
-    onSuccess: (res) => {
-      if (res.ok && res.notesMd) {
-        toast.success("Notes saved to S3");
-        qc.setQueryData(["notetaker-s3-doc", "notes", viewDoc?.key], { text: res.notesMd });
-        void qc.invalidateQueries({ queryKey: ["notetaker-calendar"] });
-        void qc.invalidateQueries({ queryKey: ["notetaker-notes-coverage"] });
-        void notesQ.refetch();
-      } else if (res.ok) {
-        toast.success("Notes saved to S3");
-        void notesQ.refetch();
-      } else {
-        toast.error(String(res.skipped || "Could not generate notes"));
-      }
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to generate notes"),
   });
 
   const coverageQ = useQuery({
@@ -601,7 +599,7 @@ function CalendarPage() {
 
           {!picked && (
             <p className="text-center text-[11px] text-muted-foreground py-0.5">
-              Select a date — meetings list below; open notes, transcripts, or tasks in a popup
+              Select a date — meetings list below; notes & transcripts open on their own page, tasks in a popup
             </p>
           )}
         </div>
@@ -665,13 +663,9 @@ function CalendarPage() {
                   </div>
                 ) : (
                   pickedMeetings.map((m) => {
-                    const notesKey = meetingNotesKey(m);
-                    const transcriptKey = meetingTranscriptKey(m);
                     const tasksKey = meetingTasksKey(m);
-                    const notesOpen = viewDoc?.kind === "notes" && viewDoc.key === notesKey;
-                    const transcriptOpen = viewDoc?.kind === "transcript" && viewDoc.key === transcriptKey;
                     const tasksOpen = viewDoc?.kind === "tasks" && viewDoc.key === tasksKey;
-                    const rowActive = notesOpen || transcriptOpen || tasksOpen;
+                    const rowActive = tasksOpen;
                     const canTasks = m.hasNotes !== false || m.hasTranscript !== false;
                     return (
                       <div
@@ -695,31 +689,21 @@ function CalendarPage() {
                         </div>
                         <div className="flex flex-wrap items-center justify-end gap-1 shrink-0 max-w-[min(100%,280px)] sm:max-w-none">
                           <button
-                            onClick={() => openMeetingDoc("notes", m)}
-                            className={
-                              "h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 " +
-                              (notesOpen
-                                ? "bg-foreground text-background"
-                                : "border border-border bg-background hover:bg-muted")
-                            }
+                            onClick={() => openNotesPage(m)}
+                            className="h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 border border-border bg-background hover:bg-muted"
                           >
                             <FileText className="h-3 w-3" />
                             Notes
                           </button>
                           <button
-                            onClick={() => openMeetingDoc("transcript", m)}
-                            className={
-                              "h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 " +
-                              (transcriptOpen
-                                ? "bg-foreground text-background"
-                                : "border border-border bg-background hover:bg-muted")
-                            }
+                            onClick={() => openTranscriptPage(m)}
+                            className="h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 border border-border bg-background hover:bg-muted"
                           >
                             <Captions className="h-3 w-3" />
                             Transcript
                           </button>
                           <button
-                            onClick={() => openMeetingDoc("tasks", m)}
+                            onClick={() => openTasksDoc(m)}
                             disabled={!canTasks}
                             className={
                               "h-6 px-2 rounded text-[10px] font-medium inline-flex items-center gap-0.5 " +
@@ -787,75 +771,13 @@ function CalendarPage() {
             <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center gap-2 shrink-0">
               <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wide font-semibold text-muted-foreground">
-                  {viewDoc.kind === "notes"
-                    ? "Meeting notes"
-                    : viewDoc.kind === "transcript"
-                      ? "Transcript"
-                      : "Tasks by participant"}
+                  Tasks by participant
                 </div>
                 <div id="calendar-doc-title" className="font-medium text-[14px] truncate">
                   {viewDoc.meetingTitle}
                 </div>
               </div>
               <div className="ml-auto flex items-center gap-2 shrink-0">
-                {viewDoc.kind !== "tasks" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const text = notesQ.data?.text ?? "";
-                        if (!text.trim()) return toast.error("Nothing to export");
-                        const stem = meetingExportFilenameStem(viewDoc.meetingTitle);
-                        const day = viewDoc.day ? `${viewDoc.day}-` : "";
-                        const kind = viewDoc.kind === "notes" ? "notes" : "transcript";
-                        const ext = viewDoc.kind === "notes" ? "md" : "txt";
-                        downloadTextFile(
-                          `${day}${stem}-${kind}.${ext}`,
-                          text,
-                          viewDoc.kind === "notes"
-                            ? "text/markdown;charset=utf-8"
-                            : "text/plain;charset=utf-8",
-                        );
-                        toast.success(viewDoc.kind === "notes" ? "Notes exported" : "Transcript exported");
-                      }}
-                      disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
-                      className="h-8 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50 inline-flex items-center gap-1.5"
-                      title="Export"
-                      aria-label={viewDoc.kind === "notes" ? "Export notes" : "Export transcript"}
-                    >
-                      <Download className="h-4 w-4" />
-                      Export
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const text = notesQ.data?.text ?? "";
-                        if (!text.trim()) return toast.error("Nothing to copy");
-                        try {
-                          await navigator.clipboard.writeText(text);
-                          toast.success(viewDoc.kind === "notes" ? "Notes copied" : "Transcript copied");
-                        } catch (e) {
-                          toast.error(e instanceof Error ? e.message : "Failed to copy");
-                        }
-                      }}
-                      disabled={notesQ.isLoading || notesQ.isError || !notesQ.data?.text?.trim()}
-                      className="h-8 w-8 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-50"
-                      title="Copy"
-                      aria-label="Copy"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                  </>
-                )}
-                {viewDoc.kind === "notes" && (
-                  <MeetingNotesEmailControl
-                    botId={viewDoc.botId}
-                    notesMd={notesQ.data?.text ?? ""}
-                    title={viewDoc.meetingTitle}
-                    size="md"
-                    onOpenChange={setNotesEmailOpen}
-                  />
-                )}
                 <button
                   onClick={closeMeetingDoc}
                   className="h-8 px-3 rounded-md border border-border bg-background text-xs hover:bg-muted inline-flex items-center gap-1"
@@ -866,91 +788,28 @@ function CalendarPage() {
               </div>
             </div>
             <div className="p-4 overflow-y-auto flex-1 min-h-0">
-              {viewDoc.kind === "tasks" ? (
-                <>
-                  {(tasksQ.isLoading || tasksQ.isFetching) && !tasksQ.data && (
-                    <div className="space-y-2 animate-pulse">
-                      <div className="h-3 bg-muted rounded w-full" />
-                      <div className="h-3 bg-muted rounded w-5/6" />
-                      <p className="text-sm text-muted-foreground pt-2">
-                        {viewDoc.hasTasks
-                          ? "Loading tasks from S3…"
-                          : "Extracting tasks with DeepSeek and saving to S3…"}
-                      </p>
-                    </div>
-                  )}
-                  {tasksQ.isError && (
-                    <p className="text-sm text-muted-foreground">
-                      {tasksQ.error instanceof Error ? tasksQ.error.message : "Could not load tasks."}
-                    </p>
-                  )}
-                  {tasksQ.data && (
-                    <MeetingTasksPanel
-                      people={tasksQ.data.people}
-                      model={tasksQ.data.model}
-                      fromS3={tasksQ.data.fromS3 ?? viewDoc.hasTasks}
-                    />
-                  )}
-                </>
-              ) : (
-                <>
-              {(notesQ.isLoading || generateNotesM.isPending) && (
+              {(tasksQ.isLoading || tasksQ.isFetching) && !tasksQ.data && (
                 <div className="space-y-2 animate-pulse">
                   <div className="h-3 bg-muted rounded w-full" />
                   <div className="h-3 bg-muted rounded w-5/6" />
-                  <div className="h-3 bg-muted rounded w-4/5" />
                   <p className="text-sm text-muted-foreground pt-2">
-                    {generateNotesM.isPending
-                      ? "Generating notes from transcript and saving to S3…"
-                      : viewDoc.kind === "notes"
-                        ? "Reading notes from S3…"
-                        : "Reading transcript from S3…"}
+                    {viewDoc.hasTasks
+                      ? "Loading tasks from S3…"
+                      : "Extracting tasks with DeepSeek and saving to S3…"}
                   </p>
                 </div>
               )}
-              {notesQ.isError && !generateNotesM.isPending && (
-                <div className="text-sm space-y-3">
-                  <p className="text-muted-foreground">
-                    {notesQ.error instanceof Error && /forbidden/i.test(notesQ.error.message)
-                      ? notesQ.error.message
-                      : viewDoc.kind === "notes"
-                        ? "Notes are not in S3 yet for this meeting."
-                        : notesQ.error instanceof Error
-                          ? notesQ.error.message
-                          : "Could not load this document."}
-                  </p>
-                  {viewDoc.kind === "notes" &&
-                    !(notesQ.error instanceof Error && /forbidden/i.test(notesQ.error.message)) && (
-                    <button
-                      type="button"
-                      onClick={() => generateNotesM.mutate()}
-                      disabled={generateNotesM.isPending}
-                      className="h-8 px-3 rounded-md bg-foreground text-background text-xs font-medium disabled:opacity-50"
-                    >
-                      Generate notes from transcript
-                    </button>
-                  )}
-                </div>
+              {tasksQ.isError && (
+                <p className="text-sm text-muted-foreground">
+                  {tasksQ.error instanceof Error ? tasksQ.error.message : "Could not load tasks."}
+                </p>
               )}
-              {!notesQ.isLoading && !generateNotesM.isPending && !notesQ.isError && notesQ.data?.text && (
-                <pre className="whitespace-pre-wrap text-[13px] leading-relaxed">{notesQ.data.text}</pre>
-              )}
-              {!notesQ.isLoading && !generateNotesM.isPending && !notesQ.isError && !notesQ.data?.text?.trim() && (
-                <div className="text-sm text-muted-foreground space-y-3">
-                  <p>No {viewDoc.kind === "notes" ? "notes" : "transcript"} in S3 for this meeting yet.</p>
-                  {viewDoc.kind === "notes" && (
-                    <button
-                      type="button"
-                      onClick={() => generateNotesM.mutate()}
-                      disabled={generateNotesM.isPending}
-                      className="h-8 px-3 rounded-md bg-foreground text-background text-xs font-medium disabled:opacity-50"
-                    >
-                      Generate notes from transcript
-                    </button>
-                  )}
-                </div>
-              )}
-                </>
+              {tasksQ.data && (
+                <MeetingTasksPanel
+                  people={tasksQ.data.people}
+                  model={tasksQ.data.model}
+                  fromS3={tasksQ.data.fromS3 ?? viewDoc.hasTasks}
+                />
               )}
             </div>
           </div>
