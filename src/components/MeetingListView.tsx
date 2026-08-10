@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Captions, CheckSquare, ChevronDown, Copy, Download, FileText, Loader2, RefreshCw, Users } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Captions, CheckSquare, ChevronDown, FileText, Loader2, Users } from "lucide-react";
 import {
-  getMeetingNotesMdFromS3,
   getMeetingParticipantsFromS3,
   getMeetingTasksFromS3,
-  getMeetingTranscriptTextFromS3,
 } from "@/lib/notetaker-s3-calendar-functions";
 import { saveMeetingParticipantsCache } from "@/lib/meeting-list-participants-cache";
 import { getCachedMeetingTasks, saveMeetingTasksCache } from "@/lib/meeting-list-tasks-cache";
-import { syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
 import { MeetingTasksPanel } from "@/components/MeetingTasksPanel";
 import {
   formatMeetingListWhen,
@@ -20,11 +18,9 @@ import {
   type MeetingListParticipant,
   type NotetakerMeetingRow,
 } from "@/lib/notetaker-meeting-ui";
-import { toast } from "sonner";
 import { useMeetingVisibilityAuth } from "@/lib/meeting-visibility-hooks";
-import { downloadTextFile, meetingExportFilenameStem } from "@/lib/download-text-file";
 
-type PanelKind = "participants" | "notes" | "transcript" | "tasks";
+type PanelKind = "participants" | "tasks";
 
 function panelButtonClass(active: boolean) {
   return (
@@ -48,7 +44,7 @@ function MeetingListCard({
   openPanel: PanelKind | null;
   onTogglePanel: (kind: PanelKind) => void;
 }) {
-  const qc = useQueryClient();
+  const navigate = useNavigate();
   const meetingAuth = useMeetingVisibilityAuth();
   const notesKey = meetingNotesKey(meeting);
   const transcriptKey = meetingTranscriptKey(meeting);
@@ -104,43 +100,6 @@ function MeetingListCard({
     retry: false,
   });
 
-  const notesQ = useQuery({
-    queryKey: ["meeting-list-notes", notesKey],
-    queryFn: async () =>
-      getMeetingNotesMdFromS3({ data: { notesKey, ...(await meetingAuth()) } }),
-    enabled: openPanel === "notes",
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
-
-  const transcriptQ = useQuery({
-    queryKey: ["meeting-list-transcript", transcriptKey],
-    queryFn: async () =>
-      getMeetingTranscriptTextFromS3({ data: { transcriptKey, ...(await meetingAuth()) } }),
-    enabled: openPanel === "transcript",
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
-
-  const syncRecallM = useMutation({
-    mutationFn: async () =>
-      syncNotetakerTranscriptFromRecall({
-        data: { botId: meeting.botId!, ...(await meetingAuth()) },
-      }),
-    onSuccess: async (res) => {
-      if (res.result.ok && res.result.persisted) {
-        toast.success(
-          `Synced ${res.result.recallLineCount ?? "?"} lines from Recall (was ${res.result.s3LineCountBefore ?? 0})`,
-        );
-        await transcriptQ.refetch();
-        void qc.invalidateQueries({ queryKey: ["meeting-list-transcript", transcriptKey] });
-        return;
-      }
-      toast.error(res.result.reason || "Recall did not have a richer transcript to save");
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Recall sync failed"),
-  });
-
   const participants = (participantsQ.data?.participants ?? []) as MeetingListParticipant[];
   const canExtractTasks = meeting.hasNotes !== false || meeting.hasTranscript !== false;
   const tasksPayload = tasksQ.data;
@@ -149,51 +108,36 @@ function MeetingListCard({
     (openPanel === "participants" &&
       !hasPrefetched &&
       (participantsBatchLoading || participantsQ.isLoading)) ||
-    (openPanel === "tasks" && tasksQ.isLoading && !tasksPayload && !meeting.hasTasks) ||
-    (openPanel === "notes" && notesQ.isLoading) ||
-    (openPanel === "transcript" && transcriptQ.isLoading);
+    (openPanel === "tasks" && tasksQ.isLoading && !tasksPayload && !meeting.hasTasks);
 
   const panelError =
     (openPanel === "participants" && participantsQ.isError) ||
-    (openPanel === "tasks" && tasksQ.isError) ||
-    (openPanel === "notes" && notesQ.isError) ||
-    (openPanel === "transcript" && transcriptQ.isError);
+    (openPanel === "tasks" && tasksQ.isError);
 
-  const copyableText =
-    openPanel === "notes"
-      ? notesQ.data?.notesMd?.trim() ?? ""
-      : openPanel === "transcript"
-        ? transcriptQ.data?.transcriptText?.trim() ?? ""
-        : "";
-
-  async function copyPanelContent() {
-    if (!copyableText) {
-      toast.error("Nothing to copy");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(copyableText);
-      toast.success(openPanel === "notes" ? "Notes copied" : "Transcript copied");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to copy");
-    }
+  function openNotesPage() {
+    void navigate({
+      to: "/alyson-notetaker/notes",
+      search: {
+        notesKey,
+        day: meeting.day,
+        title: meeting.title,
+        ...(meeting.botId ? { botId: meeting.botId } : {}),
+        ...(meeting.prefix ? { prefix: meeting.prefix } : {}),
+      },
+    });
   }
 
-  function exportPanelContent() {
-    if (!copyableText) {
-      toast.error("Nothing to export");
-      return;
-    }
-    const stem = meetingExportFilenameStem(meeting.title);
-    const day = meeting.day ? `${meeting.day}-` : "";
-    const kind = openPanel === "notes" ? "notes" : "transcript";
-    const ext = openPanel === "notes" ? "md" : "txt";
-    downloadTextFile(
-      `${day}${stem}-${kind}.${ext}`,
-      copyableText,
-      openPanel === "notes" ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8",
-    );
-    toast.success(openPanel === "notes" ? "Notes exported" : "Transcript exported");
+  function openTranscriptPage() {
+    void navigate({
+      to: "/alyson-notetaker/transcript",
+      search: {
+        transcriptKey,
+        day: meeting.day,
+        title: meeting.title,
+        ...(meeting.botId ? { botId: meeting.botId } : {}),
+        ...(meeting.prefix ? { prefix: meeting.prefix } : {}),
+      },
+    });
   }
 
   return (
@@ -219,25 +163,27 @@ function MeetingListCard({
           </button>
           <button
             type="button"
-            onClick={() => onTogglePanel("notes")}
+            onClick={() => openNotesPage()}
             disabled={meeting.hasNotes === false}
-            className={panelButtonClass(openPanel === "notes") + (meeting.hasNotes === false ? " opacity-40" : "")}
+            className={
+              "h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 transition font-sans border border-border bg-background hover:bg-muted" +
+              (meeting.hasNotes === false ? " opacity-40" : "")
+            }
           >
             <FileText className="h-3 w-3" />
             Notes
-            <ChevronDown className={"h-3 w-3 transition " + (openPanel === "notes" ? "rotate-180" : "")} />
           </button>
           <button
             type="button"
-            onClick={() => onTogglePanel("transcript")}
+            onClick={() => openTranscriptPage()}
             disabled={meeting.hasTranscript === false}
             className={
-              panelButtonClass(openPanel === "transcript") + (meeting.hasTranscript === false ? " opacity-40" : "")
+              "h-7 px-2.5 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1 transition font-sans border border-border bg-background hover:bg-muted" +
+              (meeting.hasTranscript === false ? " opacity-40" : "")
             }
           >
             <Captions className="h-3 w-3" />
             Transcript
-            <ChevronDown className={"h-3 w-3 transition " + (openPanel === "transcript" ? "rotate-180" : "")} />
           </button>
           <button
             type="button"
@@ -257,47 +203,8 @@ function MeetingListCard({
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               {openPanel === "participants" && "Participants"}
-              {openPanel === "notes" && "Meeting notes"}
-              {openPanel === "transcript" && "Transcript"}
               {openPanel === "tasks" && "Tasks by participant"}
             </div>
-            {(openPanel === "notes" || openPanel === "transcript") && (
-              <div className="flex items-center gap-1.5">
-                {openPanel === "transcript" && meeting.botId && (
-                  <button
-                    type="button"
-                    onClick={() => syncRecallM.mutate()}
-                    disabled={syncRecallM.isPending || panelLoading}
-                    className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40 inline-flex items-center gap-1"
-                    title="Pull full transcript from Recall if live capture was partial"
-                  >
-                    <RefreshCw className={"h-3 w-3 " + (syncRecallM.isPending ? "animate-spin" : "")} />
-                    Sync Recall
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => exportPanelContent()}
-                  disabled={panelLoading || panelError || !copyableText}
-                  className="h-7 px-2 rounded-md border border-border bg-background text-[10.5px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40 inline-flex items-center gap-1"
-                  title="Export"
-                  aria-label={openPanel === "notes" ? "Export notes" : "Export transcript"}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Export
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void copyPanelContent()}
-                  disabled={panelLoading || panelError || !copyableText}
-                  className="h-7 w-7 shrink-0 grid place-items-center rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 disabled:opacity-40"
-                  title="Copy"
-                  aria-label={openPanel === "notes" ? "Copy notes" : "Copy transcript"}
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
           </div>
 
           {panelLoading && (
@@ -315,13 +222,9 @@ function MeetingListCard({
             <p className="py-4 text-[12px] text-muted-foreground leading-relaxed font-sans">
               {openPanel === "participants"
                 ? "Could not load participants for this meeting."
-                : openPanel === "tasks"
-                  ? tasksQ.error instanceof Error
-                    ? tasksQ.error.message
-                    : "Could not extract tasks for this meeting."
-                  : openPanel === "notes"
-                    ? "Notes are not in S3 yet for this meeting."
-                    : "Transcript is not in S3 yet for this meeting."}
+                : tasksQ.error instanceof Error
+                  ? tasksQ.error.message
+                  : "Could not extract tasks for this meeting."}
             </p>
           )}
 
@@ -360,30 +263,6 @@ function MeetingListCard({
               model={tasksPayload.model}
               fromS3={tasksPayload.fromS3 ?? meeting.hasTasks}
             />
-          )}
-
-          {!panelLoading && !panelError && openPanel === "notes" && (
-            <div className="max-h-[min(50vh,420px)] overflow-y-auto rounded-md border border-border bg-background p-3">
-              {notesQ.data?.notesMd?.trim() ? (
-                <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">
-                  {notesQ.data.notesMd}
-                </pre>
-              ) : (
-                <p className="text-[12px] text-muted-foreground font-sans">No notes content.</p>
-              )}
-            </div>
-          )}
-
-          {!panelLoading && !panelError && openPanel === "transcript" && (
-            <div className="max-h-[min(50vh,420px)] overflow-y-auto rounded-md border border-border bg-background p-3">
-              {transcriptQ.data?.transcriptText?.trim() ? (
-                <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-foreground">
-                  {transcriptQ.data.transcriptText}
-                </pre>
-              ) : (
-                <p className="text-[12px] text-muted-foreground font-sans">No transcript content.</p>
-              )}
-            </div>
           )}
         </div>
       )}
