@@ -85,7 +85,7 @@ function MeetingListPage() {
       <PageHeader
         eyebrow="Operations"
         title="Meeting list"
-        description="Browse meetings as a list — open participants, notes, transcripts, and per-person tasks."
+        description="Browse meetings as a list — open notes and transcripts like the calendar, plus participants and tasks."
         dense
         actions={
           <div className="flex items-center gap-2">
