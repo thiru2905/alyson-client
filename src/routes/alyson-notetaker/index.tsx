@@ -409,7 +409,6 @@ function SessionPanel({
   const [sseStatus, setSseStatus] = useState<"idle" | "connected" | "error">("idle");
   const lastStaticLinesRef = useRef<NotetakerTranscriptLine[]>([]);
   const [notes, setNotes] = useState<string>("");
-  const [notesModel, setNotesModel] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [transcriptCopied, setTranscriptCopied] = useState(false);
   // Keep header clock real-time in IST.
@@ -485,7 +484,6 @@ function SessionPanel({
     setLive([]);
     lastStaticLinesRef.current = [];
     setNotes("");
-    setNotesModel("");
     setChatMsgs([{ role: "assistant", content: "Ask me questions about this meeting only. I will answer using the transcript + notes." }]);
     setChatInput("");
     setChatLoading(false);
@@ -519,8 +517,7 @@ function SessionPanel({
   useEffect(() => {
     if (!q.data?.notesMd?.trim()) return;
     setNotes(q.data.notesMd);
-    setNotesModel(q.data.notesModel || "s3");
-  }, [botId, q.data?.notesMd, q.data?.notesModel]);
+  }, [botId, q.data?.notesMd]);
 
   useEffect(() => {
     if (!q.data?.autoPersistedToS3 || !botId) return;
@@ -544,7 +541,6 @@ function SessionPanel({
     },
     onSuccess: (res) => {
       setNotes(res.notes);
-      setNotesModel(res.model);
       setCopied(false);
       if (botId) {
         try {
@@ -804,7 +800,7 @@ function SessionPanel({
         <div className="border border-border rounded-lg overflow-hidden">
           <div className="px-3 py-2 border-b border-border bg-muted/30 flex items-center gap-2">
             <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
-              Notes {notesModel ? <span className="normal-case tracking-normal text-[11px] ml-1 opacity-70">({notesModel})</span> : null}
+              Notes
             </div>
             <div className="ml-auto flex items-center gap-1.5">
               <button
