@@ -13,7 +13,9 @@ export function knowledgeGraphCompanyDomain(): string {
 }
 
 export function neo4jUri(): string {
-  return process.env.NEO4J_URI?.trim() || "bolt://localhost:7687";
+  // Default to 127.0.0.1 so Windows/WSL does not bind Bolt to ::1 (wrong listener).
+  const raw = process.env.NEO4J_URI?.trim() || "bolt://127.0.0.1:7687";
+  return raw.replace("://localhost", "://127.0.0.1");
 }
 
 export function neo4jUser(): string {
@@ -26,7 +28,7 @@ export function neo4jPassword(): string {
 
 export function knowledgeGraphMaxMeetingsPerRun(): number {
   const n = Number(process.env.KNOWLEDGE_GRAPH_MAX_MEETINGS_PER_RUN ?? "25");
-  return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 200) : 25;
+  return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 500) : 25;
 }
 
 export function knowledgeGraphTranscriptChars(): number {

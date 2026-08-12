@@ -23,6 +23,13 @@ async function main() {
         uri: neo4jUri(),
         health,
         summary,
+        recentSample: health.ok
+          ? await (async () => {
+              const { queryRecentMeetings } = await import("../src/lib/knowledge-graph/kg-queries.server.ts");
+              const rows = await queryRecentMeetings(3);
+              return rows.map((r) => r.title);
+            })()
+          : [],
         workspacePlan: describeWorkspaceIngestPlan(),
       },
       null,

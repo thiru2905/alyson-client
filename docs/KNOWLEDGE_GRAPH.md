@@ -1,100 +1,87 @@
-# Alyson Knowledge Graph (branch: `knowledge-graph`)
+# Alyson Knowledge Graph
 
-Local Neo4j graph for **@cintara.ai** people, meetings, projects, tasks, and (planned) Gmail / Drive / Chat activity. DeepSeek extracts entities and relationships from meeting notes + transcripts already in S3.
+Local Neo4j graph for **@cintara.ai** people, meetings, projects, tasks, and topics — built from the ~450 Notetaker meetings already in S3. DeepSeek extracts entities; the Alyson HR UI explores the graph.
 
-> This work lives on the **`knowledge-graph`** branch so `main` production flows stay unchanged. Sync is **off by default** (`KNOWLEDGE_GRAPH_ENABLED=false`).
+> Sync is **off by default** (`KNOWLEDGE_GRAPH_ENABLED=false`) so production stays untouched until Neo4j is running.
 
 ## Architecture
 
 ```
-Google DWD (admin) ──► Unified meetings + Workspace Activity (existing)
-Recall bot joins @cintara.ai meetings
+Notetaker S3 (bot-index / transcripts / notes)
        │
-       ▼
-Notetaker upstream (live lines) → S3 bot-index / transcripts / notes
-       │
-       ▼  (flagged) /api/cron/knowledge-graph-sync
+       ▼  npm run kg:sync  |  UI "Sync meetings"  |  cron (flagged)
 DeepSeek mapMeetingToKnowledgeGraph
        │
        ▼
-Neo4j (Docker local)  Person / Meeting / Project / Task / Topic / Document / Email / ChatMessage
+Neo4j (Docker)  Person / Meeting / Project / Task / Topic
+       │
+       ▼
+Alyson HR → Ops → Knowledge Graph  (/alyson-notetaker/knowledge-graph)
 ```
 
 ## Quick start (local)
 
 ```bash
 # 1) Start Neo4j
-cd docker/neo4j
-docker compose up -d
+npm run kg:up
 # Browser: http://localhost:7474  user neo4j / password password
 
-# 2) .env (on knowledge-graph branch only)
+# 2) .env
 KNOWLEDGE_GRAPH_ENABLED=true
 KNOWLEDGE_GRAPH_COMPANY_DOMAIN=cintara.ai
-NEO4J_URI=bolt://localhost:7687
+NEO4J_URI=bolt://127.0.0.1:7688
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=password
 DEEPSEEK_API_KEY=...
+# optional batch size (default 25, max 500)
+KNOWLEDGE_GRAPH_MAX_MEETINGS_PER_RUN=50
 
-# 3) Bootstrap schema + sync a few meetings
+# 3) Schema + sync (repeat sync until ~450 meetings are loaded)
 npm run kg:schema
-npm run kg:sync
+npm run kg:sync 50
+npm run kg:status
 ```
 
 ## NPM scripts
 
 | Script | Purpose |
 |--------|---------|
-| `npm run kg:up` | `docker compose up -d` for Neo4j |
+| `npm run kg:up` | Start Neo4j Docker |
 | `npm run kg:down` | Stop Neo4j |
 | `npm run kg:schema` | Create constraints/indexes |
-| `npm run kg:sync` | Sync up to N ready meetings from S3 via DeepSeek → Neo4j |
+| `npm run kg:sync [N]` | Sync up to N ready meetings from S3 |
 | `npm run kg:status` | Connectivity + node counts |
 
-## Cron
+## UI
 
-- Route: `GET|POST /api/cron/knowledge-graph-sync`
-- Auth: same Bearer as notetaker transcript cron (`NOTETAKER_TRANSCRIPT_CRON_SECRET` / `CRON_SECRET`)
-- No-ops when `KNOWLEDGE_GRAPH_ENABLED=false`
+**Ops → Knowledge Graph** shows:
 
-Optional: add to `vercel.json` later — **do not enable on production main until Neo4j Aura (or similar) is provisioned**. Local Docker cannot be reached from Vercel.
+- Overall counts (people, meetings, projects, topics, tasks)
+- Top people / projects / topics
+- Recent meetings → interactive neighborhood graph (React Flow)
+- Person email search → meetings attended + inferred projects
+- Schema bootstrap + batch sync controls
 
 ## Graph model
 
-| Node | Key | Source (phase 1) |
-|------|-----|------------------|
+| Node | Key | Source |
+|------|-----|--------|
 | Person | email | DeepSeek + ATTENDED |
 | Meeting | botId | S3 bot-index |
 | Project | key | DeepSeek ABOUT |
 | Task | key | DeepSeek + HAS_TASK |
 | Topic | key | DeepSeek |
-| Document | driveId | stub (DWD Drive next) |
-| Email | messageId | stub (DWD Gmail next) |
-| ChatMessage | messageId | stub (DWD Chat next) |
 
-### Useful Cypher (Neo4j Browser)
+## Cron
 
-```cypher
-// Meetings for a user in a day range
-MATCH (p:Person {email:'thirumalai@cintara.ai'})-[:ATTENDED]->(m:Meeting)
-WHERE m.meetingDay >= '2026-07-01' AND m.meetingDay <= '2026-07-31'
-RETURN m.title, m.meetingDay, m.botId
-ORDER BY m.meetingDay DESC
+- Route: `GET|POST /api/cron/knowledge-graph-sync`
+- Also hooked into notetaker transcript cron when `KNOWLEDGE_GRAPH_ENABLED=true`
+- Auth: Bearer `NOTETAKER_TRANSCRIPT_CRON_SECRET` / `CRON_SECRET`
 
-// Projects inferred from their meetings
-MATCH (p:Person {email:'thirumalai@cintara.ai'})-[:ATTENDED]->(:Meeting)-[:ABOUT]->(proj:Project)
-RETURN proj.name, count(*) AS meetings
-ORDER BY meetings DESC
-```
-
-## Phase roadmap
-
-1. **Done (this branch):** Docker Neo4j, schema, DeepSeek meeting mapper, S3 sync, queries, cron route (flagged off), Workspace ingest stubs.
-2. **Next:** Wire Workspace Activity Gmail/Drive/Chat readers into upsert helpers; schedule per-user `@cintara.ai` backfill.
-3. **Later:** UI explorer, Neo4j Aura for hosted, GraphRAG for “what project is X on?”.
+**Production:** use Neo4j Aura (or similar). Local Docker is not reachable from Vercel.
 
 ## Safety
 
-- Does not alter Recall bot dispatch, S3 transcript persist, or notes email paths when disabled.
-- Bot-index only gains optional `kgSynced*` markers after a successful sync.
-- Keep changes on `knowledge-graph` until reviewed; merge to `main` only when ready.
+- Disabled unless `KNOWLEDGE_GRAPH_ENABLED=true`
+- Does not change Recall bot dispatch or notes email paths
+- Bot-index only gains optional `kgSynced*` markers after a successful sync

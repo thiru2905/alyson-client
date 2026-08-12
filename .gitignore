@@ -36,3 +36,6 @@ MeetingBotDatastore.md
 .alyson/
 alyson_scheduled_state.json
 
+# GrapeRoot / Dual-Graph local index + MCP runtime
+.dual-graph/
+
