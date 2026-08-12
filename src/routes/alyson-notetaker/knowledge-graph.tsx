@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactFlow, {
   Background,
@@ -21,6 +21,7 @@ import {
   Captions,
   Search,
   Sparkles,
+  CalendarRange,
 } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import {
   getKnowledgeGraphStatus,
   queryMeetingNeighborhoodFn,
   queryPersonMeetingsFn,
+  queryWindowGraphFn,
   runKnowledgeGraphSyncFn,
 } from "@/lib/knowledge-graph-functions";
 
@@ -45,6 +47,13 @@ const KIND_COLORS: Record<string, string> = {
   Task: "#7c3aed",
   Topic: "#be123c",
 };
+
+function dayOffset(days: number): string {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 function StatCard({
   label,
@@ -104,11 +113,53 @@ function RankList({
   );
 }
 
+function layoutGraphNodes(
+  nodes: Array<{ id: string; kind: string; label: string }>,
+): Node[] {
+  if (!nodes.length) return [];
+  const byKind = new Map<string, typeof nodes>();
+  for (const n of nodes) {
+    const arr = byKind.get(n.kind) ?? [];
+    arr.push(n);
+    byKind.set(n.kind, arr);
+  }
+  const kindOrder = ["Meeting", "Person", "Project", "Topic", "Task"];
+  const out: Node[] = [];
+  let col = 0;
+  for (const kind of kindOrder) {
+    const group = byKind.get(kind) ?? [];
+    group.forEach((n, i) => {
+      out.push({
+        id: n.id,
+        position: { x: col * 220, y: i * 72 },
+        data: { label: n.label },
+        style: {
+          background: KIND_COLORS[kind] || "#334155",
+          color: "#fff",
+          border: "none",
+          borderRadius: 10,
+          fontSize: 11,
+          padding: "8px 10px",
+          width: 180,
+        },
+      });
+    });
+    if (group.length) col += 1;
+  }
+  return out;
+}
+
 function KnowledgeGraphPage() {
   const qc = useQueryClient();
   const [personEmail, setPersonEmail] = useState("");
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [syncBatch, setSyncBatch] = useState(25);
+  const [fromDay, setFromDay] = useState(() => dayOffset(-14));
+  const [toDay, setToDay] = useState(() => dayOffset(0));
+  const [includeTasks, setIncludeTasks] = useState(true);
+  const [maxMeetings, setMaxMeetings] = useState(35);
+
+  const viewMode: "window" | "meeting" = selectedBotId ? "meeting" : "window";
 
   const statusQ = useQuery({
     queryKey: ["kg-status", "v2"],
@@ -125,9 +176,22 @@ function KnowledgeGraphPage() {
     refetchOnWindowFocus: true,
   });
 
+  const windowQ = useQuery({
+    queryKey: ["kg-window", fromDay, toDay, maxMeetings, includeTasks],
+    queryFn: () =>
+      queryWindowGraphFn({
+        data: { fromDay, toDay, maxMeetings, includeTasks },
+      }),
+    enabled: Boolean(statusQ.data?.health.ok ?? true),
+    staleTime: 15_000,
+  });
+
   const personQ = useQuery({
-    queryKey: ["kg-person", personEmail],
-    queryFn: () => queryPersonMeetingsFn({ data: { email: personEmail, limit: 40 } }),
+    queryKey: ["kg-person", personEmail, fromDay, toDay],
+    queryFn: () =>
+      queryPersonMeetingsFn({
+        data: { email: personEmail, fromDay, toDay, limit: 40 },
+      }),
     enabled: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personEmail),
     staleTime: 30_000,
   });
@@ -162,6 +226,7 @@ function KnowledgeGraphPage() {
       );
       void qc.invalidateQueries({ queryKey: ["kg-status"] });
       void qc.invalidateQueries({ queryKey: ["kg-overview"] });
+      void qc.invalidateQueries({ queryKey: ["kg-window"] });
       void qc.invalidateQueries({ queryKey: ["kg-neighborhood"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Sync failed"),
@@ -183,50 +248,30 @@ function KnowledgeGraphPage() {
       : null) ||
     (healthOk === false ? healthError : null);
 
-  // Show a neighborhood as soon as meetings appear (no extra click).
-  useEffect(() => {
-    const first = recentMeetings[0]?.botId;
-    if (!selectedBotId && first) setSelectedBotId(first);
-  }, [recentMeetings, selectedBotId]);
+  const activeGraph = viewMode === "meeting" ? neighborhoodQ.data : windowQ.data;
+  const graphLoading =
+    viewMode === "meeting" ? neighborhoodQ.isLoading : windowQ.isLoading;
+  const graphError =
+    viewMode === "meeting"
+      ? neighborhoodQ.isError
+        ? neighborhoodQ.error instanceof Error
+          ? neighborhoodQ.error.message
+          : "Neighborhood failed"
+        : null
+      : windowQ.isError
+        ? windowQ.error instanceof Error
+          ? windowQ.error.message
+          : "Window graph failed"
+        : null;
 
-  const flowNodes: Node[] = useMemo(() => {
-    const nodes = neighborhoodQ.data?.nodes ?? [];
-    if (!nodes.length) return [];
-    const byKind = new Map<string, typeof nodes>();
-    for (const n of nodes) {
-      const arr = byKind.get(n.kind) ?? [];
-      arr.push(n);
-      byKind.set(n.kind, arr);
-    }
-    const kindOrder = ["Meeting", "Person", "Project", "Topic", "Task"];
-    const out: Node[] = [];
-    let col = 0;
-    for (const kind of kindOrder) {
-      const group = byKind.get(kind) ?? [];
-      group.forEach((n, i) => {
-        out.push({
-          id: n.id,
-          position: { x: col * 220, y: i * 72 },
-          data: { label: n.label },
-          style: {
-            background: KIND_COLORS[kind] || "#334155",
-            color: "#fff",
-            border: "none",
-            borderRadius: 10,
-            fontSize: 11,
-            padding: "8px 10px",
-            width: 180,
-          },
-        });
-      });
-      if (group.length) col += 1;
-    }
-    return out;
-  }, [neighborhoodQ.data?.nodes]);
+  const flowNodes: Node[] = useMemo(
+    () => layoutGraphNodes(activeGraph?.nodes ?? []),
+    [activeGraph?.nodes],
+  );
 
   const flowEdges: Edge[] = useMemo(
     () =>
-      (neighborhoodQ.data?.edges ?? []).map((e) => ({
+      (activeGraph?.edges ?? []).map((e) => ({
         id: e.id,
         source: e.source,
         target: e.target,
@@ -235,11 +280,21 @@ function KnowledgeGraphPage() {
         style: { stroke: "#94a3b8" },
         labelStyle: { fontSize: 9, fill: "#64748b" },
       })),
-    [neighborhoodQ.data?.edges],
+    [activeGraph?.edges],
   );
 
   const selectMeeting = useCallback((botId: string) => {
     setSelectedBotId(botId);
+  }, []);
+
+  const showWindow = useCallback(() => {
+    setSelectedBotId(null);
+  }, []);
+
+  const applyPreset = useCallback((days: number) => {
+    setFromDay(dayOffset(-days));
+    setToDay(dayOffset(0));
+    setSelectedBotId(null);
   }, []);
 
   return (
@@ -318,6 +373,78 @@ function KnowledgeGraphPage() {
           <StatCard label="Attended" value={summary?.attendedEdges ?? "—"} icon={Sparkles} />
         </div>
 
+        <div className="rounded-lg border border-border bg-background px-3 py-2.5 flex flex-wrap items-center gap-2">
+          <CalendarRange className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-medium mr-1">
+            Window
+          </span>
+          <input
+            type="date"
+            value={fromDay}
+            onChange={(e) => {
+              setFromDay(e.target.value);
+              setSelectedBotId(null);
+            }}
+            className="h-7 px-2 rounded-md border border-border bg-background text-[12px]"
+          />
+          <span className="text-[11px] text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={toDay}
+            onChange={(e) => {
+              setToDay(e.target.value);
+              setSelectedBotId(null);
+            }}
+            className="h-7 px-2 rounded-md border border-border bg-background text-[12px]"
+          />
+          {[7, 14, 30, 90].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => applyPreset(d)}
+              className="h-7 px-2 rounded-md border border-border text-[11.5px] hover:bg-muted/40"
+            >
+              {d}d
+            </button>
+          ))}
+          <select
+            value={maxMeetings}
+            onChange={(e) => setMaxMeetings(Number(e.target.value))}
+            className="h-7 px-2 rounded-md border border-border bg-background text-[11.5px]"
+            title="Max meetings drawn in the window graph"
+          >
+            {[20, 35, 50, 80].map((n) => (
+              <option key={n} value={n}>
+                Max {n} meetings
+              </option>
+            ))}
+          </select>
+          <label className="inline-flex items-center gap-1.5 text-[11.5px] text-muted-foreground ml-1">
+            <input
+              type="checkbox"
+              checked={includeTasks}
+              onChange={(e) => setIncludeTasks(e.target.checked)}
+              className="rounded border-border"
+            />
+            Include tasks
+          </label>
+          {viewMode === "meeting" ? (
+            <button
+              type="button"
+              onClick={showWindow}
+              className="h-7 px-2.5 rounded-md bg-foreground text-background text-[11.5px] font-medium ml-auto"
+            >
+              Back to window graph
+            </button>
+          ) : (
+            <span className="text-[11px] text-muted-foreground ml-auto">
+              {windowQ.data
+                ? `${windowQ.data.meetingCount} meetings · ${windowQ.data.nodes.length} nodes · ${windowQ.data.edges.length} edges`
+                : "Loading window…"}
+            </span>
+          )}
+        </div>
+
         <div className="grid lg:grid-cols-3 gap-3">
           <RankList
             title="Most active people"
@@ -350,24 +477,24 @@ function KnowledgeGraphPage() {
           <div className="rounded-lg border border-border bg-background overflow-hidden">
             <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
               <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
-                Recent meetings
+                Meetings in window
               </div>
-              <span className="text-[10px] text-muted-foreground">Click to explore neighborhood</span>
+              <span className="text-[10px] text-muted-foreground">Click to drill into one meeting</span>
             </div>
             <ul className="divide-y divide-border max-h-72 overflow-auto">
-              {listsLoading ? (
+              {listsLoading && !(windowQ.data?.meetings?.length) ? (
                 <li className="px-3 py-4 text-[12px] text-muted-foreground">Loading meetings…</li>
               ) : listsError ? (
                 <li className="px-3 py-4 text-[12px] text-muted-foreground space-y-1">
                   <div>Neo4j unreachable — use `bolt://127.0.0.1:7688` and `npm run kg:up`.</div>
                   <div className="text-[11px] opacity-80">{listsError}</div>
                 </li>
-              ) : recentMeetings.length === 0 ? (
+              ) : (windowQ.data?.meetings ?? recentMeetings).length === 0 ? (
                 <li className="px-3 py-4 text-[12px] text-muted-foreground">
-                  Empty graph — enable the flag, then Sync a small batch.
+                  No meetings in this window — widen the dates or Sync more.
                 </li>
               ) : (
-                recentMeetings.map((m) => (
+                (windowQ.data?.meetings ?? recentMeetings).map((m) => (
                   <li key={m.botId}>
                     <button
                       type="button"
@@ -379,7 +506,7 @@ function KnowledgeGraphPage() {
                       <div className="text-[12.5px] font-medium truncate">{m.title}</div>
                       <div className="text-[11px] text-muted-foreground flex gap-2">
                         <span>{m.meetingDay || "—"}</span>
-                        <span>{m.attendees} people</span>
+                        {"attendees" in m ? <span>{(m as { attendees?: number }).attendees} people</span> : null}
                       </div>
                     </button>
                   </li>
@@ -401,7 +528,8 @@ function KnowledgeGraphPage() {
             <div className="p-3 space-y-3 max-h-72 overflow-auto">
               {!personEmail ? (
                 <p className="text-[12px] text-muted-foreground">
-                  Search a teammate to see meetings attended and projects inferred from the graph.
+                  Search a teammate to see meetings attended in this window and projects inferred from
+                  the graph.
                 </p>
               ) : personQ.isLoading ? (
                 <p className="text-[12px] text-muted-foreground">Loading…</p>
@@ -415,7 +543,7 @@ function KnowledgeGraphPage() {
                     <strong>{personQ.data?.meetings.name || personEmail}</strong>
                     <span className="text-muted-foreground">
                       {" "}
-                      · {personQ.data?.meetings.meetingCount ?? 0} meetings in view
+                      · {personQ.data?.meetings.meetingCount ?? 0} meetings in window
                     </span>
                   </div>
                   <div>
@@ -457,35 +585,39 @@ function KnowledgeGraphPage() {
         </div>
 
         <div className="rounded-lg border border-border bg-background overflow-hidden">
-          <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+          <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
             <div className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground font-medium">
-              Meeting neighborhood
-              {neighborhoodQ.data?.meeting
-                ? ` — ${neighborhoodQ.data.meeting.title}`
-                : selectedBotId
-                  ? ""
-                  : " — select a meeting"}
+              {viewMode === "meeting"
+                ? `Meeting drill-down — ${neighborhoodQ.data?.meeting?.title || "…"}`
+                : `Corpus graph — ${fromDay} → ${toDay}`}
             </div>
-            {selectedBotId ? (
-              <span className="text-[10px] text-muted-foreground font-mono">{selectedBotId.slice(0, 8)}…</span>
+            {viewMode === "meeting" && selectedBotId ? (
+              <span className="text-[10px] text-muted-foreground font-mono">
+                {selectedBotId.slice(0, 8)}…
+              </span>
             ) : null}
           </div>
-          <div className="h-[420px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100/80 via-background to-background dark:from-slate-900/40">
-            {!selectedBotId ? (
-              <div className="h-full flex items-center justify-center text-[13px] text-muted-foreground">
-                Pick a recent meeting to see people, projects, topics, and tasks around it.
-              </div>
-            ) : neighborhoodQ.isLoading ? (
+          <div className="h-[520px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100/80 via-background to-background dark:from-slate-900/40">
+            {graphLoading ? (
               <div className="h-full flex items-center justify-center text-[13px] text-muted-foreground">
                 Loading graph…
               </div>
-            ) : flowNodes.length <= 1 ? (
+            ) : graphError ? (
+              <div className="h-full flex items-center justify-center text-[13px] text-amber-700 px-6 text-center">
+                {graphError}
+              </div>
+            ) : flowNodes.length === 0 ? (
               <div className="h-full flex items-center justify-center text-[13px] text-muted-foreground px-6 text-center">
-                Meeting node exists but has few links — sync more meetings so DeepSeek can enrich
-                people/projects/topics.
+                No nodes in this window — widen the date range or Sync more meetings.
               </div>
             ) : (
-              <ReactFlow nodes={flowNodes} edges={flowEdges} fitView proOptions={{ hideAttribution: true }}>
+              <ReactFlow
+                key={viewMode === "meeting" ? `m:${selectedBotId}` : `w:${fromDay}:${toDay}:${maxMeetings}`}
+                nodes={flowNodes}
+                edges={flowEdges}
+                fitView
+                proOptions={{ hideAttribution: true }}
+              >
                 <Background gap={18} size={1} />
                 <MiniMap pannable zoomable />
                 <Controls showInteractive={false} />
@@ -495,13 +627,13 @@ function KnowledgeGraphPage() {
         </div>
 
         <p className="text-[11px] text-muted-foreground leading-relaxed max-w-3xl">
-          Local Neo4j: <code className="text-[10px]">npm run kg:up</code> → Browser{" "}
-          <a className="underline" href="http://localhost:7474" target="_blank" rel="noreferrer">
-            localhost:7474
+          Default view is the <strong>time-window corpus graph</strong> (people ↔ meetings ↔
+          projects/topics/tasks). Click a meeting to drill into its neighborhood; use{" "}
+          <em>Back to window graph</em> to return. Neo4j Browser:{" "}
+          <a className="underline" href="http://localhost:7475" target="_blank" rel="noreferrer">
+            localhost:7475
           </a>{" "}
-          (neo4j / password). Sync reads finalized S3 meetings, maps entities with DeepSeek, and writes
-          Person / Meeting / Project / Topic / Task. Aim for ~450 meetings via repeated Sync batches
-          (or <code className="text-[10px]">npm run kg:sync 450</code>).
+          (neo4j / password). Sync with <code className="text-[10px]">npm run kg:sync 25</code>.
         </p>
       </div>
     </div>

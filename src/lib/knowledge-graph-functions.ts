@@ -122,6 +122,22 @@ export const queryMeetingNeighborhoodFn = createServerFn({ method: "POST" })
     return queryMeetingNeighborhood(data.botId, data.limit);
   });
 
+export const queryWindowGraphFn = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        fromDay: z.string().optional(),
+        toDay: z.string().optional(),
+        maxMeetings: z.number().int().min(1).max(80).optional(),
+        includeTasks: z.boolean().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { queryWindowGraph } = await import("@/lib/knowledge-graph/kg-queries.server");
+    return queryWindowGraph(data);
+  });
+
 export const bootstrapKnowledgeGraphSchemaFn = createServerFn({ method: "POST" }).handler(async () => {
   const { ensureKnowledgeGraphSchema } = await import("@/lib/knowledge-graph/kg-schema.server");
   return ensureKnowledgeGraphSchema();

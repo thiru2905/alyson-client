@@ -270,3 +270,135 @@ export async function queryOverviewInsights() {
   const recentMeetings = await queryRecentMeetings(20);
   return { summary, topPeople, topProjects, topTopics, recentMeetings };
 }
+
+export type GraphNode = { id: string; kind: string; label: string };
+export type GraphEdge = { id: string; source: string; target: string; label: string };
+
+/**
+ * Corpus-shaped subgraph for a meetingDay window (YYYY-MM-DD).
+ * Caps keep React Flow usable while still showing multi-meeting structure.
+ */
+export async function queryWindowGraph(args: {
+  fromDay?: string;
+  toDay?: string;
+  maxMeetings?: number;
+  includeTasks?: boolean;
+}) {
+  const fromDay = args.fromDay?.trim() || null;
+  const toDay = args.toDay?.trim() || null;
+  const maxMeetings = Math.min(Math.max(args.maxMeetings ?? 35, 1), 80);
+  const includeTasks = args.includeTasks !== false;
+  const maxPeople = 40;
+  const maxProjects = 30;
+  const maxTopics = 25;
+  const maxTasks = includeTasks ? 35 : 0;
+
+  return withNeo4jSession(async (session) => {
+    const result = await session.run(
+      `
+      MATCH (m:Meeting)
+      WHERE ($fromDay IS NULL OR coalesce(m.meetingDay, '') >= $fromDay)
+        AND ($toDay IS NULL OR coalesce(m.meetingDay, '') <= $toDay)
+      WITH m
+      ORDER BY coalesce(m.meetingDay, '') DESC, coalesce(m.title, '') ASC
+      LIMIT $maxMeetings
+      OPTIONAL MATCH (person:Person)-[:ATTENDED]->(m)
+      OPTIONAL MATCH (m)-[:ABOUT]->(project:Project)
+      OPTIONAL MATCH (m)-[:ABOUT|RELATED_TO]->(topic:Topic)
+      OPTIONAL MATCH (m)-[:HAS_TASK]->(task:Task)
+      RETURN m.botId AS botId,
+             m.title AS title,
+             m.meetingDay AS meetingDay,
+             collect(DISTINCT {key: person.email, label: coalesce(person.name, person.email)}) AS people,
+             collect(DISTINCT {key: project.key, label: project.name}) AS projects,
+             collect(DISTINCT {key: topic.key, label: topic.name}) AS topics,
+             collect(DISTINCT {key: task.key, label: task.text}) AS tasks
+      `,
+      {
+        fromDay,
+        toDay,
+        maxMeetings: neo4j.int(maxMeetings),
+      },
+    );
+
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+    const seen = new Set<string>();
+    const kindCounts: Record<string, number> = {
+      Meeting: 0,
+      Person: 0,
+      Project: 0,
+      Topic: 0,
+      Task: 0,
+    };
+
+    const addNode = (kind: string, key: string, label: string, cap: number) => {
+      const k = String(key || "").trim();
+      if (!k || k === "null" || k === "undefined") return null;
+      if ((kindCounts[kind] ?? 0) >= cap) return null;
+      const id = `${kind}:${k}`;
+      if (!seen.has(id)) {
+        seen.add(id);
+        kindCounts[kind] = (kindCounts[kind] ?? 0) + 1;
+        nodes.push({ id, kind, label: String(label || k).slice(0, 80) });
+      }
+      return id;
+    };
+
+    const addEdge = (source: string, target: string, label: string) => {
+      const id = `${source}->${target}:${label}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+      edges.push({ id, source, target, label });
+    };
+
+    const meetings: Array<{ botId: string; title: string; meetingDay?: string | null }> = [];
+
+    for (const rec of result.records) {
+      const botId = String(rec.get("botId") || "").trim();
+      if (!botId) continue;
+      const title = String(rec.get("title") || botId);
+      const meetingDay = (rec.get("meetingDay") as string | null) ?? null;
+      meetings.push({ botId, title, meetingDay });
+
+      const meetingId = addNode("Meeting", botId, title, maxMeetings);
+      if (!meetingId) continue;
+
+      const people = (rec.get("people") as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const p of people) {
+        const personId = addNode("Person", String(p.key || ""), String(p.label || p.key || ""), maxPeople);
+        if (personId) addEdge(personId, meetingId, "ATTENDED");
+      }
+
+      const projects = (rec.get("projects") as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const p of projects) {
+        const projectId = addNode("Project", String(p.key || ""), String(p.label || p.key || ""), maxProjects);
+        if (projectId) addEdge(meetingId, projectId, "ABOUT");
+      }
+
+      const topics = (rec.get("topics") as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const t of topics) {
+        const topicId = addNode("Topic", String(t.key || ""), String(t.label || t.key || ""), maxTopics);
+        if (topicId) addEdge(meetingId, topicId, "ABOUT");
+      }
+
+      if (maxTasks > 0) {
+        const tasks = (rec.get("tasks") as Array<Record<string, unknown>> | undefined) ?? [];
+        for (const t of tasks) {
+          const taskId = addNode("Task", String(t.key || ""), String(t.label || t.key || ""), maxTasks);
+          if (taskId) addEdge(meetingId, taskId, "HAS_TASK");
+        }
+      }
+    }
+
+    return {
+      fromDay,
+      toDay,
+      meetingCount: meetings.length,
+      meetings,
+      nodes,
+      edges,
+      caps: { maxMeetings, maxPeople, maxProjects, maxTopics, maxTasks },
+    };
+  });
+}
