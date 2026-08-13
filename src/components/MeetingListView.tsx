@@ -213,7 +213,7 @@ function MeetingListCard({
               {openPanel === "tasks"
                 ? meeting.hasTasks
                   ? "Loading tasks from S3…"
-                  : "Extracting tasks with DeepSeek and saving to S3…"
+                  : "Extracting tasks (DeepSeek / Groq) and saving to S3…"
                 : "Loading…"}
             </div>
           )}

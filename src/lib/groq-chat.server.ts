@@ -101,8 +101,16 @@ export function isGroqRateLimitError(message: string): boolean {
   return /rate limit|too many requests|429|tokens per day|tpd/i.test(message);
 }
 
+export function isAiInsufficientBalanceError(message: string): boolean {
+  return /insufficient\s*(balance|quota|funds|credit)|payment required|402|billing/i.test(message);
+}
+
 export function isAiRateLimitOrQuotaError(message: string): boolean {
-  return isGroqRateLimitError(message) || /quota|tokens per day|insufficient/i.test(message);
+  return (
+    isGroqRateLimitError(message) ||
+    isAiInsufficientBalanceError(message) ||
+    /quota|tokens per day/i.test(message)
+  );
 }
 
 export function parseGroqRetryDelayMs(message: string): number | null {
@@ -262,7 +270,10 @@ export async function deepseekChat(
     } catch (e) {
       lastError = e;
       const msg = e instanceof Error ? e.message : String(e);
-      if (!isAiRateLimitOrQuotaError(msg) || attempt >= maxRetries) throw e;
+      // Balance/billing errors will not recover on retry — fail fast.
+      if (isAiInsufficientBalanceError(msg) || !isAiRateLimitOrQuotaError(msg) || attempt >= maxRetries) {
+        throw e;
+      }
       await sleep(2_000 * (attempt + 1));
     }
   }

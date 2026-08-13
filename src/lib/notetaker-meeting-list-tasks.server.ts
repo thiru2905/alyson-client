@@ -4,6 +4,9 @@ import {
   deepseekApiKey,
   deepseekChat,
   extractJsonObject,
+  groqApiKey,
+  isAiRateLimitOrQuotaError,
+  meetingAiChat,
   resolveDeepseekModel,
 } from "@/lib/groq-chat.server";
 import {
@@ -164,11 +167,10 @@ async function extractTasksWithDeepseek(args: {
   transcriptText: string;
   roster: ReturnType<typeof buildParticipantRoster>;
 }): Promise<{ people: MeetingListPersonTasks[]; model: string }> {
-  if (!deepseekApiKey()) {
-    throw new Error("DEEPSEEK_API_KEY is required to extract meeting tasks.");
+  if (!deepseekApiKey() && !groqApiKey()) {
+    throw new Error("DEEPSEEK_API_KEY or GROQ_API_KEY is required to extract meeting tasks.");
   }
 
-  const model = await resolveDeepseekModel();
   const context = buildExtractionContext(args);
   const rosterNames = args.roster.map((p) => p.name).join(", ") || "meeting participants";
 
@@ -187,14 +189,40 @@ async function extractTasksWithDeepseek(args: {
     "- Max 6 tasks per person.",
   ].join("\n");
 
-  const raw = await deepseekChat(
-    [
-      { role: "system", content: sys },
-      { role: "user", content: context },
-    ],
-    0.1,
-    { model },
-  );
+  const messages = [
+    { role: "system" as const, content: sys },
+    { role: "user" as const, content: context },
+  ];
+
+  let raw = "";
+  let model = "";
+
+  // Prefer DeepSeek; on insufficient balance / quota, fall back to Groq.
+  if (deepseekApiKey()) {
+    try {
+      model = await resolveDeepseekModel();
+      raw = await deepseekChat(messages, 0.1, { model, maxRetries: 0 });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const balanceOrQuota =
+        isAiRateLimitOrQuotaError(msg) || /insufficient|balance|402|payment|billing/i.test(msg);
+      if (!balanceOrQuota || !groqApiKey()) {
+        if (balanceOrQuota) {
+          throw new Error(
+            `DeepSeek has insufficient balance (top up at platform.deepseek.com) and Groq fallback is unavailable. ${msg}`,
+          );
+        }
+        throw e;
+      }
+      const fallback = await meetingAiChat(messages, 0.1);
+      raw = fallback.content;
+      model = `${fallback.provider}:${fallback.model}`;
+    }
+  } else {
+    const fallback = await meetingAiChat(messages, 0.1);
+    raw = fallback.content;
+    model = `${fallback.provider}:${fallback.model}`;
+  }
 
   const parsed = MeetingTasksByPersonSchema.parse(extractJsonObject(raw));
   const rosterByKey = new Map(args.roster.map((p) => [personKey(p.name, p.email), p]));
