@@ -40,62 +40,100 @@ export type Testimonial = {
   name: string;
   title: string;
   handle: string;
+  avatar: string;
 };
 
 export const LANDING_TESTIMONIALS: Testimonial[] = [
   {
     quote:
-      "Stopped chasing timesheets every Friday. Time Dashboard pacing flags slips before my 1:1s.",
+      "Stopped chasing timesheets every Friday. Time Dashboard pacing flags slips before my 1:1s — the bot already knows who is behind.",
     name: "Priya Sharma",
     title: "Head of Ops · Remote-first",
     handle: "priya_ops",
+    avatar: "https://randomuser.me/api/portraits/women/68.jpg",
   },
   {
-    quote:
-      "Meeting Hours report lands in my inbox Monday. I forward it to leadership without touching Excel.",
+    quote: "Meeting Hours report lands in my inbox Monday. I forward it to leadership without touching Excel.",
     name: "Sarah Kim",
     title: "Chief of Staff",
     handle: "sarah_cos",
+    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
   },
   {
     quote:
-      "Performance review season used to mean 40 hours of doc wrangling. Agent drafts got us 70% there.",
+      "Performance review season used to mean 40 hours of doc wrangling. Agent drafts got us 70% of the way there, with citations back to real activity.",
     name: "Elena Ruiz",
     title: "HR Ops Lead",
     handle: "elena_hrops",
+    avatar: "https://randomuser.me/api/portraits/women/65.jpg",
   },
   {
     quote: "Payroll + bonus + equity behind one RBAC gate is exactly how finance wanted it.",
     name: "James Okonkwo",
     title: "FP&A Director",
     handle: "jokonkwo_fpa",
+    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
   },
   {
     quote:
-      "Notetaker + Meeting Hours finally answer 'are we in too many meetings?' with actual hours, not vibes.",
+      "Notetaker + Meeting Hours finally answer “are we in too many meetings?” with actual hours, not vibes. Managers stop arguing from gut feel.",
     name: "Omar Hassan",
     title: "Engineering Manager",
     handle: "omar_engmgr",
+    avatar: "https://randomuser.me/api/portraits/men/11.jpg",
   },
   {
-    quote:
-      "The org chart isn't a PDF anymore. It's where approvals and reporting lines actually connect.",
+    quote: "The org chart isn't a PDF anymore. It's where approvals and reporting lines actually connect.",
     name: "Marcus Chen",
     title: "Finance Lead",
     handle: "marcus_fp",
-  },
-  {
-    quote: "I ask Alyson Brain why payroll moved and it cites the tables. That's trust.",
-    name: "Anita Verma",
-    title: "Controller",
-    handle: "anita_ctrl",
+    avatar: "https://randomuser.me/api/portraits/men/75.jpg",
   },
   {
     quote:
-      "Clean UI, same inside the app as the marketing site. Exec team didn't think it was 'another HR portal'.",
+      "I ask Alyson Brain why payroll moved and it cites the tables. That's trust. We've never had an HR copilot that could prove its numbers.",
+    name: "Anita Verma",
+    title: "Controller",
+    handle: "anita_ctrl",
+    avatar: "https://randomuser.me/api/portraits/women/47.jpg",
+  },
+  {
+    quote:
+      "Clean UI, same inside the app as the marketing site. Exec team didn't think it was “another HR portal”. That alone unblocked the rollout.",
     name: "David Park",
     title: "CEO",
     handle: "davidparkceo",
+    avatar: "https://randomuser.me/api/portraits/men/45.jpg",
+  },
+  {
+    quote: "Leave + attendance in one calendar overlay saved our month-end close. Nobody pings Slack for “did they take PTO?” anymore.",
+    name: "Leah Nguyen",
+    title: "People Ops",
+    handle: "leah_pops",
+    avatar: "https://randomuser.me/api/portraits/women/21.jpg",
+  },
+  {
+    quote:
+      "Unified Meetings + Schedule all means the notetaker shows up without me babysitting every Google event. Transcripts are in S3 when I need them.",
+    name: "Chris Walker",
+    title: "RevOps",
+    handle: "chris_revops",
+    avatar: "https://randomuser.me/api/portraits/men/52.jpg",
+  },
+  {
+    quote: "Onboarding checklists with owners. Day-one used to be a thread of Google Docs.",
+    name: "Maya Patel",
+    title: "Talent Lead",
+    handle: "maya_talent",
+    avatar: "https://randomuser.me/api/portraits/women/33.jpg",
+  },
+  {
+    quote:
+      "We replaced three internal tools with Alyson. Time, meetings, and payroll now tell one story. The agent actually knows our people.",
+    name: "Noah Adler",
+    title: "COO",
+    handle: "noah_coo",
+    avatar: "https://randomuser.me/api/portraits/men/77.jpg",
   },
 ];
 

@@ -1,29 +1,31 @@
 import { Link } from "@tanstack/react-router";
-import {
-  TestimonialsMarqueeGrid,
-} from "@/components/ui/testimonials-marquee-grid";
+import { TestimonialsMasonryGrid } from "@/components/ui/testimonials-masonry";
 import { LANDING_TESTIMONIALS } from "@/lib/landing-content";
-
-const ROW_A = LANDING_TESTIMONIALS.slice(0, 4);
-const ROW_B = LANDING_TESTIMONIALS.slice(4);
 
 export function LandingTestimonials() {
   return (
-    <section id="voices" className="border-y border-border py-14 md:py-18 overflow-hidden bg-background">
-      <div className="mx-auto max-w-6xl px-5 md:px-8 mb-8">
-        <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-medium">
-          Voices
+    <section id="voices" className="relative overflow-hidden border-y border-white/10 bg-neutral-950 py-16 md:py-24">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_center,black_35%,transparent_75%)]"
+        aria-hidden
+      />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black to-transparent" aria-hidden />
+      <div className="relative mx-auto max-w-6xl px-5 md:px-8">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="font-display text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-white">
+            Loved by operators who live in the data
+          </h2>
+          <p className="mt-3 text-[14px] md:text-[15px] text-neutral-400">
+            Here&apos;s what HR, finance, and eng leads say about Alyson.{" "}
+            <Link to="/voices" className="text-white underline underline-offset-4 hover:opacity-80">
+              Read all stories
+            </Link>
+          </p>
         </div>
-        <h2 className="font-display text-2xl md:text-3xl font-semibold tracking-tight mt-1.5">
-          What teams are saying
-        </h2>
-        <p className="mt-2 text-[13px] text-muted-foreground">
-          <Link to="/voices" className="text-foreground underline underline-offset-2 hover:opacity-80">
-            Read all stories
-          </Link>
-        </p>
+        <div className="mt-12">
+          <TestimonialsMasonryGrid items={LANDING_TESTIMONIALS} />
+        </div>
       </div>
-      <TestimonialsMarqueeGrid rowA={ROW_A} rowB={ROW_B} />
     </section>
   );
 }

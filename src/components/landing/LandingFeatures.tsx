@@ -56,7 +56,7 @@ export function LandingFeatures() {
   return (
     <section id="features" className="mx-auto max-w-6xl px-5 md:px-8 py-16 md:py-20">
       <motion.div
-        className="max-w-2xl"
+        className="mx-auto max-w-2xl text-center"
         initial={{ opacity: 0, y: 12 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
@@ -68,6 +68,9 @@ export function LandingFeatures() {
         <h2 className="font-display text-3xl md:text-4xl font-semibold tracking-tight mt-1.5">
           HR operations, built into Alyson
         </h2>
+        <p className="mt-3 text-[14px] text-muted-foreground">
+          Time, people, pay, and meetings — one workspace instead of a pile of tools.
+        </p>
       </motion.div>
 
       <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-4">

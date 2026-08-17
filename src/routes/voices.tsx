@@ -26,13 +26,17 @@ function VoicesPage() {
           <blockquote key={t.handle} className="surface-card rounded-2xl p-5 md:p-6">
             <p className="text-[14px] leading-relaxed text-foreground/90">&ldquo;{t.quote}&rdquo;</p>
             <footer className="mt-4 flex items-center gap-3 border-t border-border pt-4">
-              <div className="h-9 w-9 rounded-full bg-muted grid place-items-center text-[11px] font-medium text-foreground">
-                {t.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .slice(0, 2)}
-              </div>
+              {t.avatar ? (
+                <img src={t.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
+              ) : (
+                <div className="h-9 w-9 rounded-full bg-muted grid place-items-center text-[11px] font-medium text-foreground">
+                  {t.name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .slice(0, 2)}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1 text-[13px] font-medium text-foreground">
                   <span className="truncate">{t.name}</span>
