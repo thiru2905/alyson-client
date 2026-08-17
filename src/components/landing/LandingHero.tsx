@@ -26,13 +26,13 @@ export function LandingHero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         >
-          <h1 className="font-display text-4xl font-semibold tracking-tight leading-[1.08] md:text-5xl lg:text-[3.6rem] text-foreground">
+          <h1 className="font-display text-4xl font-semibold tracking-tight leading-[1.1] md:text-5xl lg:text-[3.25rem] text-foreground">
             Your HR workspace,{" "}
             <span className="text-muted-foreground">always on the clock</span>
           </h1>
-          <p className="mt-5 text-[15px] md:text-[16px] text-muted-foreground leading-relaxed max-w-2xl mx-auto">
-            Time tracking, performance, payroll, and meeting intelligence — one agentic workspace
-            your team actually opens every day.
+          <p className="mt-5 text-[14px] md:text-[15px] text-muted-foreground leading-relaxed max-w-2xl mx-auto">
+            Time tracking, performance, payroll, and meeting intelligence. The same Alyson HR
+            your team uses every day.
           </p>
           <LandingAgentPill />
           <div className="mt-8 flex justify-center">
