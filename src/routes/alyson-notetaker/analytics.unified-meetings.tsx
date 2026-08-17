@@ -241,43 +241,7 @@ export function UnifiedMeetingsPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const scheduleAllM = useMutation({
-    mutationFn: async (meetingIds: string[]) => {
-      const res = await fetch("/api/analytics/unified-meetings/schedule-bots", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingIds }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(String(json?.error || "Failed to schedule bots"));
-      return json as {
-        requested: number;
-        scheduled: number;
-        skipped: number;
-        errors: Array<{ meetingId: string; message: string }>;
-      };
-    },
-    onSuccess: (r) => {
-      if (r.scheduled > 0) {
-        toast.success(
-          `Scheduled ${r.scheduled} bot${r.scheduled === 1 ? "" : "s"} — each joins ~2 min before start${
-            r.skipped ? ` (${r.skipped} skipped)` : ""
-          }`,
-        );
-      } else {
-        toast.message(r.skipped ? `No new bots scheduled (${r.skipped} skipped)` : "No meetings to schedule");
-      }
-      if (r.errors.length) {
-        toast.error(r.errors.slice(0, 3).map((e) => e.message).join(" · "));
-      }
-      void q.refetch();
-      void calendarQ.refetch();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const meetingActionBusy =
-    scheduleMeetingM.isPending || unscheduleMeetingM.isPending || scheduleAllM.isPending;
+  const meetingActionBusy = scheduleMeetingM.isPending || unscheduleMeetingM.isPending;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -297,10 +261,6 @@ export function UnifiedMeetingsPage() {
     const withLink = meetings.filter((m) => Boolean(m.meetingUrl)).length;
     return { total: meetings.length, withLink };
   }, [meetings]);
-  const scheduleableMeetings = useMemo(
-    () => meetings.filter((m) => canScheduleMeeting(m)),
-    [meetings],
-  );
 
   return (
     <div className="ops-dense">
@@ -318,26 +278,6 @@ export function UnifiedMeetingsPage() {
               <CalendarDays className="h-3.5 w-3.5" />
               Alyson Notetaker
             </Link>
-            <button
-              type="button"
-              disabled={scheduleAllM.isPending || scheduleableMeetings.length === 0}
-              onClick={() => {
-                const n = scheduleableMeetings.length;
-                if (!n) return;
-                const ok = window.confirm(
-                  `Schedule Alyson bot for ${n} unscheduled meeting${n === 1 ? "" : "s"} in this list? Each bot joins ~2 min before start.`,
-                );
-                if (!ok) return;
-                scheduleAllM.mutate(scheduleableMeetings.map((m) => m.id));
-              }}
-              className="h-7 px-2.5 rounded-md border border-border bg-foreground text-background text-[11.5px] font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
-              title="Schedule Alyson bot for every unscheduled, joinable meeting in the table"
-            >
-              <CalendarPlus className="h-3.5 w-3.5" />
-              {scheduleAllM.isPending
-                ? "Scheduling…"
-                : `Schedule all${scheduleableMeetings.length ? ` (${scheduleableMeetings.length})` : ""}`}
-            </button>
             <button
               type="button"
               onClick={() => refreshM.mutate()}
@@ -403,7 +343,11 @@ export function UnifiedMeetingsPage() {
                   {meetings.map((m) => {
                     const rowBusy = actingMeetingId === m.id && meetingActionBusy;
                     const meetingEnded = isMeetingOver(m.startTime, m.endTime);
-                    const canSchedule = canScheduleMeeting(m);
+                    const canSchedule =
+                      Boolean(m.meetingUrl) &&
+                      m.status !== "cancelled" &&
+                      !m.botScheduled &&
+                      !meetingEnded;
                     const canUnschedule = m.botScheduled && !meetingEnded;
 
                     return (
@@ -509,15 +453,6 @@ function fmt(v: string): string {
 const MEETING_END_GRACE_MS = 20 * 60 * 1000;
 
 /** True when the meeting window has ended (matches server join rules). */
-function canScheduleMeeting(meeting: UnifiedMeeting): boolean {
-  return (
-    Boolean(meeting.meetingUrl) &&
-    meeting.status !== "cancelled" &&
-    !meeting.botScheduled &&
-    !isMeetingOver(meeting.startTime, meeting.endTime)
-  );
-}
-
 function isMeetingOver(startTime: string, endTime: string): boolean {
   const now = Date.now();
   const startMs = new Date(startTime).getTime();
@@ -568,11 +503,9 @@ function RecallCalendarPanel({
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Connect Google Calendar once for{" "}
             <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>.{" "}
-            <span className="text-foreground font-medium">Sync now</span> refreshes calendar events.{" "}
-            <span className="text-foreground font-medium">Schedule all</span> (top right) books the bot for every
-            unscheduled call in the table. Each bot joins ~2 min before start. Use{" "}
-            <span className="text-foreground font-medium">Schedule</span> /{" "}
-            <span className="text-foreground font-medium">Unschedule</span> on individual rows.
+            <span className="text-foreground font-medium">Sync now</span> reserves bots for all pending upcoming
+            meetings. Each bot joins ~2 min before start. Use <span className="text-foreground font-medium">Schedule</span>{" "}
+            / <span className="text-foreground font-medium">Unschedule</span> on individual rows in the table below.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
