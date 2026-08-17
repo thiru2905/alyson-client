@@ -830,6 +830,35 @@ export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSumm
   return out;
 }
 
+const MAX_BULK_SCHEDULE_IDS = 200;
+
+export async function scheduleUnifiedMeetingsByIds(meetingIds: string[]): Promise<{
+  requested: number;
+  scheduled: number;
+  skipped: number;
+  errors: Array<{ meetingId: string; message: string }>;
+}> {
+  const ids = [...new Set(meetingIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(
+    0,
+    MAX_BULK_SCHEDULE_IDS,
+  );
+  const out = {
+    requested: ids.length,
+    scheduled: 0,
+    skipped: 0,
+    errors: [] as Array<{ meetingId: string; message: string }>,
+  };
+  for (const meetingId of ids) {
+    const result = await scheduleUnifiedMeetingById(meetingId);
+    if (result.ok) out.scheduled += 1;
+    else {
+      out.skipped += 1;
+      out.errors.push({ meetingId, message: result.message });
+    }
+  }
+  return out;
+}
+
 const UNSCHEDULE_BLOCKED_STATUSES = new Set<StateEntry["status"]>(["joining", "in_call", "done"]);
 
 function findScheduledEntryForMeeting(
