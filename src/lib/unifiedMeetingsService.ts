@@ -19,7 +19,6 @@ import { resolveRecallTranscriptWebhookUrl } from "@/lib/recall/recall-bot-confi
 import { buildDatedMeetingTitle, calendarDayInTimeZone, isMeetingOnCalendarDay } from "@/lib/notetaker-meeting-title.server";
 import { registerScheduledBotInSessionsCatalog } from "@/lib/notetaker-scheduled-catalog.server";
 import { unifiedScheduledStatusForUi } from "@/lib/unified-scheduled-lifecycle.server";
-import { isUnifiedScheduleAllEmailAllowed } from "@/lib/unified-schedule-all-allowlist";
 import {
   readUnifiedScheduledStateFromS3,
   mutateUnifiedScheduledStateInS3,
@@ -850,15 +849,6 @@ export async function scheduleUnifiedMeetingsByIds(meetingIds: string[]): Promis
     errors: [] as Array<{ meetingId: string; message: string }>,
   };
   for (const meetingId of ids) {
-    const decoded = decodeMeetingId(meetingId);
-    if (!decoded || !isUnifiedScheduleAllEmailAllowed(decoded.email)) {
-      out.skipped += 1;
-      out.errors.push({
-        meetingId,
-        message: `Schedule all is only enabled for allowlisted calendars (got ${decoded?.email || "unknown"})`,
-      });
-      continue;
-    }
     const result = await scheduleUnifiedMeetingById(meetingId);
     if (result.ok) out.scheduled += 1;
     else {
