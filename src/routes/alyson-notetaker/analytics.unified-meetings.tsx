@@ -11,6 +11,10 @@ const AUTO_SYNC_COOLDOWN_MS = 90_000;
 
 import { PageHeader } from "@/components/AppShell";
 import { toast } from "sonner";
+import {
+  isUnifiedScheduleAllEmailAllowed,
+  UNIFIED_SCHEDULE_ALL_EMAILS,
+} from "@/lib/unified-schedule-all-allowlist";
 
 type UnifiedMeeting = {
   id: string;
@@ -298,7 +302,7 @@ export function UnifiedMeetingsPage() {
     return { total: meetings.length, withLink };
   }, [meetings]);
   const scheduleableMeetings = useMemo(
-    () => meetings.filter((m) => canScheduleMeeting(m)),
+    () => meetings.filter((m) => canScheduleMeeting(m, { scheduleAll: true })),
     [meetings],
   );
 
@@ -325,13 +329,13 @@ export function UnifiedMeetingsPage() {
                 const n = scheduleableMeetings.length;
                 if (!n) return;
                 const ok = window.confirm(
-                  `Schedule Alyson bot for ${n} unscheduled meeting${n === 1 ? "" : "s"} in this list? Each bot joins ~2 min before start.`,
+                  `Schedule Alyson bot for ${n} unscheduled meeting${n === 1 ? "" : "s"} from allowlisted calendars only (${UNIFIED_SCHEDULE_ALL_EMAILS.join(", ")})? Each bot joins ~2 min before start.`,
                 );
                 if (!ok) return;
                 scheduleAllM.mutate(scheduleableMeetings.map((m) => m.id));
               }}
               className="h-7 px-2.5 rounded-md border border-border bg-foreground text-background text-[11.5px] font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
-              title="Schedule Alyson bot for every unscheduled, joinable meeting in the table"
+              title={`Schedule Alyson bot for unscheduled meetings from: ${UNIFIED_SCHEDULE_ALL_EMAILS.join(", ")}`}
             >
               <CalendarPlus className="h-3.5 w-3.5" />
               {scheduleAllM.isPending
@@ -509,7 +513,10 @@ function fmt(v: string): string {
 const MEETING_END_GRACE_MS = 20 * 60 * 1000;
 
 /** True when the meeting window has ended (matches server join rules). */
-function canScheduleMeeting(meeting: UnifiedMeeting): boolean {
+function canScheduleMeeting(meeting: UnifiedMeeting, opts?: { scheduleAll?: boolean }): boolean {
+  if (opts?.scheduleAll && !isUnifiedScheduleAllEmailAllowed(meeting.calendarUserEmail)) {
+    return false;
+  }
   return (
     Boolean(meeting.meetingUrl) &&
     meeting.status !== "cancelled" &&
@@ -569,8 +576,10 @@ function RecallCalendarPanel({
             Connect Google Calendar once for{" "}
             <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>.{" "}
             <span className="text-foreground font-medium">Sync now</span> refreshes calendar events.{" "}
-            <span className="text-foreground font-medium">Schedule all</span> (top right) books the bot for every
-            unscheduled call in the table. Each bot joins ~2 min before start. Use{" "}
+            <span className="text-foreground font-medium">Schedule all</span> (top right) books bots only for
+            unscheduled calls on{" "}
+            <span className="text-foreground font-medium">{UNIFIED_SCHEDULE_ALL_EMAILS.join(", ")}</span>. Each bot
+            joins ~2 min before start. Use{" "}
             <span className="text-foreground font-medium">Schedule</span> /{" "}
             <span className="text-foreground font-medium">Unschedule</span> on individual rows.
           </p>
