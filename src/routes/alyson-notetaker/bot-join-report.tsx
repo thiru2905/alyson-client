@@ -422,7 +422,7 @@ function BotJoinReportPage() {
                 <CriticalKpi
                   label="Meetings joined"
                   value={String(c.meetingsJoined)}
-                  sub={`of ${c.totalEligibleMeetings} eligible`}
+                  sub="In-call or waiting room (left later still counts)"
                   icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
                   highlight
                 />
@@ -542,7 +542,7 @@ function BotJoinReportPage() {
 
             <MeetingTable
               title="Meetings Alyson joined"
-              description={`${report.joinedMeetings.length} meeting(s) where the bot was admitted to the call.`}
+              description={`${report.joinedMeetings.length} meeting(s) where the bot reached the Meet (in-call or waiting room).`}
               rows={report.joinedMeetings}
               emptyMessage="No successful joins in this period."
               showLate
@@ -556,8 +556,8 @@ function BotJoinReportPage() {
                     Eligible meetings not joined
                   </h3>
                   <p className="text-[12px] text-muted-foreground mt-0.5">
-                    {report.missedMeetings.length} calendar meeting(s) with a Meet link where Alyson did not join the
-                    call. The bot waits up to{" "}
+                    {report.missedMeetings.length} calendar meeting(s) with a Meet link where Alyson never reached the
+                    waiting room or the call. The bot waits up to{" "}
                     <span className="font-medium text-foreground">20 minutes</span> in the waiting room or for someone
                     to start the meeting — if it times out, that is usually because the host did not start or admit the
                     bot, not a bot failure.

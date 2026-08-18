@@ -52,7 +52,7 @@ const reportCache = new Map<string, { at: number; report: BotJoinReport }>();
 const REPORT_CACHE_TTL_MS = 10 * 60_000;
 
 function reportCacheKey(calendarEmail: string, start: string, end: string, windowHours?: number) {
-  return `${calendarEmail}|${start}|${end}|${windowHours ?? "days"}`;
+  return `v2-wr-join|${calendarEmail}|${start}|${end}|${windowHours ?? "days"}`;
 }
 
 function env(name: string): string {
@@ -136,7 +136,13 @@ function meetUrlsEquivalent(a: string | null | undefined, b: string | null | und
 function scheduledEntryIndicatesJoin(entry: UnifiedScheduledStateEntry): boolean {
   if (entry.joinedAt) return true;
   const s = String(entry.status || "");
-  return s === "done" || s === "in_call" || s === "no_transcript";
+  return s === "done" || s === "in_call" || s === "no_transcript" || s === "joining";
+}
+
+/** Bot showed up on Meet: admitted to the call, or entered the waiting room (even if it left later). */
+function botReachedMeeting(bot: Pick<BotJoinReportRow, "joinedMeeting" | "waitingRoomEnteredAt" | "stuckInWaitingRoom"> | undefined): boolean {
+  if (!bot) return false;
+  return Boolean(bot.joinedMeeting || bot.waitingRoomEnteredAt || bot.stuckInWaitingRoom);
 }
 
 function findScheduledForCalendarMeeting(
@@ -875,8 +881,10 @@ export async function buildBotJoinReport(args: {
 
   const rows: BotJoinReportRow[] = candidates.map((c) => {
     const life = lifecycles.get(c.botId);
-    const joinedMeeting = Boolean(life?.joinedMeeting);
-    const stuckInWaitingRoom = Boolean(life?.stuckInWaitingRoom);
+    const reachedCall = Boolean(life?.joinedMeeting);
+    const reachedWaitingRoom = Boolean(life?.waitingRoomEnteredAt || life?.stuckInWaitingRoom);
+    const joinedMeeting = reachedCall || reachedWaitingRoom;
+    const stuckInWaitingRoom = reachedWaitingRoom && !reachedCall;
     const finalStatus = life?.finalStatusCode ?? (recallOk ? "no_data" : "recall_not_configured");
     const admittedAt = life?.admittedAt ?? null;
     const joiningCallAt = life?.joiningCallAt ?? null;
@@ -956,7 +964,7 @@ export async function buildBotJoinReport(args: {
     const joinedFromS3 = Boolean(idx && ((idx.lineCount ?? 0) > 0 || idx.transcriptKey));
     if (joinedFromSchedule || joinedFromS3) {
       row.joinedMeeting = true;
-      row.stuckInWaitingRoom = false;
+      if (joinedFromS3) row.stuckInWaitingRoom = false;
     }
   }
 
@@ -970,7 +978,8 @@ export async function buildBotJoinReport(args: {
       const idx = sched ? botIndexByBotId.get(String(sched.recallBotId)) : undefined;
       const joinedFromSchedule = sched ? scheduledEntryIndicatesJoin(sched) : false;
       const joinedFromS3 = Boolean(idx && ((idx.lineCount ?? 0) > 0 || idx.transcriptKey));
-      const joined = Boolean(bot?.joinedMeeting) || joinedFromSchedule || joinedFromS3;
+      const joined =
+        botReachedMeeting(bot) || joinedFromSchedule || joinedFromS3;
 
       if (joined) {
         const base: BotJoinReportRow =
@@ -995,7 +1004,7 @@ export async function buildBotJoinReport(args: {
             lateMinutes: null,
             finalStatus: String(sched!.status || "done"),
             joinedMeeting: true,
-            stuckInWaitingRoom: false,
+            stuckInWaitingRoom: Boolean(bot?.stuckInWaitingRoom),
             fatalSubCode: null,
           } as BotJoinReportRow);
         joinedMeetings.push(
@@ -1003,7 +1012,7 @@ export async function buildBotJoinReport(args: {
             {
               ...base,
               joinedMeeting: true,
-              stuckInWaitingRoom: false,
+              stuckInWaitingRoom: Boolean(bot?.stuckInWaitingRoom),
               title: meeting.title,
               meetingUrl: meeting.meetingUrl,
               googleEventId: meeting.googleEventId,
@@ -1036,7 +1045,7 @@ export async function buildBotJoinReport(args: {
       )
     : rows.filter((r) => r.calendarUserEmail.trim().toLowerCase() === calendarEmail);
   const accountRows = scopedRows;
-  const joinedFromBots = accountRows.filter((r) => r.joinedMeeting);
+  const joinedFromBots = accountRows.filter((r) => botReachedMeeting(r));
 
   const meetingsJoined = calendarAvailable ? joinedMeetings.length : joinedFromBots.length;
   const totalEligibleMeetings = calendarAvailable ? eligibleMeetings.length : accountRows.length;
@@ -1074,7 +1083,7 @@ export async function buildBotJoinReport(args: {
     stuckInWaitingRoom: accountRows.filter((r) => r.stuckInWaitingRoom).length,
     failedJoins: accountRows.filter((r) => r.finalStatus === "fatal").length,
     scheduledNotJoined: accountRows.filter(
-      (r) => !r.joinedMeeting && !r.stuckInWaitingRoom && r.finalStatus !== "fatal",
+      (r) => !botReachedMeeting(r) && r.finalStatus !== "fatal",
     ).length,
   };
 

@@ -77,7 +77,7 @@ export type BotJoinReportRow = {
 export type BotJoinCriticalMetrics = {
   /** Eligible calendar meetings (Meet link, not skipped). */
   totalEligibleMeetings: number;
-  /** Bot successfully admitted to the call. */
+  /** Bot reached the Meet (admitted to the call, or entered the waiting room even if it left later). */
   meetingsJoined: number;
   /** Eligible meetings with no successful join. */
   meetingsMissed: number;
