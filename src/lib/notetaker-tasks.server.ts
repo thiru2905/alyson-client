@@ -18,6 +18,7 @@ import { getSpeakerIdentityIndex } from "@/lib/speaker-identity.server";
 import {
   looksLikeEmail,
   normalizePersonName,
+  personNamesLooselyMatch,
   resolveCanonicalEmail,
   resolveCanonicalSpeaker,
   resolveRosterPersonEmail,
@@ -183,6 +184,7 @@ function personMatchesSpeakerLabel(
   const normSpeaker = normalizePersonName(speakerCanonical);
   const normFocus = normalizePersonName(focus.name);
   if (normFocus && normSpeaker === normFocus) return true;
+  if (personNamesLooselyMatch(speakerCanonical, focus.name || "")) return true;
 
   const firstFocus = normFocus.split(" ")[0] ?? "";
   const firstSpeaker = normSpeaker.split(" ")[0] ?? "";

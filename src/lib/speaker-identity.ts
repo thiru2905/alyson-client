@@ -33,7 +33,30 @@ export function normalizePersonName(name: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z\s]/g, " ")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    // Known roster vs Meet spelling variants (Fouad ↔ Fawad).
+    .replace(/\bfouad\b/g, "fawad");
+}
+
+function nameTokens(name: string): string[] {
+  return normalizePersonName(name).split(" ").filter(Boolean);
+}
+
+/** True when every token of the shorter name appears in the longer (handles "Fawad Waheed" vs "Malik Fawad Waheed"). */
+export function personNamesLooselyMatch(a: string, b: string): boolean {
+  const aTokens = nameTokens(a);
+  const bTokens = nameTokens(b);
+  if (!aTokens.length || !bTokens.length) return false;
+  if (aTokens.join(" ") === bTokens.join(" ")) return true;
+
+  const [shorter, longer] =
+    aTokens.length <= bTokens.length ? [aTokens, bTokens] : [bTokens, aTokens];
+  // Require at least first+last style match (2+ tokens on the short side), or a distinctive 1-token match of length ≥5.
+  if (shorter.length === 1) {
+    const only = shorter[0]!;
+    return only.length >= 5 && longer.includes(only);
+  }
+  return shorter.every((t) => longer.includes(t));
 }
 
 export function emailLocalPart(email: string): string {
@@ -248,7 +271,8 @@ function rosterEntryMatchesCanonical(entry: EmployeePickerEntry, canonical: stri
   if (eCanonical === canonical) return true;
   const entryNorm = normalizePersonName(entry.name);
   const canonicalNorm = normalizePersonName(canonical);
-  return Boolean(entryNorm && canonicalNorm && entryNorm === canonicalNorm);
+  if (entryNorm && canonicalNorm && entryNorm === canonicalNorm) return true;
+  return personNamesLooselyMatch(entry.name || "", canonical);
 }
 
 /** Resolve a transcript/calendar label to an official email using overrides, then roster (no first-name-only guess). */
@@ -267,6 +291,10 @@ export function resolveRosterPersonEmail(
 
   if (looksLikeEmail(raw)) {
     const email = resolveCanonicalEmail(raw, identity).toLowerCase();
+    const overrideByEmail = findSpeakerEmailOverride(email);
+    if (overrideByEmail) {
+      return { email: overrideByEmail.email.toLowerCase(), name: overrideByEmail.canonicalName };
+    }
     const match = roster.find((e) => resolveCanonicalEmail(e.email, identity).toLowerCase() === email);
     return {
       email,
@@ -282,6 +310,15 @@ export function resolveRosterPersonEmail(
         name: e.name?.trim() || canonical,
       };
     }
+  }
+
+  // Last pass: loose name match against roster display names (Fouad/Fawad, Malik prefix, etc.).
+  for (const e of roster) {
+    if (!personNamesLooselyMatch(raw, e.name || "")) continue;
+    return {
+      email: resolveCanonicalEmail(e.email, identity).toLowerCase(),
+      name: e.name?.trim() || canonical,
+    };
   }
 
   return { email: null, name: canonical };

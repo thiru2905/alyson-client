@@ -57,6 +57,23 @@ export const SPEAKER_EMAIL_OVERRIDES: SpeakerEmailOverride[] = [
     email: "salman.soomro@cintara.ai",
     aliases: ["salman soomro", "salman somoro", "salman"],
   },
+  {
+    // Workspace: Fawad Waheed / fawad@cintara.ai
+    // Older roster + Meet labels often use Fouad / Malik Fouad Waheed / personal gmail.
+    canonicalName: "Fawad Waheed",
+    email: "fawad@cintara.ai",
+    aliases: [
+      "fawad waheed",
+      "fouad waheed",
+      "malik fouad waheed",
+      "malik fawad waheed",
+      "fawad",
+      "fouad",
+      "fawad@cintara.ai",
+      "fawad@revcloud.com",
+      "fouadwaheed@gmail.com",
+    ],
+  },
 ];
 
 const overrideByAlias = new Map<string, SpeakerEmailOverride>();
@@ -65,6 +82,7 @@ for (const row of SPEAKER_EMAIL_OVERRIDES) {
     overrideByAlias.set(normalizeAlias(alias), row);
   }
   overrideByAlias.set(normalizeAlias(row.canonicalName), row);
+  overrideByAlias.set(String(row.email || "").trim().toLowerCase(), row);
 }
 
 export function isSpeakerIdentityExcluded(entry: { name?: string; email?: string }): boolean {
