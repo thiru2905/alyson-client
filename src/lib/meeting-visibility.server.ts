@@ -111,8 +111,8 @@ function viewerInEmailSet(viewerEmail: string, emails: Set<string>): boolean {
 }
 
 /**
- * Filter meeting rows to those the viewer may see (invited or present).
- * Full-access admins receive the full list unchanged.
+ * Filter meeting rows to those the viewer may see.
+ * Currently all signed-in users have fullAccess (company-wide), so the list is unchanged.
  */
 export async function filterMeetingsForViewer<T extends MeetingVisibilityRow>(
   meetings: T[],

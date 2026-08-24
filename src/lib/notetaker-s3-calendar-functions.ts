@@ -21,7 +21,7 @@ const RangeInput = MeetingAuthInput.extend({
   end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-/** POST — auth required; non-admins only see invited/attended meetings. */
+/** POST — auth required; all signed-in users see the full meeting calendar. */
 export const listMeetingsFromS3Range = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => RangeInput.parse(data))
   .handler(async ({ data }) => {

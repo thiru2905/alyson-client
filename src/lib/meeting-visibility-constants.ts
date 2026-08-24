@@ -1,6 +1,7 @@
 /**
- * Full meeting-notes/transcript visibility (no per-meeting filter).
- * Everyone else only sees meetings they were invited to or present in.
+ * Meeting notes/transcript visibility.
+ * Per-meeting invite/attendance filtering is disabled — any signed-in user
+ * can view all meetings. Re-enable by restoring an allowlist check here.
  */
 export const MEETING_FULL_ACCESS_EMAILS = [
   "alysonclient@cintara.ai",
@@ -9,7 +10,7 @@ export const MEETING_FULL_ACCESS_EMAILS = [
   "thirumalai@cintara.ai",
 ] as const;
 
-export function isMeetingFullAccessEmail(email: string | null | undefined): boolean {
-  const e = String(email || "").trim().toLowerCase();
-  return (MEETING_FULL_ACCESS_EMAILS as readonly string[]).includes(e);
+/** Always true — all authenticated users get company-wide meeting access. */
+export function isMeetingFullAccessEmail(_email?: string | null): boolean {
+  return true;
 }
