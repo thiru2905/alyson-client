@@ -15,10 +15,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { BarChart3, CalendarDays, Captions, Clock, DollarSign, RefreshCw, Sparkles } from "lucide-react";
+import { BarChart3, CalendarDays, Captions, Clock, Download, DollarSign, RefreshCw, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { getRecallCostInsights, getRecallCostReport } from "@/lib/recall-cost-functions";
 import type { RecallCostReport } from "@/lib/recall-cost-report.server";
+import { downloadRecallCostReportPdf } from "@/lib/recall-cost-pdf";
 import {
   getCachedRecallCostReport,
   loadRecallCostSession,
@@ -67,6 +68,7 @@ function CostTrackingPage() {
 
   const [applied, setApplied] = useState(() => boot?.applied ?? defaultApplied());
   const [insightsMd, setInsightsMd] = useState<string | null>(() => boot?.insightsMd ?? null);
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   const q = useQuery({
     queryKey: ["recall-cost-report", applied.start, applied.end],
@@ -138,6 +140,32 @@ function CostTrackingPage() {
     }
   };
 
+  const downloadLast30DaysPdf = async () => {
+    setPdfLoading(true);
+    try {
+      const range = rangeForLastDays(30);
+      let report30: RecallCostReport | undefined =
+        applied.periodDays === 30 &&
+        applied.start === range.start &&
+        applied.end === range.end
+          ? report
+          : getCachedRecallCostReport(range.start, range.end);
+
+      if (!report30) {
+        const res = await getRecallCostReport({ data: { start: range.start, end: range.end } });
+        report30 = res.report;
+        queryClient.setQueryData(["recall-cost-report", range.start, range.end], { report: report30 });
+      }
+
+      downloadRecallCostReportPdf(report30);
+      toast.success(`PDF downloaded (${range.start} → ${range.end})`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to build PDF");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   return (
     <div className="ops-dense">
       <PageHeader
@@ -206,12 +234,22 @@ function CostTrackingPage() {
             ))}
             <button
               type="button"
+              onClick={() => void downloadLast30DaysPdf()}
+              disabled={pdfLoading || coldLoad}
+              title="Download a PDF report for the last 30 days"
+              className="ml-auto h-7 px-2.5 rounded-md border border-border text-[11px] inline-flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Download className={`h-3.5 w-3.5 ${pdfLoading ? "animate-pulse" : ""}`} />
+              {pdfLoading ? "Building PDF…" : "Download PDF (30d)"}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 void q.refetch();
                 toast.message("Refreshing cost data…");
               }}
               disabled={q.isFetching}
-              className="ml-auto h-7 px-2.5 rounded-md border border-border text-[11px] inline-flex items-center gap-1.5"
+              className="h-7 px-2.5 rounded-md border border-border text-[11px] inline-flex items-center gap-1.5"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
               Refresh
