@@ -385,8 +385,138 @@ function CostTrackingContent({
         )}
       </div>
 
+      <CostBreakdownTables report={report} />
+
       <CostBreakdownTable report={report} />
     </>
+  );
+}
+
+function pct(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+function CostBreakdownTables({ report }: { report: RecallCostReport }) {
+  const byUser = report.byUser ?? [];
+  const byMeeting = report.byMeeting ?? [];
+  const byUserMonth = report.byUserMonth ?? [];
+  const distinctUsers = byUser.filter((u) => u.email !== "unknown").length || byUser.length;
+  const avgCostPerUser =
+    distinctUsers > 0 ? report.costs.totalUsageCostUsd / distinctUsers : null;
+
+  return (
+    <div className="space-y-4">
+      <div className="surface-card p-4 overflow-x-auto space-y-3">
+        <div>
+          <div className="font-medium text-[13px]">All costs / users</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            Period Recall spend allocated by calendar owner who scheduled the bot.
+            {distinctUsers > 0 ? (
+              <>
+                {" "}
+                {distinctUsers} user{distinctUsers === 1 ? "" : "s"} · avg {usd(avgCostPerUser)} / user
+              </>
+            ) : null}
+          </div>
+        </div>
+        {byUser.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground">No user cost rows for this period.</div>
+        ) : (
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <th className="py-2 pr-3 font-medium">User</th>
+                <th className="py-2 pr-3 font-medium text-right">Meetings</th>
+                <th className="py-2 pr-3 font-medium text-right">With bot</th>
+                <th className="py-2 pr-3 font-medium text-right">Est. cost</th>
+                <th className="py-2 font-medium text-right">Share</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {byUser.map((row) => (
+                <tr key={row.email}>
+                  <td className="py-2 pr-3 font-medium">{row.email}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{row.meetings}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{row.withBot}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{usd(row.estimatedCostUsd)}</td>
+                  <td className="py-2 text-right tabular-nums text-muted-foreground">{pct(row.shareOfTotal)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="surface-card p-4 overflow-x-auto space-y-3">
+        <div>
+          <div className="font-medium text-[13px]">All cost / meetings</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            Estimated cost per S3 meeting (Recall spend split evenly across meetings with a bot id).
+            {byMeeting.length >= 150 ? " Showing top 150 by cost." : null}
+          </div>
+        </div>
+        {byMeeting.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground">No meeting cost rows for this period.</div>
+        ) : (
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <th className="py-2 pr-3 font-medium">Day</th>
+                <th className="py-2 pr-3 font-medium">Title</th>
+                <th className="py-2 pr-3 font-medium">User</th>
+                <th className="py-2 font-medium text-right">Est. cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {byMeeting.map((row) => (
+                <tr key={`${row.prefix}:${row.botId ?? ""}`}>
+                  <td className="py-2 pr-3 whitespace-nowrap tabular-nums text-muted-foreground">{row.day}</td>
+                  <td className="py-2 pr-3 max-w-[280px] truncate" title={row.title}>
+                    {row.title}
+                  </td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{row.userEmail}</td>
+                  <td className="py-2 text-right tabular-nums font-medium">{usd(row.estimatedCostUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="surface-card p-4 overflow-x-auto space-y-3">
+        <div>
+          <div className="font-medium text-[13px]">All cost / users per month</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">
+            Same period allocation rolled up by calendar month and user.
+          </div>
+        </div>
+        {byUserMonth.length === 0 ? (
+          <div className="text-[12px] text-muted-foreground">No monthly user cost rows for this period.</div>
+        ) : (
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <th className="py-2 pr-3 font-medium">Month</th>
+                <th className="py-2 pr-3 font-medium">User</th>
+                <th className="py-2 pr-3 font-medium text-right">Meetings</th>
+                <th className="py-2 font-medium text-right">Est. cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {byUserMonth.map((row) => (
+                <tr key={`${row.month}:${row.email}`}>
+                  <td className="py-2 pr-3 whitespace-nowrap tabular-nums">{row.month}</td>
+                  <td className="py-2 pr-3">{row.email}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{row.meetings}</td>
+                  <td className="py-2 text-right tabular-nums font-medium">{usd(row.estimatedCostUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
 
