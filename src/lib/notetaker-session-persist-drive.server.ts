@@ -296,7 +296,7 @@ export async function driveSessionPersistToS3(
         recallCallEndedAt,
       }).catch(() => {});
 
-      // Pipeline: idle ≥15m → notes (auto email disabled).
+      // Pipeline: meeting ended + idle >=15m → generate notes → SES auto-email.
       try {
         const { maybeAutoSendMeetingNotesEmail } = await import(
           "@/lib/notetaker-meeting-notes-auto-email.server"
@@ -314,18 +314,11 @@ export async function driveSessionPersistToS3(
     await maybeCheckpointTranscriptToS3(session, lines, {
       bypassThrottle: options?.bypassThrottle ?? true,
     });
-    // Live meetings: advance idle clock / generate notes once transcript stops changing.
+    // Live meetings: persist transcript + advance idle clock only.
+    // Notes + SES wait until the meeting has ended (see maybeAutoSendMeetingNotesEmail).
     await patchBotIndexCronStability(id, upstreamHash, {
       callEnded: false,
     }).catch(() => {});
-    try {
-      const { maybeAutoSendMeetingNotesEmail } = await import(
-        "@/lib/notetaker-meeting-notes-auto-email.server"
-      );
-      await maybeAutoSendMeetingNotesEmail(id);
-    } catch {
-      // ignore until idle
-    }
     return "unchanged";
   } catch {
     return "error";

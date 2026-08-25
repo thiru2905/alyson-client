@@ -172,13 +172,22 @@ function endedStatus(status?: string) {
  */
 export type TranscriptPersistAction = "written" | "unchanged" | "skipped_empty" | "disabled";
 
+function meetingEndedForNotes(index: Awaited<ReturnType<typeof loadBotIndexDoc>>): boolean {
+  if (!index) return false;
+  if (index.cronFinalized) return true;
+  if (index.recallCallEndedAt && Number.isFinite(Date.parse(String(index.recallCallEndedAt)))) return true;
+  if (index.cronFinalizedAt && Number.isFinite(Date.parse(String(index.cronFinalizedAt)))) return true;
+  return false;
+}
+
 async function maybeGenerateNotesAfterCheckpoint(
   session: NotetakerSession,
   lines: NotetakerTranscriptLine[],
   existingIndex: Awaited<ReturnType<typeof loadBotIndexDoc>>,
 ) {
-  if (!endedStatus(session.status)) return;
-  // Wait until live transcript has been unchanged for ≥15 min before generating notes.
+  // Never generate notes while the call is still live — even on a long silent stretch.
+  if (!endedStatus(session.status) || !meetingEndedForNotes(existingIndex)) return;
+  // After the meeting ends, wait until transcript idle >=15m so the full transcript is stable.
   if (
     !isTranscriptIdleStable({
       transcriptHash: existingIndex?.transcriptHash,
@@ -335,7 +344,7 @@ export async function autoPersistEndedMeetingToS3(args: {
         : null,
   });
 
-  // Pipeline: persist transcript always; generate notes only after 15m idle (or explicit force).
+  // Pipeline: persist transcript always; notes only after idle (caller must ensure meeting ended).
   const shouldGenerateNotes = Boolean(args.forceNotes || args.force) || (notesAbsent && idleForNotes);
 
   const notes = await resolveNotesForS3({

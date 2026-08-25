@@ -130,11 +130,26 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
 
   let indexByBotId = new Map<
     string,
-    { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string; recallCallEndedAt?: string }
+    {
+      cronFinalized?: boolean;
+      transcriptKey?: string;
+      transcriptHash?: string;
+      recallCallEndedAt?: string | null;
+    }
   >();
   try {
     const docs = await listAllBotIndexDocs();
-    indexByBotId = new Map(docs.map((doc) => [String(doc.botId || "").trim(), doc]));
+    indexByBotId = new Map(
+      docs.map((doc) => [
+        String(doc.botId || "").trim(),
+        {
+          cronFinalized: doc.cronFinalized,
+          transcriptKey: doc.transcriptKey,
+          transcriptHash: doc.transcriptHash,
+          recallCallEndedAt: doc.recallCallEndedAt,
+        },
+      ]),
+    );
   } catch (e) {
     warnings.push(`bot_index_prefetch: ${String(e)}`);
   }
@@ -158,7 +173,7 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
       });
       if (driveResult === "written") {
         written += 1;
-        // Notes after transcript idle ≥15m (auto email disabled — send from UI).
+        // Notes after meeting ended + transcript idle >=15m, then SES auto-email.
         try {
           const { maybeAutoSendMeetingNotesEmail } = await import(
             "@/lib/notetaker-meeting-notes-auto-email.server"
@@ -166,7 +181,7 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
           const notes = await maybeAutoSendMeetingNotesEmail(botId);
           if (notes.notesGenerated) notesWritten += 1;
         } catch {
-          // notes listener is best-effort
+          // notes/email listener is best-effort
         }
         const { maybeGenerateMeetingTasksWhenReady } = await import(
           "@/lib/notetaker-meeting-list-tasks.server"
@@ -175,7 +190,7 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
       } else if (driveResult === "unchanged" || driveResult === "skipped_complete") {
         skippedUnchanged += 1;
         if (driveResult === "skipped_complete") skippedFinalized += 1;
-        // Catch-up: once idle ≥15m, generate notes (if needed). Auto email off.
+        // Catch-up: ended + idle >=15m -> notes + SES auto-email.
         try {
           const { maybeAutoSendMeetingNotesEmail } = await import(
             "@/lib/notetaker-meeting-notes-auto-email.server"
