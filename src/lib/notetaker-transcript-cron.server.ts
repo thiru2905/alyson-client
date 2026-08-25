@@ -130,11 +130,26 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
 
   let indexByBotId = new Map<
     string,
-    { cronFinalized?: boolean; transcriptKey?: string; transcriptHash?: string; recallCallEndedAt?: string }
+    {
+      cronFinalized?: boolean;
+      transcriptKey?: string;
+      transcriptHash?: string;
+      recallCallEndedAt?: string | null;
+    }
   >();
   try {
     const docs = await listAllBotIndexDocs();
-    indexByBotId = new Map(docs.map((doc) => [String(doc.botId || "").trim(), doc]));
+    indexByBotId = new Map(
+      docs.map((doc) => [
+        String(doc.botId || "").trim(),
+        {
+          cronFinalized: doc.cronFinalized,
+          transcriptKey: doc.transcriptKey,
+          transcriptHash: doc.transcriptHash,
+          recallCallEndedAt: doc.recallCallEndedAt,
+        },
+      ]),
+    );
   } catch (e) {
     warnings.push(`bot_index_prefetch: ${String(e)}`);
   }
