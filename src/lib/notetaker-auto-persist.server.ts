@@ -3,6 +3,7 @@ import {
   composeTranscript,
   contentHash,
   isNotesEmailStaleFallback,
+  isNotesReadyUnsentCatchup,
   isTranscriptIdleStable,
   meetingEndMarkersPresent,
   persistMeetingToS3,
@@ -177,7 +178,7 @@ export type TranscriptPersistAction = "written" | "unchanged" | "skipped_empty" 
 function meetingEndedForNotes(index: Awaited<ReturnType<typeof loadBotIndexDoc>>): boolean {
   if (!index) return false;
   if (meetingEndMarkersPresent(index)) return true;
-  // Same 24h catch-up as auto-email — generate notes so SES has something to send.
+  if (isNotesReadyUnsentCatchup(index)) return true;
   if (isNotesEmailStaleFallback(index)) return true;
   return false;
 }

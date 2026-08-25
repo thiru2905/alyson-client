@@ -58,14 +58,14 @@ export function notesIdleStableMs(): number {
 }
 
 /**
- * Catch-up window: if notes email still has not been sent after this age, auto-send
- * even when end markers are missing (default 24h).
+ * Catch-up window when end markers are missing (default 1h).
+ * Past unsent meetings should not wait a full day.
  */
 export function notesEmailStaleFallbackMs(): number {
-  const n = Number(process.env.NOTETAKER_NOTES_EMAIL_STALE_FALLBACK_MS ?? String(24 * 60 * 60_000));
-  return Number.isFinite(n) && n >= 60 * 60_000
+  const n = Number(process.env.NOTETAKER_NOTES_EMAIL_STALE_FALLBACK_MS ?? String(60 * 60_000));
+  return Number.isFinite(n) && n >= 15 * 60_000
     ? Math.min(Math.floor(n), 7 * 24 * 60 * 60_000)
-    : 24 * 60 * 60_000;
+    : 60 * 60_000;
 }
 
 /** True when Recall/cron end markers are present on bot-index. */
@@ -138,9 +138,9 @@ export function meetingReferenceAgeMs(
 }
 
 /**
- * Unsent meetings become eligible when:
- * - transcript has been idle ≥24h, or
- * - meeting started ≥24h ago and transcript is already idle for the notes window
+ * Unsent meetings become eligible when end markers are missing if:
+ * - transcript has been idle ≥ catch-up window (default 1h), or
+ * - meeting started ≥ catch-up window ago and transcript is already idle for the notes window
  * so long live meetings are not treated as stale mid-call.
  */
 export function isNotesEmailStaleFallback(
@@ -169,6 +169,23 @@ export function isNotesEmailStaleFallback(
     return true;
   }
   return false;
+}
+
+/**
+ * Past meetings that already have notes: once transcript is idle, send now —
+ * do not wait for the catch-up window or end markers.
+ */
+export function isNotesReadyUnsentCatchup(
+  index: {
+    notesKey?: string | null;
+    transcriptHash?: string | null;
+    transcriptUnchangedSince?: string | null;
+    notesEmailSentAt?: string | null;
+  } | null | undefined,
+  options?: { nowMs?: number },
+): boolean {
+  if (!index?.notesKey || index.notesEmailSentAt) return false;
+  return isTranscriptIdleStable(index, { nowMs: options?.nowMs });
 }
 
 /** Consecutive 5-min cron runs with identical hash after Recall call_ended. */

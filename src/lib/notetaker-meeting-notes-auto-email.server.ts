@@ -9,6 +9,7 @@ import { sendMeetingNotesEmail } from "@/lib/meeting-notes-email.server";
 import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import {
   isNotesEmailStaleFallback,
+  isNotesReadyUnsentCatchup,
   isTranscriptIdleStable,
   meetingEndMarkersPresent,
   notesIdleStableMs,
@@ -62,8 +63,9 @@ function notesAutoEmailEnabled(): boolean {
 }
 
 /**
- * Notes + auto-email prefer explicit end markers. Stale unsent meetings (≥24h)
- * are also eligible so nothing is stuck forever when markers were never written.
+ * Prefer end markers. Otherwise:
+ * - notes already on S3 + idle → send now (past stuck meetings)
+ * - catch-up window (default 1h) → generate notes + send
  */
 function meetingEligibleForNotesEmail(index: {
   recallCallEndedAt?: string | null;
@@ -73,9 +75,13 @@ function meetingEligibleForNotesEmail(index: {
   meetingStartedAt?: string | null;
   prefix?: string | null;
   title?: string | null;
+  notesKey?: string | null;
+  notesEmailSentAt?: string | null;
+  transcriptHash?: string | null;
   transcriptUnchangedSince?: string | null;
-}): { eligible: boolean; via: "ended_markers" | "stale_fallback" | null } {
+}): { eligible: boolean; via: "ended_markers" | "notes_ready_catchup" | "stale_fallback" | null } {
   if (meetingEndMarkersPresent(index)) return { eligible: true, via: "ended_markers" };
+  if (isNotesReadyUnsentCatchup(index)) return { eligible: true, via: "notes_ready_catchup" };
   if (isNotesEmailStaleFallback(index)) return { eligible: true, via: "stale_fallback" };
   return { eligible: false, via: null };
 }
@@ -357,7 +363,7 @@ function idleAgeMs(index: { transcriptUnchangedSince?: string | null }): number 
 
 /**
  * Pipeline (post-meeting only):
- * 1) Meeting ended (end markers) OR stale unsent fallback (≥24h)
+ * 1) Meeting ended (end markers) OR notes-ready catch-up OR stale unsent (≥1h)
  * 2) Transcript hash unchanged for >=15 min (skipped for stale fallback)
  * 3) Generate notes from the full transcript (if missing)
  * 4) Claim S3 email lock, then SES (idempotent -- never double-send)
@@ -391,9 +397,10 @@ export async function maybeAutoSendMeetingNotesEmail(
   }
 
   const eligibility = meetingEligibleForNotesEmail(index);
-  const staleFallback = eligibility.via === "stale_fallback";
+  const catchupBypassIdle =
+    eligibility.via === "stale_fallback" || eligibility.via === "notes_ready_catchup";
   // Never generate/send from a still-live meeting (partial transcript risk),
-  // unless the 24h stale fallback says this meeting was abandoned without markers.
+  // unless catch-up says this meeting already has notes / is past the short window.
   if (!options?.force && !options?.bypassMeetingEndedGate && !eligibility.eligible) {
     return {
       botId: id,
@@ -409,7 +416,7 @@ export async function maybeAutoSendMeetingNotesEmail(
   if (
     !options?.bypassIdleGate &&
     !options?.force &&
-    !staleFallback &&
+    !catchupBypassIdle &&
     !isTranscriptIdleStable(index)
   ) {
     return {
