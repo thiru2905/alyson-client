@@ -548,7 +548,7 @@ export async function maybeAutoSendMeetingNotesEmail(
 const MAX_AUTO_EMAILS_PER_SWEEP = 20;
 
 /**
- * Cron sweep: ended+idle meetings, plus ≥24h unsent fallback rows.
+ * Cron sweep: ended+idle meetings, notes-ready catch-up, and short unsent fallback.
  */
 export async function sweepAutoSendMeetingNotesEmails(): Promise<AutoMeetingNotesEmailSweepResult> {
   const docs = await listAllBotIndexDocs();
@@ -560,16 +560,21 @@ export async function sweepAutoSendMeetingNotesEmails(): Promise<AutoMeetingNote
     if (!d.transcriptKey || !d.transcriptHash) return false;
     const eligibility = meetingEligibleForNotesEmail(d);
     if (!eligibility.eligible) return false;
-    if (eligibility.via === "stale_fallback") return true;
+    if (eligibility.via === "stale_fallback" || eligibility.via === "notes_ready_catchup") return true;
     return isTranscriptIdleStable(d) || Boolean(d.transcriptUnchangedSince);
   });
 
-  // Prefer stale catch-up first so today's stuck meetings still get a slot,
-  // then recently ended idle meetings.
+  // Prefer notes-ready + stale catch-up first so stuck past meetings clear quickly.
   candidates.sort((a, b) => {
-    const aStale = isNotesEmailStaleFallback(a) ? 0 : 1;
-    const bStale = isNotesEmailStaleFallback(b) ? 0 : 1;
-    if (aStale !== bStale) return aStale - bStale;
+    const rank = (d: typeof a) => {
+      const via = meetingEligibleForNotesEmail(d).via;
+      if (via === "notes_ready_catchup") return 0;
+      if (via === "stale_fallback") return 1;
+      return 2;
+    };
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
     const aIdle = Date.parse(String(a.transcriptUnchangedSince || "")) || 0;
     const bIdle = Date.parse(String(b.transcriptUnchangedSince || "")) || 0;
     return aIdle - bIdle;
