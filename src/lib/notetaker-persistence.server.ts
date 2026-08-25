@@ -57,6 +57,120 @@ export function notesIdleStableMs(): number {
   return Number.isFinite(n) && n >= 60_000 ? Math.min(Math.floor(n), 60 * 60_000) : 15 * 60_000;
 }
 
+/**
+ * Catch-up window: if notes email still has not been sent after this age, auto-send
+ * even when end markers are missing (default 24h).
+ */
+export function notesEmailStaleFallbackMs(): number {
+  const n = Number(process.env.NOTETAKER_NOTES_EMAIL_STALE_FALLBACK_MS ?? String(24 * 60 * 60_000));
+  return Number.isFinite(n) && n >= 60 * 60_000
+    ? Math.min(Math.floor(n), 7 * 24 * 60 * 60_000)
+    : 24 * 60 * 60_000;
+}
+
+/** True when Recall/cron end markers are present on bot-index. */
+export function meetingEndMarkersPresent(index: {
+  recallCallEndedAt?: string | null;
+  cronFinalized?: boolean;
+  cronFinalizedAt?: string | null;
+} | null | undefined): boolean {
+  if (!index) return false;
+  if (index.cronFinalized) return true;
+  if (index.recallCallEndedAt && Number.isFinite(Date.parse(String(index.recallCallEndedAt)))) return true;
+  if (index.cronFinalizedAt && Number.isFinite(Date.parse(String(index.cronFinalizedAt)))) return true;
+  return false;
+}
+
+/** Best-effort meeting *start* age (ignores idle/finalized clocks). */
+export function meetingStartAgeMs(
+  index: {
+    meetingStartedAt?: string | null;
+    prefix?: string | null;
+    title?: string | null;
+  } | null | undefined,
+  options?: { nowMs?: number },
+): number | null {
+  if (!index) return null;
+  const now = options?.nowMs ?? Date.now();
+  const candidates: number[] = [];
+
+  const started = Date.parse(String(index.meetingStartedAt || ""));
+  if (Number.isFinite(started)) candidates.push(started);
+
+  const prefix = String(index.prefix || "");
+  if (prefix) {
+    const parts = prefix.split("_");
+    const time = parts.pop() || "";
+    const date = parts.pop() || "";
+    const iso = `${date}T${time.replaceAll("-", ":")}Z`;
+    const fromPrefix = Date.parse(iso);
+    if (Number.isFinite(fromPrefix)) candidates.push(fromPrefix);
+  }
+
+  const titleDate = String(index.title || "").match(/^(\d{8})\b/);
+  if (titleDate) {
+    const raw = titleDate[1];
+    const dd = Number(raw.slice(0, 2));
+    const mm = Number(raw.slice(2, 4));
+    const yyyy = Number(raw.slice(4, 8));
+    if (yyyy >= 2020 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      const t = Date.UTC(yyyy, mm - 1, dd, 0, 0, 0);
+      if (Number.isFinite(t)) candidates.push(t);
+    }
+  }
+
+  if (!candidates.length) return null;
+  return Math.max(0, now - Math.min(...candidates));
+}
+
+/** @deprecated Use meetingStartAgeMs — kept for call sites expecting combined age. */
+export function meetingReferenceAgeMs(
+  index: {
+    meetingStartedAt?: string | null;
+    prefix?: string | null;
+    title?: string | null;
+    finalizedAt?: string | null;
+    transcriptUnchangedSince?: string | null;
+  } | null | undefined,
+  options?: { nowMs?: number },
+): number | null {
+  return meetingStartAgeMs(index, options);
+}
+
+/**
+ * Unsent meetings become eligible when:
+ * - transcript has been idle ≥24h, or
+ * - meeting started ≥24h ago and transcript is already idle for the notes window
+ * so long live meetings are not treated as stale mid-call.
+ */
+export function isNotesEmailStaleFallback(
+  index: {
+    meetingStartedAt?: string | null;
+    prefix?: string | null;
+    title?: string | null;
+    finalizedAt?: string | null;
+    transcriptHash?: string | null;
+    transcriptUnchangedSince?: string | null;
+  } | null | undefined,
+  options?: { nowMs?: number; minMs?: number },
+): boolean {
+  if (!index) return false;
+  const now = options?.nowMs ?? Date.now();
+  const minMs = options?.minMs ?? notesEmailStaleFallbackMs();
+
+  const idleSince = Date.parse(String(index.transcriptUnchangedSince || ""));
+  if (Number.isFinite(idleSince)) {
+    const idleAge = Math.max(0, now - idleSince);
+    if (idleAge >= minMs) return true;
+  }
+
+  const startAge = meetingStartAgeMs(index, { nowMs: now });
+  if (startAge != null && startAge >= minMs && isTranscriptIdleStable(index, { nowMs: now })) {
+    return true;
+  }
+  return false;
+}
+
 /** Consecutive 5-min cron runs with identical hash after Recall call_ended. */
 export function cronStablePassesRequired(): number {
   const n = Number(process.env.NOTETAKER_CRON_STABLE_PASSES_REQUIRED ?? "2");

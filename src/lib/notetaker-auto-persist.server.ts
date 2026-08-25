@@ -2,7 +2,9 @@ import type { NotetakerSession, NotetakerTranscriptLine } from "@/lib/alyson-not
 import {
   composeTranscript,
   contentHash,
+  isNotesEmailStaleFallback,
   isTranscriptIdleStable,
+  meetingEndMarkersPresent,
   persistMeetingToS3,
 } from "@/lib/notetaker-persistence.server";
 import { withResolvedMeetingTitle } from "@/lib/notetaker-session-title.server";
@@ -174,9 +176,9 @@ export type TranscriptPersistAction = "written" | "unchanged" | "skipped_empty" 
 
 function meetingEndedForNotes(index: Awaited<ReturnType<typeof loadBotIndexDoc>>): boolean {
   if (!index) return false;
-  if (index.cronFinalized) return true;
-  if (index.recallCallEndedAt && Number.isFinite(Date.parse(String(index.recallCallEndedAt)))) return true;
-  if (index.cronFinalizedAt && Number.isFinite(Date.parse(String(index.cronFinalizedAt)))) return true;
+  if (meetingEndMarkersPresent(index)) return true;
+  // Same 24h catch-up as auto-email — generate notes so SES has something to send.
+  if (isNotesEmailStaleFallback(index)) return true;
   return false;
 }
 

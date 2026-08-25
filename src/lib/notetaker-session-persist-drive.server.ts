@@ -8,7 +8,12 @@ import {
   ensureMeetingNotesInS3,
   maybeCheckpointTranscriptToS3,
 } from "@/lib/notetaker-auto-persist.server";
-import { composeTranscript, contentHash, patchBotIndexCronStability } from "@/lib/notetaker-persistence.server";
+import {
+  composeTranscript,
+  contentHash,
+  isTranscriptIdleStable,
+  patchBotIndexCronStability,
+} from "@/lib/notetaker-persistence.server";
 import {
   fetchRecallBotLifecycle,
   type RecallBotLifecycle,
@@ -119,39 +124,63 @@ export async function inferMeetingEnded(
   options?: InferMeetingEndedOptions,
 ): Promise<{ ended: boolean; recallCallEndedAt: string | null }> {
   const st = String(session.status || "").toLowerCase();
+  const id = String(botId || session.botId || "").trim();
+  const index = id
+    ? options?.botIndex !== undefined
+      ? options.botIndex
+      : await loadBotIndexDoc(id)
+    : null;
+  // Upstream often leaves status stuck on in_call after hangup. Once the transcript
+  // has been idle for the notes window, do not trust that short-circuit — check Recall.
+  const transcriptIdle = isTranscriptIdleStable(index);
+
   if (statusLooksEnded(st)) {
-    return { ended: true, recallCallEndedAt: null };
+    return {
+      ended: true,
+      recallCallEndedAt: index?.recallCallEndedAt ?? index?.cronFinalizedAt ?? null,
+    };
   }
-  if (statusLooksInCall(st)) {
+  if (statusLooksInCall(st) && !transcriptIdle) {
     return { ended: false, recallCallEndedAt: null };
   }
 
-  const id = String(botId || session.botId || "").trim();
-  if (id) {
-    const index = options?.botIndex !== undefined ? options.botIndex : await loadBotIndexDoc(id);
-    if (index?.recallCallEndedAt || index?.cronFinalized) {
-      return {
-        ended: true,
-        recallCallEndedAt: index.recallCallEndedAt ?? index.cronFinalizedAt ?? null,
-      };
-    }
+  if (index?.recallCallEndedAt || index?.cronFinalized) {
+    return {
+      ended: true,
+      recallCallEndedAt: index.recallCallEndedAt ?? index.cronFinalizedAt ?? null,
+    };
   }
 
-  const createdAt = Date.parse(String(session.createdAt || ""));
+  const createdAt = Date.parse(String(session.createdAt || index?.meetingStartedAt || ""));
   if (Number.isFinite(createdAt) && Date.now() - createdAt > 6 * 60 * 60_000 && lines.length > 0) {
     return { ended: true, recallCallEndedAt: null };
+  }
+
+  // Idle transcript + no fresh speech: treat as ended when we cannot (or should not) hit Recall.
+  if (transcriptIdle && lines.length > 0 && options?.allowRecallFetch === false) {
+    return { ended: true, recallCallEndedAt: index?.recallCallEndedAt ?? null };
   }
 
   if (options?.allowRecallFetch === false || !id) {
     return { ended: false, recallCallEndedAt: null };
   }
-  if (!shouldFetchRecallForSession(id)) {
+  // When transcript is idle, always allow a Recall check (throttle still applies unless idle).
+  if (!transcriptIdle && !shouldFetchRecallForSession(id)) {
     return { ended: false, recallCallEndedAt: null };
+  }
+  if (transcriptIdle) {
+    sessionRecallCheckAt.set(id, Date.now());
   }
 
   const lifecycle = options?.lifecycle ?? (await fetchRecallBotLifecycle(id));
   if (recallCallEnded(lifecycle)) {
     return { ended: true, recallCallEndedAt: lifecycle.callEndedAt || lifecycle.doneAt };
+  }
+
+  // Stale in_call + idle transcript + Recall not ended yet: still treat as ended so
+  // cronFinalized / notes+email can proceed (partial-transcript risk is low after 15m idle).
+  if (transcriptIdle && lines.length > 0) {
+    return { ended: true, recallCallEndedAt: null };
   }
 
   return { ended: false, recallCallEndedAt: null };

@@ -8,7 +8,9 @@ import {
 import { sendMeetingNotesEmail } from "@/lib/meeting-notes-email.server";
 import { ensureMeetingNotesInS3 } from "@/lib/notetaker-auto-persist.server";
 import {
+  isNotesEmailStaleFallback,
   isTranscriptIdleStable,
+  meetingEndMarkersPresent,
   notesIdleStableMs,
   nextTranscriptIdleFields,
 } from "@/lib/notetaker-persistence.server";
@@ -60,20 +62,22 @@ function notesAutoEmailEnabled(): boolean {
 }
 
 /**
- * Notes + auto-email must wait until the meeting is finished — never mid-call
- * on a silent stretch of live transcript.
+ * Notes + auto-email prefer explicit end markers. Stale unsent meetings (≥24h)
+ * are also eligible so nothing is stuck forever when markers were never written.
  */
-function meetingHasEnded(index: {
+function meetingEligibleForNotesEmail(index: {
   recallCallEndedAt?: string | null;
   cronFinalized?: boolean;
   cronFinalizedAt?: string | null;
   finalizedAt?: string | null;
-}): boolean {
-  if (index.cronFinalized) return true;
-  if (index.recallCallEndedAt && Number.isFinite(Date.parse(String(index.recallCallEndedAt)))) return true;
-  if (index.cronFinalizedAt && Number.isFinite(Date.parse(String(index.cronFinalizedAt)))) return true;
-  // Do NOT treat finalizedAt alone as "ended" — live transcript checkpoints also set it.
-  return false;
+  meetingStartedAt?: string | null;
+  prefix?: string | null;
+  title?: string | null;
+  transcriptUnchangedSince?: string | null;
+}): { eligible: boolean; via: "ended_markers" | "stale_fallback" | null } {
+  if (meetingEndMarkersPresent(index)) return { eligible: true, via: "ended_markers" };
+  if (isNotesEmailStaleFallback(index)) return { eligible: true, via: "stale_fallback" };
+  return { eligible: false, via: null };
 }
 
 function requireEnv(name: string) {
@@ -353,8 +357,8 @@ function idleAgeMs(index: { transcriptUnchangedSince?: string | null }): number 
 
 /**
  * Pipeline (post-meeting only):
- * 1) Meeting ended (recallCallEndedAt / cronFinalized)
- * 2) Transcript hash unchanged for >=15 min (NOTETAKER_NOTES_IDLE_STABLE_MS)
+ * 1) Meeting ended (end markers) OR stale unsent fallback (≥24h)
+ * 2) Transcript hash unchanged for >=15 min (skipped for stale fallback)
  * 3) Generate notes from the full transcript (if missing)
  * 4) Claim S3 email lock, then SES (idempotent -- never double-send)
  */
@@ -386,8 +390,11 @@ export async function maybeAutoSendMeetingNotesEmail(
     return { botId: id, attempted: false, sent: false, skipped: "no_transcript", requiredIdleMs };
   }
 
-  // Never generate/send from a still-live meeting (partial transcript risk).
-  if (!options?.force && !options?.bypassMeetingEndedGate && !meetingHasEnded(index)) {
+  const eligibility = meetingEligibleForNotesEmail(index);
+  const staleFallback = eligibility.via === "stale_fallback";
+  // Never generate/send from a still-live meeting (partial transcript risk),
+  // unless the 24h stale fallback says this meeting was abandoned without markers.
+  if (!options?.force && !options?.bypassMeetingEndedGate && !eligibility.eligible) {
     return {
       botId: id,
       attempted: false,
@@ -399,7 +406,12 @@ export async function maybeAutoSendMeetingNotesEmail(
 
   index = await ensureTranscriptIdleMarker(id, index);
   const idleMs = idleAgeMs(index);
-  if (!options?.bypassIdleGate && !options?.force && !isTranscriptIdleStable(index)) {
+  if (
+    !options?.bypassIdleGate &&
+    !options?.force &&
+    !staleFallback &&
+    !isTranscriptIdleStable(index)
+  ) {
     return {
       botId: id,
       attempted: false,
@@ -526,10 +538,10 @@ export async function maybeAutoSendMeetingNotesEmail(
   }
 }
 
-const MAX_AUTO_EMAILS_PER_SWEEP = 12;
+const MAX_AUTO_EMAILS_PER_SWEEP = 20;
 
 /**
- * Cron sweep: ended meetings with idle transcript that still lack notesEmailSentAt.
+ * Cron sweep: ended+idle meetings, plus ≥24h unsent fallback rows.
  */
 export async function sweepAutoSendMeetingNotesEmails(): Promise<AutoMeetingNotesEmailSweepResult> {
   const docs = await listAllBotIndexDocs();
@@ -539,9 +551,21 @@ export async function sweepAutoSendMeetingNotesEmails(): Promise<AutoMeetingNote
     if (d.notesEmailSentAt) return false;
     if (d.supersededByBotId) return false;
     if (!d.transcriptKey || !d.transcriptHash) return false;
-    // Only post-meeting rows — never live calls.
-    if (!meetingHasEnded(d)) return false;
+    const eligibility = meetingEligibleForNotesEmail(d);
+    if (!eligibility.eligible) return false;
+    if (eligibility.via === "stale_fallback") return true;
     return isTranscriptIdleStable(d) || Boolean(d.transcriptUnchangedSince);
+  });
+
+  // Prefer stale catch-up first so today's stuck meetings still get a slot,
+  // then recently ended idle meetings.
+  candidates.sort((a, b) => {
+    const aStale = isNotesEmailStaleFallback(a) ? 0 : 1;
+    const bStale = isNotesEmailStaleFallback(b) ? 0 : 1;
+    if (aStale !== bStale) return aStale - bStale;
+    const aIdle = Date.parse(String(a.transcriptUnchangedSince || "")) || 0;
+    const bIdle = Date.parse(String(b.transcriptUnchangedSince || "")) || 0;
+    return aIdle - bIdle;
   });
 
   const result: AutoMeetingNotesEmailSweepResult = {
