@@ -2,11 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/notetaker-transcripts",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/scheduled-bot-activation",
-      "schedule": "*/2 * * * *"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/cron/daily-reports",
