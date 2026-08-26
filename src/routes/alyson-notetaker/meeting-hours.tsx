@@ -801,7 +801,7 @@ function MeetingHoursPage() {
               className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5"
             >
               <DollarSign className="h-3.5 w-3.5" />
-              Cost tracking
+              Meeting cost
             </Link>
             <Link
               to="/alyson-notetaker"

@@ -18,7 +18,7 @@ function pct(n: number | null | undefined) {
 }
 
 export function recallCostReportFilename(report: RecallCostReport) {
-  return `alyson-recall-cost_${report.range.start}_${report.range.end}.pdf`;
+  return `alyson-meeting-cost_${report.range.start}_${report.range.end}.pdf`;
 }
 
 export function downloadRecallCostReportPdf(report: RecallCostReport) {
@@ -35,7 +35,7 @@ export function downloadRecallCostReportPdf(report: RecallCostReport) {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("Alyson Recall Cost Report", margin, y);
+  doc.text("Alyson Meeting Cost Report", margin, y);
   y += 22;
 
   doc.setFont("helvetica", "normal");

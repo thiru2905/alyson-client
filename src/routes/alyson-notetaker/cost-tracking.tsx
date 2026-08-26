@@ -28,7 +28,7 @@ import {
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 
 export const Route = createFileRoute("/alyson-notetaker/cost-tracking")({
-  head: () => ({ meta: [{ title: "Recall Cost Tracking — Alyson Notetaker" }] }),
+  head: () => ({ meta: [{ title: "Meeting Cost — Alyson Notetaker" }] }),
   component: CostTrackingPage,
 });
 
@@ -170,7 +170,7 @@ function CostTrackingPage() {
     <div className="ops-dense">
       <PageHeader
         eyebrow="Operations"
-        title="Recall cost tracking"
+        title="Meeting cost"
         description="Bot ($0.50/hr) + Recall transcription ($0.15/hr) from billing API, with meeting counts from S3."
         dense
         actions={
