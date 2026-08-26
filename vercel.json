@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/notetaker-transcripts",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/scheduled-bot-activation",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-reports",
+      "schedule": "30 0 * * *"
+    }
+  ]
+}
