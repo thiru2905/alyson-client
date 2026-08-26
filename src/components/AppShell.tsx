@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, DollarSign, TrendingUp, Gift, PieChart, Calendar,
   Clock, FileText, GitBranch, BarChart3, Shield, HelpCircle,
@@ -18,6 +19,9 @@ import { streamAlyson, type ChatMsg } from "@/lib/ai-client";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { useSuperAccessNavVisible } from "@/lib/super-access-rbac-hooks";
 import { useTimeDashboardNavVisible } from "@/lib/time-dashboard-access-hooks";
+import { prefetchNotetakerHeavyReport } from "@/lib/heavy-report-query-cache";
+import { getBotJoinReport } from "@/lib/notetaker-bot-join-functions";
+import { getRecallCostReport } from "@/lib/recall-cost-functions";
 import { toast } from "sonner";
 
 declare const __BUILD_SHA__: string;
@@ -184,10 +188,21 @@ function clampNavScrollTop(nav: HTMLElement, scrollTop: number) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { hasAnyRole, primaryRole, demoRole, setDemoRole, signOut, user, tryUnlockSuperAdmin, superAdminUnlocked } = useAuth();
   const superAccessNavVisible = useSuperAccessNavVisible();
   const timeDashboardNavVisible = useTimeDashboardNavVisible();
   const { theme, toggle, palette, setPalette } = useTheme();
+
+  const prefetchHeavyChild = useCallback(
+    (path: string) => {
+      prefetchNotetakerHeavyReport(queryClient, path, {
+        botJoin: (args) => getBotJoinReport({ data: args }),
+        recallCost: (args) => getRecallCostReport({ data: args }),
+      });
+    },
+    [queryClient],
+  );
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_WIDTH_DEFAULT);
   const [resizingSidebar, setResizingSidebar] = useState(false);
@@ -632,11 +647,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                                       child,
                                     );
                                     const ChildIcon = child.icon;
+                                    const prefetchHeavy =
+                                      child.to === "/alyson-notetaker/bot-join-report" ||
+                                      child.to === "/alyson-notetaker/cost-tracking";
                                     return (
                                       <Link
                                         key={child.to}
                                         to={child.to as "/"}
                                         title={iconOnly ? child.label : undefined}
+                                        onMouseEnter={
+                                          prefetchHeavy
+                                            ? () => prefetchHeavyChild(child.to)
+                                            : undefined
+                                        }
+                                        onFocus={
+                                          prefetchHeavy
+                                            ? () => prefetchHeavyChild(child.to)
+                                            : undefined
+                                        }
                                         className={
                                           "flex items-center gap-2.5 rounded-md text-[12.5px] transition-colors " +
                                           (iconOnly

@@ -33,13 +33,16 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 import {
-  clearBotJoinReportSession,
   getCachedBotJoinReport,
   loadBotJoinReportSession,
   saveBotJoinReportSession,
 } from "@/lib/bot-join-report-session";
 import { getBotJoinReport } from "@/lib/notetaker-bot-join-functions";
 import { downloadBotJoinReportPdf } from "@/lib/notetaker-bot-join-report-pdf";
+import {
+  botJoinReportQueryKey,
+  heavyReportQueryOptions,
+} from "@/lib/heavy-report-query-cache";
 import {
   DEFAULT_BOT_JOIN_REPORT_EMAIL,
   BOT_JOIN_REPORT_24H_WINDOW_HOURS,
@@ -153,7 +156,12 @@ function BotJoinReportPage() {
   const [applied, setApplied] = useState(() => boot?.applied ?? defaultApplied());
 
   const q = useQuery({
-    queryKey: ["bot-join-report", applied.start, applied.end, calendarEmail, applied.windowHours ?? null],
+    queryKey: botJoinReportQueryKey({
+      start: applied.start,
+      end: applied.end,
+      calendarEmail,
+      windowHours: applied.windowHours,
+    }),
     queryFn: () =>
       getBotJoinReport({
         data: {
@@ -164,10 +172,8 @@ function BotJoinReportPage() {
           windowHours: applied.windowHours,
         },
       }),
-    staleTime: applied.windowHours ? 5 * 60_000 : 30 * 60_000,
-    gcTime: 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    ...heavyReportQueryOptions,
+    staleTime: applied.windowHours ? 5 * 60_000 : heavyReportQueryOptions.staleTime,
     placeholderData: keepPreviousData,
     initialData: () => {
       const cached = getCachedBotJoinReport(
@@ -190,12 +196,7 @@ function BotJoinReportPage() {
     saveBotJoinReportSession({ applied, calendarEmail, report });
   }, [report, applied, calendarEmail]);
 
-  useEffect(() => {
-    return () => {
-      clearBotJoinReportSession();
-      queryClient.removeQueries({ queryKey: ["bot-join-report"] });
-    };
-  }, [queryClient]);
+  // Keep session + RQ cache when switching to Meeting Cost / other modules so return visits are instant.
 
   const applyPeriod = (days: PeriodDays) => {
     const range = rangeForLastDays(days);
@@ -203,7 +204,12 @@ function BotJoinReportPage() {
     const cached = getCachedBotJoinReport(calendarEmail, next.start, next.end);
     if (cached) {
       queryClient.setQueryData(
-        ["bot-join-report", next.start, next.end, calendarEmail, null],
+        botJoinReportQueryKey({
+          start: next.start,
+          end: next.end,
+          calendarEmail,
+          windowHours: undefined,
+        }),
         { report: cached },
       );
       saveBotJoinReportSession({ applied: next, calendarEmail, report: cached });
@@ -221,7 +227,12 @@ function BotJoinReportPage() {
     );
     if (cached) {
       queryClient.setQueryData(
-        ["bot-join-report", next.start, next.end, calendarEmail, next.windowHours ?? null],
+        botJoinReportQueryKey({
+          start: next.start,
+          end: next.end,
+          calendarEmail,
+          windowHours: next.windowHours,
+        }),
         { report: cached },
       );
       saveBotJoinReportSession({ applied: next, calendarEmail, report: cached });

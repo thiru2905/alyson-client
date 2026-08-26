@@ -280,18 +280,41 @@ async function fetchUsageSeconds(
   }
 }
 
+const reportCache = new Map<string, { at: number; report: RecallCostReport }>();
+const REPORT_CACHE_TTL_MS = 10 * 60_000;
+
+function costReportCacheKey(start: string, end: string) {
+  return `${start}:${end}`;
+}
+
 export async function buildRecallCostReport(args: {
   start: string;
   end: string;
 }): Promise<RecallCostReport> {
+  const cacheKey = costReportCacheKey(args.start, args.end);
+  const hit = reportCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < REPORT_CACHE_TTL_MS) {
+    return hit.report;
+  }
+
   const recallConfigured = Boolean(process.env.RECALL_API_KEY?.trim());
   const botHourRateUsd = recallBotHourRateUsd();
   const transcriptHourRateUsd = recallTranscriptHourRateUsd();
+  const month = calendarMonthRange();
+  const periodKey = `${args.start}:${args.end}`;
+  const monthKey = `${month.start}:${month.end}`;
+  const needSeparateMonth = periodKey !== monthKey;
 
-  const [botIndexDocs, s3Meetings, emailByBotId] = await Promise.all([
+  const [botIndexDocs, s3Meetings, emailByBotId, periodUsage, monthUsage] = await Promise.all([
     listAllBotIndexDocs(),
     listMeetingsFromS3({ start: args.start, end: args.end }),
     loadBotCalendarEmailById(),
+    recallConfigured
+      ? fetchUsageSeconds(args.start, args.end)
+      : Promise.resolve({ seconds: 0, error: null as string | null }),
+    recallConfigured && needSeparateMonth
+      ? fetchUsageSeconds(month.start, month.end)
+      : Promise.resolve({ seconds: 0, error: null as string | null }),
   ]);
 
   const meetingsInRange = s3Meetings.filter((m) => m.day >= args.start && m.day <= args.end);
@@ -300,27 +323,20 @@ export async function buildRecallCostReport(args: {
     return day && day >= args.start && day <= args.end;
   });
 
-  const month = calendarMonthRange();
-  const periodKey = `${args.start}:${args.end}`;
-  const monthKey = `${month.start}:${month.end}`;
-
   let botTotalSeconds = 0;
   let monthBotSeconds = 0;
   let billingFetchError: string | null = null;
   const warnings: string[] = [];
 
   if (recallConfigured) {
-    // At most 2 Recall billing API calls per report (period + month if different range).
-    const periodUsage = await fetchUsageSeconds(args.start, args.end);
     botTotalSeconds = periodUsage.seconds;
     if (periodUsage.error) {
       billingFetchError = periodUsage.error;
       warnings.push(`Recall billing API (period): ${periodUsage.error}`);
     }
-    if (periodKey === monthKey) {
+    if (!needSeparateMonth) {
       monthBotSeconds = botTotalSeconds;
     } else {
-      const monthUsage = await fetchUsageSeconds(month.start, month.end);
       monthBotSeconds = monthUsage.seconds;
       if (monthUsage.error) {
         warnings.push(`Recall billing API (calendar month): ${monthUsage.error}`);
@@ -387,7 +403,7 @@ export async function buildRecallCostReport(args: {
     emailByBotId,
   });
 
-  return {
+  const report: RecallCostReport = {
     range: { start: args.start, end: args.end },
     generatedAt: new Date().toISOString(),
     recallConfigured,
@@ -438,4 +454,7 @@ export async function buildRecallCostReport(args: {
     byUserMonth,
     warnings,
   };
+
+  reportCache.set(cacheKey, { at: Date.now(), report });
+  return report;
 }

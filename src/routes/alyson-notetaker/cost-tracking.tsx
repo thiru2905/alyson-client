@@ -21,6 +21,10 @@ import { getRecallCostInsights, getRecallCostReport } from "@/lib/recall-cost-fu
 import type { RecallCostReport } from "@/lib/recall-cost-report.server";
 import { downloadRecallCostReportPdf } from "@/lib/recall-cost-pdf";
 import {
+  heavyReportQueryOptions,
+  recallCostReportQueryKey,
+} from "@/lib/heavy-report-query-cache";
+import {
   getCachedRecallCostReport,
   loadRecallCostSession,
   saveRecallCostSession,
@@ -71,12 +75,9 @@ function CostTrackingPage() {
   const [pdfLoading, setPdfLoading] = useState(false);
 
   const q = useQuery({
-    queryKey: ["recall-cost-report", applied.start, applied.end],
+    queryKey: recallCostReportQueryKey({ start: applied.start, end: applied.end }),
     queryFn: () => getRecallCostReport({ data: { start: applied.start, end: applied.end } }),
-    staleTime: 60 * 60_000,
-    gcTime: 4 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    ...heavyReportQueryOptions,
     placeholderData: (prev) => {
       const cached = getCachedRecallCostReport(applied.start, applied.end);
       if (cached) return { report: cached };
@@ -84,7 +85,8 @@ function CostTrackingPage() {
     },
     initialData: () => {
       const cached = getCachedRecallCostReport(applied.start, applied.end);
-      return cached ? { report: cached } : undefined;
+      if (cached) return { report: cached };
+      return undefined;
     },
     retry: 1,
   });
@@ -131,7 +133,9 @@ function CostTrackingPage() {
     const next = { ...range, periodDays: days };
     const cached = getCachedRecallCostReport(next.start, next.end);
     if (cached) {
-      queryClient.setQueryData(["recall-cost-report", next.start, next.end], { report: cached });
+      queryClient.setQueryData(recallCostReportQueryKey({ start: next.start, end: next.end }), {
+        report: cached,
+      });
     }
     setApplied(next);
     setInsightsMd(null);
@@ -149,12 +153,14 @@ function CostTrackingPage() {
         applied.start === range.start &&
         applied.end === range.end
           ? report
-          : getCachedRecallCostReport(range.start, range.end);
+          : getCachedRecallCostReport(range.start, range.end) ?? undefined;
 
       if (!report30) {
         const res = await getRecallCostReport({ data: { start: range.start, end: range.end } });
         report30 = res.report;
-        queryClient.setQueryData(["recall-cost-report", range.start, range.end], { report: report30 });
+        queryClient.setQueryData(recallCostReportQueryKey({ start: range.start, end: range.end }), {
+          report: report30,
+        });
       }
 
       downloadRecallCostReportPdf(report30);

@@ -1,7 +1,7 @@
 import type { BotJoinReport } from "@/lib/notetaker-bot-join-report.types";
 
 const STORAGE_KEY = "alyson-bot-join-report-session";
-const REPORT_TTL_MS = 30 * 60_000;
+const REPORT_TTL_MS = 60 * 60_000;
 
 export type BotJoinReportSessionState = {
   version: 1;
@@ -70,7 +70,7 @@ export function saveBotJoinReportSession(args: {
   }
 }
 
-/** Cleared when leaving the Bot Join Report screen so data does not linger across modules. */
+/** Optional manual clear (pages keep session when switching modules for faster return visits). */
 export function clearBotJoinReportSession() {
   if (typeof window === "undefined") return;
   try {
