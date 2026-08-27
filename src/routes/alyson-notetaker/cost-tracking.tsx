@@ -471,8 +471,6 @@ function CostBreakdownTables({ report }: { report: RecallCostReport }) {
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
                 <th className="py-2 pr-3 font-medium">User</th>
-                <th className="py-2 pr-3 font-medium text-right">Meetings</th>
-                <th className="py-2 pr-3 font-medium text-right">With bot</th>
                 <th className="py-2 pr-3 font-medium text-right">Est. cost</th>
                 <th className="py-2 font-medium text-right">Share</th>
               </tr>
@@ -481,8 +479,6 @@ function CostBreakdownTables({ report }: { report: RecallCostReport }) {
               {byUser.map((row) => (
                 <tr key={row.email}>
                   <td className="py-2 pr-3 font-medium">{row.email}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{row.meetings}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{row.withBot}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{usd(row.estimatedCostUsd)}</td>
                   <td className="py-2 text-right tabular-nums text-muted-foreground">{pct(row.shareOfTotal)}</td>
                 </tr>
