@@ -25,6 +25,13 @@ Alyson HR (`alyson-client`) is a **colocated full-stack web app** — React UI a
 
 **Product positioning:** vertical **HR + ops cockpit** with an AI layer (Alyson Brain) and meeting intelligence (Notetaker) — not a horizontal enterprise search tool like Glean.
 
+### Handbooks (Google Docs)
+
+| Handbook | Link |
+|----------|------|
+| **Alyson handbook** | [Google Doc](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx) |
+| **Alyson Notetaker handbook** | [Google Doc](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) |
+
 ---
 
 ## Quick start
@@ -107,6 +114,8 @@ Full per-module docs: **[docs/ALYSON_HR_MODULES_INDEX.md](./docs/ALYSON_HR_MODUL
 
 ### Alyson Notetaker (Ops)
 
+**Handbooks:** [Alyson Notetaker handbook](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) · [Architecture](./docs/ALYSON_NOTETAKER_ARCHITECTURE.md) · [Alyson handbook](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx)
+
 | Module | Route |
 |--------|-------|
 | Live Notetaker | `/alyson-notetaker` |
@@ -132,7 +141,15 @@ Nav role gates are defined in `src/components/AppShell.tsx`.
 
 ## Alyson Notetaker (summary)
 
-> **Deep dives:** [docs/ALYSON_NOTETAKER_MODULE.md](./docs/ALYSON_NOTETAKER_MODULE.md) · [docs/ALYSON_NOTETAKER_S3_READ_WRITE.md](./docs/ALYSON_NOTETAKER_S3_READ_WRITE.md) · [notetaker-architecture.md](./notetaker-architecture.md)
+**Start here**
+
+| Doc | Link |
+|-----|------|
+| **Alyson Notetaker handbook** | [Google Doc](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) |
+| **Architecture & operations** | [docs/ALYSON_NOTETAKER_ARCHITECTURE.md](./docs/ALYSON_NOTETAKER_ARCHITECTURE.md) |
+| Alyson handbook (product) | [Google Doc](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx) |
+
+> Also: [docs/ALYSON_NOTETAKER_MODULE.md](./docs/ALYSON_NOTETAKER_MODULE.md) · [docs/ALYSON_NOTETAKER_S3_READ_WRITE.md](./docs/ALYSON_NOTETAKER_S3_READ_WRITE.md) · [notetaker-architecture.md](./notetaker-architecture.md)
 
 The **Create** button on `/alyson-notetaker` does **not** call Recall from the browser. Flow:
 
@@ -306,7 +323,10 @@ npx dotenv-cli -e .env -- npx tsx scripts/diagnose-bot-transcripts.ts <botId>
 
 | Doc | Topic |
 |-----|--------|
+| **[Alyson handbook (Google Doc)](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx)** | **Product / ops handbook** |
+| **[Alyson Notetaker handbook (Google Doc)](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0)** | **Notetaker product handbook** |
 | **[docs/ALYSON_HR_MODULES_INDEX.md](./docs/ALYSON_HR_MODULES_INDEX.md)** | **Master index — all 28 modules** |
+| [docs/ALYSON_NOTETAKER_ARCHITECTURE.md](./docs/ALYSON_NOTETAKER_ARCHITECTURE.md) | Notetaker architecture (bots, webhooks, S3, auto-email) |
 | [docs/ALYSON_NOTETAKER_S3_READ_WRITE.md](./docs/ALYSON_NOTETAKER_S3_READ_WRITE.md) | S3 read/write contract for notetaker |
 | [docs/ALYSON_MEETING_MANAGER.md](./docs/ALYSON_MEETING_MANAGER.md) | Meeting manager architecture |
 | [docs/ALYSON_BOT_SCHEDULING_BLOCKERS.md](./docs/ALYSON_BOT_SCHEDULING_BLOCKERS.md) | Bot scheduling edge cases |

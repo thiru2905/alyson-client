@@ -1,5 +1,7 @@
 # Alyson Notetaker Module Documentation
 
+**Start here:** [Alyson Notetaker handbook (Google Doc)](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) · [Architecture](./ALYSON_NOTETAKER_ARCHITECTURE.md) · [Alyson handbook](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx)
+
 ## Purpose
 
 The main Notetaker page (`/alyson-notetaker`) provides **live bot control**: create Recall bots, list sessions, stream live transcripts (SSE), generate smart notes, persist to S3, and chat over meeting context.

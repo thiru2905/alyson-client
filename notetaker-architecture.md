@@ -2,6 +2,8 @@
 
 This document describes how the **Alyson HR client** (`alyson-client`) integrates with the **notetaker backend** and **Recall.ai**. The notetaker backend is a **separate service** (deployed at `https://api-uic1.onrender.com` in production); its source code is **not** in this repository.
 
+**Product handbook (Google Doc):** [Alyson Notetaker handbook](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0)
+
 ---
 
 ## 1. High-level picture

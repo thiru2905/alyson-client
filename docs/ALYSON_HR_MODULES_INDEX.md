@@ -2,6 +2,13 @@
 
 Complete module documentation for the Alyson HR application (`alyson-client`). Each module has a dedicated Markdown file in `docs/`.
 
+### Handbooks (Google Docs)
+
+| Handbook | Link |
+|----------|------|
+| **Alyson handbook** | [Google Doc](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx) |
+| **Alyson Notetaker handbook** | [Google Doc](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) |
+
 ---
 
 ## Workspace
@@ -43,6 +50,8 @@ Complete module documentation for the Alyson HR application (`alyson-client`). E
 | Reports | `/reports` | [REPORTS_MODULE.md](./REPORTS_MODULE.md) |
 
 ### Alyson Notetaker (Ops)
+
+**Start here:** [Alyson Notetaker handbook (Google Doc)](https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0) · [ALYSON_NOTETAKER_ARCHITECTURE.md](./ALYSON_NOTETAKER_ARCHITECTURE.md) · [Alyson handbook](https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx)
 
 | Module | Route | Doc |
 |--------|-------|-----|

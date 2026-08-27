@@ -9,7 +9,7 @@ import {
 } from "@/lib/alyson-notetaker-functions";
 import { getNotetakerSession, loadNotetakerSessionArchive } from "@/lib/notetaker-get-session-functions";
 import { getNotetakerLiveDiagnostics } from "@/lib/notetaker-live-diagnostics-functions";
-import { Captions, Plus, RefreshCw, Sparkles, Copy, Download, Send, X, Bot } from "lucide-react";
+import { Captions, Plus, RefreshCw, Sparkles, Copy, Download, Send, X, Bot, BookOpen, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { askMiniModuleAi } from "@/lib/mini-module-ai";
 import { finalizeAndPersistNotetakerSession, syncNotetakerTranscriptFromRecall } from "@/lib/notetaker-persistence-functions";
@@ -109,6 +109,33 @@ function AlysonNotetakerPage() {
           </div>
         }
       />
+      <div className="app-page-gutter pt-3 pb-0">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+            <BookOpen className="h-3.5 w-3.5 shrink-0" />
+            Docs
+          </span>
+          <a
+            href="https://docs.google.com/document/d/1C9feKeCFM3j1vPq_YHoICqn8xTdExGaIMQY6h0nEFyQ/edit?tab=t.0"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Notetaker handbook
+            <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+          </a>
+          <span className="text-border">·</span>
+          <a
+            href="https://docs.google.com/document/d/1gR-t_D934zfh-f_TayP_uJfRWWn5ozF-tq9HxjeX0yg/edit?tab=t.4qrudzmr1vkx"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 hover:text-foreground underline-offset-2 hover:underline"
+          >
+            Alyson handbook
+            <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+          </a>
+        </div>
+      </div>
       <div className="app-page-gutter py-6">
         {!hasRecallConfig && (
           <div className="surface-card p-4 border border-border mb-5">
