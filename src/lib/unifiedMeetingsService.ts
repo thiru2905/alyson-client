@@ -82,6 +82,9 @@ const BOT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 /** Recall needs join_at slightly in the future for "join now". */
 const IMMEDIATE_JOIN_DELAY_MS = 20 * 1000;
 const MEETING_END_GRACE_MS = 20 * 60 * 1000;
+/** Same window for Unified Meetings list + auto-schedule (what you see = what gets a bot). */
+export const UNIFIED_MEETINGS_LOOKAHEAD_MS = 24 * 60 * 60 * 1000;
+const UNIFIED_MEETINGS_LOOKBACK_MS = 60 * 60 * 1000;
 
 let cache: { at: number; meetings: UnifiedMeeting[]; summary: UnifiedMeetingsScanSummary } | null = null;
 
@@ -536,7 +539,24 @@ function applyFilters(meetings: UnifiedMeeting[], filters: {
   return out;
 }
 
-async function scanWorkspaceMeetings(): Promise<{ meetings: UnifiedMeeting[]; summary: UnifiedMeetingsScanSummary }> {
+async function listAllowlistedCalendarEmails(): Promise<string[]> {
+  const { getRecallCalendarAllowlist } = await import("@/lib/recall/recall-calendar-allowlist.server");
+  return getRecallCalendarAllowlist();
+}
+
+function unifiedMeetingsWindow() {
+  const now = Date.now();
+  return {
+    timeMin: new Date(now - UNIFIED_MEETINGS_LOOKBACK_MS),
+    timeMax: new Date(now + UNIFIED_MEETINGS_LOOKAHEAD_MS),
+  };
+}
+
+/**
+ * Scan only allowlisted calendars for the Unified Meetings period.
+ * List and auto-schedule share this so every shown meeting can be Scheduled.
+ */
+async function scanAllowlistedMeetings(): Promise<{ meetings: UnifiedMeeting[]; summary: UnifiedMeetingsScanSummary }> {
   const summary: UnifiedMeetingsScanSummary = {
     usersScanned: 0,
     eventsChecked: 0,
@@ -545,33 +565,43 @@ async function scanWorkspaceMeetings(): Promise<{ meetings: UnifiedMeeting[]; su
     botSkipped: 0,
     errors: [],
   };
-  const users = await listActiveWorkspaceUsers().catch((e) => {
-    throw new Error(`Failed to list Workspace users: ${e instanceof Error ? e.message : "Unknown error"}`);
-  });
 
-  const timeMin = new Date();
-  const timeMax = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const users = await listAllowlistedCalendarEmails();
+  const { timeMin, timeMax } = unifiedMeetingsWindow();
   const state = await readState();
   const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
 
   const meetings: UnifiedMeeting[] = [];
+  const seenInstance = new Set<string>();
+
   for (const userEmail of users) {
     summary.usersScanned += 1;
     let events: any[] = [];
     try {
       events = await listCalendarEventsForUser(userEmail, timeMin.toISOString(), timeMax.toISOString());
     } catch (e) {
-      summary.errors.push(`Calendar read failed for ${userEmail}: ${e instanceof Error ? e.message : "Unknown error"}`);
+      summary.errors.push(
+        `Calendar read failed for ${userEmail}: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
       continue;
     }
 
     for (const event of events) {
       summary.eventsChecked += 1;
-      const meeting = normalizeMeetingEvent(userEmail, event, stateByKey);
+      const meeting = normalizeMeetingEvent(userEmail, event, stateByKey, { allowInProgress: true });
+      // One row per meeting instance (url + start) even if it appears on multiple allowlisted calendars.
+      const instanceKey = meeting.meetingUrl
+        ? dedupeKey(meeting.meetingUrl, meeting.startTime)
+        : `${meeting.calendarUserEmail}|${meeting.googleEventId}`;
+      if (seenInstance.has(instanceKey)) continue;
+      seenInstance.add(instanceKey);
       meetings.push(meeting);
+      if (meeting.botScheduled) summary.botScheduled += 1;
+      else if (meeting.shouldBotJoin) summary.botSkipped += 1;
     }
   }
 
+  meetings.sort((a, b) => a.startTime.localeCompare(b.startTime));
   summary.meetingsReturned = meetings.length;
   return { meetings, summary };
 }
@@ -580,7 +610,7 @@ async function ensureCacheFresh(force = false): Promise<{ meetings: UnifiedMeeti
   if (!force && cache && Date.now() - cache.at <= CACHE_TTL_MS) {
     return { meetings: cache.meetings, summary: cache.summary };
   }
-  const scanned = await scanWorkspaceMeetings();
+  const scanned = await scanAllowlistedMeetings();
   cache = { at: Date.now(), meetings: scanned.meetings, summary: scanned.summary };
   return scanned;
 }
@@ -838,57 +868,37 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 }
 
 /**
- * Auto-schedule bots for allowlisted calendar owners only (alysonclient, mohita, arman, aditya, …).
- * Scans only those calendars (not the whole Workspace) so cron stays fast.
+ * Auto-schedule every pending meeting in the Unified Meetings period (allowlisted calendars).
+ * Same scan as the UI — what is shown with a Meet link gets a bot (no leftover Pending from caps).
  */
 export async function scheduleAllowlistedUnifiedBots(options?: {
   maxNewBots?: number;
 }): Promise<UnifiedScheduleSummary> {
-  const { getRecallCalendarAllowlist } = await import("@/lib/recall/recall-calendar-allowlist.server");
-  const allowlist = getRecallCalendarAllowlist();
-  const maxNewBots = Math.max(1, options?.maxNewBots ?? 25);
+  // High enough to cover a full 24h allowlisted day; cron can re-run for any remainder.
+  const maxNewBots = Math.max(1, options?.maxNewBots ?? 120);
   const out: UnifiedScheduleSummary = { checked: 0, scheduled: 0, skipped: 0, errors: [] };
 
-  const now = Date.now();
-  const timeMin = new Date(now - 60 * 60_000);
-  const timeMax = new Date(now + 48 * 60 * 60_000);
+  const { meetings } = await scanAllowlistedMeetings();
   const state = await readState();
   const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
 
-  const pending: UnifiedMeeting[] = [];
-
-  for (const userEmail of allowlist) {
-    console.info(`[allowlisted-schedule] scanning ${userEmail}`);
-    let events: any[] = [];
-    try {
-      events = await withTimeout(
-        listCalendarEventsForUser(userEmail, timeMin.toISOString(), timeMax.toISOString()),
-        45_000,
-        `list calendar ${userEmail}`,
-      );
-      console.info(`[allowlisted-schedule] ${userEmail}: ${events.length} events`);
-    } catch (e) {
-      out.errors.push(
-        `Calendar read failed for ${userEmail}: ${e instanceof Error ? e.message : "Unknown error"}`,
-      );
-      continue;
+  const pending = meetings.filter((meeting) => {
+    out.checked += 1;
+    if (!meeting.shouldBotJoin || meeting.botScheduled) {
+      out.skipped += 1;
+      return false;
     }
+    return true;
+  });
 
-    for (const event of events) {
-      const meeting = normalizeMeetingEvent(userEmail, event, stateByKey, { allowInProgress: true });
-      out.checked += 1;
-      if (!meeting.shouldBotJoin || meeting.botScheduled) {
-        out.skipped += 1;
-        continue;
-      }
-      pending.push(meeting);
-    }
-  }
-
-  // Soonest meetings first so today's Pending rows clear before far-future ones.
   pending.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
   const toSchedule = pending.slice(0, maxNewBots);
   out.skipped += Math.max(0, pending.length - toSchedule.length);
+  if (pending.length > maxNewBots) {
+    out.errors.push(
+      `Capped at ${maxNewBots} new bots this run; ${pending.length - maxNewBots} remaining will schedule on next cron`,
+    );
+  }
 
   for (const meeting of toSchedule) {
     const label = `${meeting.calendarUserEmail} | ${meeting.title} | ${meeting.startTime}`;
@@ -902,8 +912,9 @@ export async function scheduleAllowlistedUnifiedBots(options?: {
       if (result.scheduled) {
         out.scheduled += 1;
         if (meeting.meetingUrl) {
-          stateByKey.set(dedupeKey(meeting.meetingUrl, meeting.startTime), {
-            dedupeKey: dedupeKey(meeting.meetingUrl, meeting.startTime),
+          const key = dedupeKey(meeting.meetingUrl, meeting.startTime);
+          stateByKey.set(key, {
+            dedupeKey: key,
             googleEventId: meeting.googleEventId,
             iCalUID: meeting.iCalUID,
             calendarUserEmail: meeting.calendarUserEmail,

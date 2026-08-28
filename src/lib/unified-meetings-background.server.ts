@@ -32,7 +32,7 @@ export async function runUnifiedMeetingsBackgroundMaintenance(): Promise<Unified
   }
 
   try {
-    const allow = await scheduleAllowlistedUnifiedBots({ maxNewBots: 25 });
+    const allow = await scheduleAllowlistedUnifiedBots({ maxNewBots: 120 });
     allowlistedBotsScheduled = allow.scheduled;
     if (allow.errors.length) {
       warnings.push(`allowlisted_schedule: ${allow.errors.slice(0, 3).join("; ")}`);

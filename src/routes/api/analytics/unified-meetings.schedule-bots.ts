@@ -13,7 +13,7 @@ export const Route = createFileRoute("/api/analytics/unified-meetings/schedule-b
         const authFail = assertDailyReportCronAuth(request);
         if (authFail) return authFail;
         try {
-          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 25 });
+          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 120 });
           return Response.json({ ok: true, mode: "allowlisted", ...result });
         } catch (e) {
           const message = e instanceof Error ? e.message : "Failed to schedule bots";
@@ -31,7 +31,7 @@ export const Route = createFileRoute("/api/analytics/unified-meetings/schedule-b
           if (authFail) return authFail;
         }
         try {
-          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 25 });
+          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 120 });
           return Response.json({ ok: true, mode: "allowlisted", ...result });
         } catch (e) {
           const message = e instanceof Error ? e.message : "Failed to schedule bots";

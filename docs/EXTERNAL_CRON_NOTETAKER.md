@@ -1,37 +1,26 @@
 # External scheduler for Notetaker + calendar auto-schedule
 
-## Always-Scheduled without Connect (primary)
+## Completely consistent: list === schedule
 
-Allowlisted calendar owners (`alysonclient`, `mohita`, `arman`, `aditya`, …) stay **Scheduled**
-via **Google Workspace DWD** — each person does **not** need to Connect Google Calendar:
+Unified Meetings shows the **next 24 hours** for allowlisted calendars only
+(`alysonclient`, `mohita`, `arman`, `aditya`, …).
 
-1. **Cron (~5 min)** — `scheduleAllowlistedUnifiedBots` reads those calendars with the service
-   account and creates Recall bots (timed 48h retention)
-2. **Unified Meetings page load** — same allowlisted schedule endpoint
-3. Row **Schedule** is only a manual retry
+Every Meet-link meeting in that list is auto-Scheduled via Google Workspace **DWD**
+(no Calendar Connect required):
 
-## Optional: Connect Google Calendar (faster webhooks)
+1. Cron (~5 min) — `scheduleAllowlistedUnifiedBots` (same scan as the UI)
+2. Page load — same endpoint
+3. Row **Schedule** — manual retry only
 
-If a mailbox is Connected in Recall Calendar V2, new/updated Google events also fire
-`calendar.sync_events` webhooks for near-instant scheduling. This is additive — not required.
+One bot per meeting instance (deduped by Meet URL + start).
+
+## Optional: Connect Google Calendar
+
+Faster webhook path only — not required for coverage.
 
 ## Vercel Hobby: sub-daily crons
 
-Hobby only allows once-per-day native crons. Sub-daily schedules in `vercel.json` block deploys.
-
-Ping every **5 minutes** (same `CRON_SECRET`):
-
 ```http
 POST https://alyson-client.vercel.app/api/cron/notetaker-transcripts
-Authorization: Bearer <CRON_SECRET>
-```
-
-Optional:
-
-```http
-POST https://alyson-client.vercel.app/api/cron/recall-calendar-sync
-Authorization: Bearer <CRON_SECRET>
-
-POST https://alyson-client.vercel.app/api/cron/scheduled-bot-activation
 Authorization: Bearer <CRON_SECRET>
 ```

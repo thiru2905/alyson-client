@@ -307,7 +307,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="Allowlisted calendars (alysonclient, mohita, arman, aditya, …) auto-schedule via Google Workspace DWD — no Connect required. Schedule buttons are a manual retry only."
+        description="Next 24h for allowlisted calendars — every Meet-link meeting in this list is auto-Scheduled (DWD, no Connect). Schedule is a manual retry only."
         dense
         actions={
           <div className="flex items-center gap-2">
