@@ -187,7 +187,7 @@ export async function syncRecallCalendarNow(
 
 export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhookPayload) {
   if (payload.event === "calendar.sync_events") {
-    const { calendar_id } = payload.data;
+    const { calendar_id, last_updated_ts } = payload.data;
     const ownerEmail = await resolveRecallCalendarOwnerEmail(calendar_id);
     if (!isRecallCalendarEmailAllowed(ownerEmail)) {
       return {
@@ -198,6 +198,15 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
       };
     }
 
+    // Event-driven first: schedule bots for changed Google Calendar meetings immediately.
+    // Do NOT block on company-wide Google DWD refresh — that can timeout the webhook.
+    const auto = await autoSyncRecallCalendarIfPending({
+      calendarId: calendar_id,
+      ownerEmail,
+      updatedAtGte: last_updated_ts,
+      eventDriven: true,
+    });
+
     let meetingsRefreshed = false;
     let meetingsReturned = 0;
     try {
@@ -206,34 +215,33 @@ export async function handleRecallCalendarWebhook(payload: RecallCalendarWebhook
       meetingsRefreshed = true;
       meetingsReturned = summary.meetingsReturned ?? 0;
     } catch {
-      // Non-fatal — still run Recall calendar sync for this calendar.
+      // Non-fatal — bots already scheduled above; UI list can catch up on next cron/page load.
     }
 
-    const auto = await autoSyncRecallCalendarIfPending({
-      calendarId: calendar_id,
-      ownerEmail,
-      requirePending: false,
-    });
     if (auto.ran) {
       return {
         action: "auto_sync",
         calendarId: calendar_id,
         ownerEmail,
+        lastUpdatedTs: last_updated_ts,
         pendingBefore: auto.pendingBefore,
         scheduled: auto.scheduled,
         skipped: auto.skipped,
         errors: auto.errors,
         meetingsRefreshed,
         meetingsReturned,
+        mode: "event_driven",
       };
     }
     return {
       action: "sync_skipped",
       calendarId: calendar_id,
       ownerEmail,
+      lastUpdatedTs: last_updated_ts,
       reason: auto.reason ?? "Sync not run",
       meetingsRefreshed,
       meetingsReturned,
+      mode: "event_driven",
     };
   }
 

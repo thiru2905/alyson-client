@@ -1,44 +1,48 @@
 # External scheduler for Notetaker + calendar auto-schedule
 
-Vercel Hobby only allows once-per-day native crons. Sub-daily schedules in
-`vercel.json` (e.g. `*/5`) block production deploys entirely.
+## Event-driven bot scheduling (primary)
 
-Ping these every **5 minutes** from cron-job.org / EasyCron / GitHub Actions / etc.
-Use the same secret as production `CRON_SECRET` (or `NOTETAKER_TRANSCRIPT_CRON_SECRET`).
+For allowlisted calendars (alysonclient, mohita, arman, aditya, …) after **Connect Google Calendar**:
 
-## 1. Transcripts + notes auto-email + calendar bot schedule (recommended)
+1. User creates/updates a meeting in Google Calendar
+2. Google → Recall → `POST /api/recall/webhooks/calendar` (`calendar.sync_events`)
+3. Alyson fetches only events changed since `last_updated_ts` and schedules Recall bots immediately
 
-This one endpoint also runs Recall calendar auto-sync for allowlisted calendars
-(`alysonclient`, `mohita`, `arman`, `aditya`, …) and media cleanup (2-day retention).
+Cron is a **safety net**, not the main path. Webhook URL must be registered in the Recall dashboard
+(shown on Unified Meetings).
+
+## Cost save
+
+Bots use Recall-direct create with **timed 48h** retention + 2-day media cleanup.
+
+## Vercel Hobby: sub-daily crons
+
+Hobby only allows once-per-day native crons. Sub-daily schedules in `vercel.json` block deploys.
+
+Ping these every **5 minutes** from cron-job.org / EasyCron / GitHub Actions (same `CRON_SECRET`):
+
+### 1. Transcripts + notes + calendar safety-net sync (recommended)
 
 ```http
 POST https://alyson-client.vercel.app/api/cron/notetaker-transcripts
 Authorization: Bearer <CRON_SECRET>
 ```
 
-## 2. Calendar sync only (optional)
-
-If you only need bot scheduling without the full transcript sweep:
+### 2. Calendar sync only (optional)
 
 ```http
 POST https://alyson-client.vercel.app/api/cron/recall-calendar-sync
 Authorization: Bearer <CRON_SECRET>
 ```
 
-## 3. Bot activation (optional, ~every 2 min)
+### 3. Bot activation (optional, ~every 2 min)
 
 ```http
 POST https://alyson-client.vercel.app/api/cron/scheduled-bot-activation
 Authorization: Bearer <CRON_SECRET>
 ```
 
-## Cost save (already in app)
-
-Scheduled bots are created via Recall-direct with **timed 48h** recording retention
-(commit `46462f6` / media cleanup `be3cbe9`). Do not re-enable Notetaker-first create
-for scheduled bots — that left retention as `forever` and drove billable hour_hours.
-
 ## One-time setup per person
 
-Each allowlisted person must **Connect Google Calendar** once on Unified Meetings
-(OAuth). After that, webhooks + the 5‑min cron schedule bots without clicking Sync.
+Each allowlisted person must **Connect Google Calendar** once on Unified Meetings (OAuth).
+After that, new meetings schedule bots via webhook without clicking Sync.

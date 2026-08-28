@@ -510,10 +510,11 @@ function RecallCalendarPanel({
           <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Connect Google Calendar once for{" "}
-            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>. Cron +
-            webhooks auto-schedule bots for upcoming meetings (timed 48h retention).{" "}
-            <span className="text-foreground font-medium">Sync now</span> is a manual fallback. Each bot
-            joins ~2 min before start.
+            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>. New or
+            updated meetings trigger Recall webhooks and bots are scheduled immediately (timed 48h
+            retention). Cron is a safety net;{" "}
+            <span className="text-foreground font-medium">Sync now</span> is a manual fallback. Each
+            bot joins ~2 min before start.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

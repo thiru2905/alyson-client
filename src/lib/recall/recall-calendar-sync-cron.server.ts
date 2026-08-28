@@ -34,6 +34,16 @@ export async function autoSyncRecallCalendarIfPending(args: {
   ownerEmail: string;
   /** When true, skip sync if preview reports zero pending (UI-only fallback). */
   requirePending?: boolean;
+  /**
+   * From `calendar.sync_events.last_updated_ts` — only fetch events changed since then
+   * (Recall Calendar V2 event-driven path).
+   */
+  updatedAtGte?: string;
+  /**
+   * Fast webhook path: skip pending preview, process the delta, and re-check already-tracked
+   * meetings so time/link updates still get a bot.
+   */
+  eventDriven?: boolean;
 }): Promise<{
   ran: boolean;
   pendingBefore: number;
@@ -45,6 +55,7 @@ export async function autoSyncRecallCalendarIfPending(args: {
   const calendarId = String(args.calendarId || "").trim();
   const ownerEmail = String(args.ownerEmail || "").trim();
   const requirePending = Boolean(args.requirePending);
+  const eventDriven = Boolean(args.eventDriven);
   if (!calendarId) {
     return { ran: false, pendingBefore: 0, scheduled: 0, skipped: 0, errors: [], reason: "Missing calendar id" };
   }
@@ -73,29 +84,42 @@ export async function autoSyncRecallCalendarIfPending(args: {
   }
 
   let pendingBefore = 0;
-  try {
-    pendingBefore = (await previewRecallCalendarPending(calendarId)).pendingCount;
-  } catch {
-    // Non-fatal — still attempt sync when preview fails.
+  if (!eventDriven) {
+    try {
+      pendingBefore = (await previewRecallCalendarPending(calendarId)).pendingCount;
+    } catch {
+      // Non-fatal — still attempt sync when preview fails.
+    }
+
+    if (requirePending && pendingBefore === 0) {
+      return {
+        ran: false,
+        pendingBefore: 0,
+        scheduled: 0,
+        skipped: 0,
+        errors: [],
+        reason: "No pending meetings",
+      };
+    }
   }
 
-  if (requirePending && pendingBefore === 0) {
-    return {
-      ran: false,
-      pendingBefore: 0,
-      scheduled: 0,
-      skipped: 0,
-      errors: [],
-      reason: "No pending meetings",
-    };
+  // Small negative buffer so clock skew / equal timestamps don't drop the triggering event.
+  let updatedAtGte = args.updatedAtGte?.trim() || undefined;
+  if (updatedAtGte) {
+    const ms = Date.parse(updatedAtGte);
+    if (Number.isFinite(ms)) {
+      updatedAtGte = new Date(ms - 2 * 60_000).toISOString();
+    }
   }
 
   const sync = await syncRecallCalendarEvents({
     calendarId,
     ownerEmail,
+    updatedAtGte,
     scheduleAll: true,
-    verifyExistingBots: false,
-    maxNewBots: MAX_NEW_BOTS_PER_SYNC,
+    // Event-driven: process every changed event (including ones already in app state).
+    verifyExistingBots: eventDriven,
+    maxNewBots: eventDriven ? 50 : MAX_NEW_BOTS_PER_SYNC,
   });
 
   return {
