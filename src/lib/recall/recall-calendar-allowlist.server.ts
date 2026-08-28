@@ -1,7 +1,9 @@
 const DEFAULT_ALLOWED = [
   "alysonclient@cintara.ai",
-  "notetaker@cintara.ai",
   "mohita@cintara.ai",
+  "arman@cintara.ai",
+  "aditya@cintara.ai",
+  "notetaker@cintara.ai",
   "thirumalai@cintara.ai",
   "vinit@cintara.ai",
 ];
@@ -12,7 +14,11 @@ function normalizeEmail(email: string): string {
     .toLowerCase();
 }
 
-/** Calendars for these accounts get Recall auto-scheduling; all others are ignored. */
+/**
+ * Calendars for these accounts get Recall auto-scheduling (webhooks + cron Sync).
+ * Primary operators: alysonclient, mohita, arman, aditya.
+ * Bots still use timed 48h retention (cost save) via Recall-direct create.
+ */
 export function getRecallCalendarAllowlist(): string[] {
   const defaults = DEFAULT_ALLOWED.map(normalizeEmail);
   const raw = process.env.RECALL_CALENDAR_AUTO_SCHEDULE_EMAILS?.trim();

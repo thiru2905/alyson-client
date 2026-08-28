@@ -121,7 +121,8 @@ export async function completeRecallCalendarConnect(code: string, stateToken: st
     status: "connected",
   });
 
-  // Return quickly — full sync can take minutes and times out on Vercel. Webhooks + Sync button handle scheduling.
+  // Return quickly — full sync can take minutes and times out on Vercel.
+  // Webhooks + external 5‑min cron (/api/cron/notetaker-transcripts) auto-schedule.
   const sync: Awaited<ReturnType<typeof syncRecallCalendarEvents>> = {
     calendarId: cal.id,
     processed: 0,
@@ -131,8 +132,8 @@ export async function completeRecallCalendarConnect(code: string, stateToken: st
     errors: [],
     ownerEmail: connectedEmail,
     reason: reused
-      ? "Linked existing Recall calendar — click Sync to schedule bots"
-      : "Connected — click Sync to schedule bots for upcoming meetings",
+      ? "Linked existing Recall calendar — bots auto-schedule via webhook/cron (Sync now is optional)"
+      : "Connected — bots auto-schedule via webhook/cron for upcoming meetings (Sync now is optional)",
   };
   return { calendarId: cal.id, email: connectedEmail, sync, returnTo: state.returnTo };
 }

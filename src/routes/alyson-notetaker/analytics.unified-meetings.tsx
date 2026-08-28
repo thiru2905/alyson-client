@@ -492,7 +492,15 @@ function RecallCalendarPanel({
   const allowedEmails =
     allowlist?.length
       ? allowlist
-      : ["alysonclient@cintara.ai", "notetaker@cintara.ai", "mohita@cintara.ai", "thirumalai@cintara.ai", "vinit@cintara.ai"];
+      : [
+          "alysonclient@cintara.ai",
+          "mohita@cintara.ai",
+          "arman@cintara.ai",
+          "aditya@cintara.ai",
+          "notetaker@cintara.ai",
+          "thirumalai@cintara.ai",
+          "vinit@cintara.ai",
+        ];
 
   return (
     <div className="surface-card p-4 space-y-3">
@@ -502,10 +510,10 @@ function RecallCalendarPanel({
           <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Connect Google Calendar once for{" "}
-            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>.{" "}
-            <span className="text-foreground font-medium">Sync now</span> reserves bots for all pending upcoming
-            meetings. Each bot joins ~2 min before start. Use <span className="text-foreground font-medium">Schedule</span>{" "}
-            / <span className="text-foreground font-medium">Unschedule</span> on individual rows in the table below.
+            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>. Cron +
+            webhooks auto-schedule bots for upcoming meetings (timed 48h retention).{" "}
+            <span className="text-foreground font-medium">Sync now</span> is a manual fallback. Each bot
+            joins ~2 min before start.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
