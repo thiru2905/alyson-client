@@ -267,6 +267,11 @@ export async function dispatchBotWithLiveTranscripts(args: {
   botName?: string;
   /** Optional JPEG base64 for bot video tile — omit large payloads to avoid timeouts. */
   avatarJpegB64?: string;
+  /**
+   * Bulk/cron auto-schedule: Recall-only create (timed 48h retention). Session/catalog
+   * linking is best-effort and never blocks — activation cron wakes transcripts near join.
+   */
+  fastSchedule?: boolean;
   /** @deprecated Ignored — Recall is always tried first so timed retention is applied. */
   preferScheduledJoin?: boolean;
 }): Promise<{ botId: string; creationSource: BotDispatchSource }> {
@@ -290,6 +295,34 @@ export async function dispatchBotWithLiveTranscripts(args: {
     metadata,
   };
 
+  const linkBestEffort = async (botId: string) => {
+    try {
+      await Promise.race([
+        linkBotToNotetakerSession({ ...sessionLink, botId }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("notetaker link timeout")), args.fastSchedule ? 8_000 : 18_000),
+        ),
+      ]);
+    } catch (e) {
+      console.warn(
+        `[notetaker-dispatch] session link deferred for ${botId}:`,
+        e instanceof Error ? e.message : e,
+      );
+      try {
+        await registerScheduledBotInSessionsCatalog({
+          botId,
+          title: args.title,
+          meetingStartAt,
+          meetingUrl: args.meetingUrl,
+          createdAt: new Date().toISOString(),
+          status: "scheduled",
+        });
+      } catch {
+        // catalog write is optional for join — bot already exists in Recall
+      }
+    }
+  };
+
   const recallDispatch = async () => {
     const { botId } = await createViaRecallDirect({
       meetingUrl: args.meetingUrl,
@@ -297,7 +330,7 @@ export async function dispatchBotWithLiveTranscripts(args: {
       botName,
       metadata,
     });
-    await linkBotToNotetakerSession({ ...sessionLink, botId });
+    await linkBestEffort(botId);
     return { botId, creationSource: "direct_recall_fallback" as const };
   };
 
@@ -320,6 +353,11 @@ export async function dispatchBotWithLiveTranscripts(args: {
     });
     return { botId, creationSource: "notetaker_managed" as const };
   };
+
+  // Fast path for allowlisted cron/UI auto-schedule — never wait on Notetaker create fallback.
+  if (args.fastSchedule) {
+    return await recallDispatch();
+  }
 
   try {
     return await recallDispatch();

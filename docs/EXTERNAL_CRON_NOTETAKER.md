@@ -1,19 +1,23 @@
 # External scheduler for Notetaker + calendar auto-schedule
 
-## Event-driven bot scheduling (primary)
+## Always-Scheduled (no Schedule button required)
 
-For allowlisted calendars (alysonclient, mohita, arman, aditya, …) after **Connect Google Calendar**:
+Allowlisted calendar owners (`alysonclient`, `mohita`, `arman`, `aditya`, …) stay in
+**Scheduled** automatically:
+
+1. **Unified Meetings page load** — auto-calls `POST /api/analytics/unified-meetings/schedule-bots`
+2. **Cron safety net** (~5 min) — `scheduleAllowlistedUnifiedBots` inside notetaker-transcripts cron
+3. **Recall Calendar webhooks** — if that mailbox is Connected, new Google events schedule immediately
+
+Row **Schedule** is only a manual retry. Bots use Recall-direct create with **timed 48h** retention.
+
+## Event-driven (Connect Google Calendar)
+
+For allowlisted calendars after **Connect Google Calendar**:
 
 1. User creates/updates a meeting in Google Calendar
 2. Google → Recall → `POST /api/recall/webhooks/calendar` (`calendar.sync_events`)
-3. Alyson fetches only events changed since `last_updated_ts` and schedules Recall bots immediately
-
-Cron is a **safety net**, not the main path. Webhook URL must be registered in the Recall dashboard
-(shown on Unified Meetings).
-
-## Cost save
-
-Bots use Recall-direct create with **timed 48h** retention + 2-day media cleanup.
+3. Alyson schedules Recall bots immediately for the changed events
 
 ## Vercel Hobby: sub-daily crons
 
@@ -21,7 +25,7 @@ Hobby only allows once-per-day native crons. Sub-daily schedules in `vercel.json
 
 Ping these every **5 minutes** from cron-job.org / EasyCron / GitHub Actions (same `CRON_SECRET`):
 
-### 1. Transcripts + notes + calendar safety-net sync (recommended)
+### 1. Transcripts + notes + allowlisted schedule (recommended)
 
 ```http
 POST https://alyson-client.vercel.app/api/cron/notetaker-transcripts
@@ -44,5 +48,6 @@ Authorization: Bearer <CRON_SECRET>
 
 ## One-time setup per person
 
-Each allowlisted person must **Connect Google Calendar** once on Unified Meetings (OAuth).
-After that, new meetings schedule bots via webhook without clicking Sync.
+Each allowlisted person should **Connect Google Calendar** once on Unified Meetings (OAuth) for
+true event-driven scheduling. Even without Connect, DWD + allowlisted auto-schedule keeps bots
+Scheduled for those mailboxes.

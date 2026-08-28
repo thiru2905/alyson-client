@@ -197,7 +197,7 @@ Shows company calendar meetings (next 24h) via **Google Workspace Domain-Wide De
 | **Sync now** | Recall Calendar bulk sync for connected calendar |
 | **Connect Google Calendar** | OAuth via `/api/recall/calendar/connect` |
 
-Bots join **~2 minutes before** meeting start. Company-wide bulk `schedule-bots` cron returns **410 Gone** (disabled).
+Bots join **~2 minutes before** meeting start. Allowlisted calendars (`alysonclient`, `mohita`, `arman`, `aditya`, …) auto-schedule via cron + Unified Meetings scan; company-wide (every mailbox) stays off.
 
 ### Google DWD prerequisites
 
@@ -213,7 +213,7 @@ Bots join **~2 minutes before** meeting start. Company-wide bulk `schedule-bots`
 | `POST` | `/api/analytics/unified-meetings/refresh` | Force cache refresh |
 | `POST` | `/api/analytics/unified-meetings/:meetingId/schedule` | Schedule one meeting |
 | `DELETE` | `/api/analytics/unified-meetings/:meetingId/unschedule` | Cancel scheduled bot |
-| `GET\|POST` | `/api/analytics/unified-meetings/schedule-bots` | **410 disabled** |
+| `GET\|POST` | `/api/analytics/unified-meetings/schedule-bots` | Allowlisted auto-schedule only |
 
 ### Bot Join Report
 

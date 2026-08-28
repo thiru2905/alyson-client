@@ -466,13 +466,15 @@ function normalizeMeetingEvent(
   const dedupe = meetingUrl ? dedupeKey(meetingUrl, startTime) : "";
   const legacyDedupe = meetingUrl ? dedupeKeyLegacy(meetingUrl, startTime, userEmail) : "";
   const stateEntry = dedupe ? (stateByKey.get(dedupe) || stateByKey.get(legacyDedupe)) : undefined;
+  const hasRealBot =
+    Boolean(stateEntry?.recallBotId) && !isReservingBotId(stateEntry?.recallBotId);
 
   let shouldBotJoin = false;
   let botStatus: UnifiedBotStatus = "not_required";
   let reason: string | null = skipReason;
   if (!skipReason) {
     shouldBotJoin = true;
-    botStatus = stateEntry ? "scheduled" : "pending";
+    botStatus = hasRealBot ? "scheduled" : "pending";
     reason = null;
   }
 
@@ -494,9 +496,9 @@ function normalizeMeetingEvent(
       ? event.attendees.map((a: any) => String(a?.email || "").trim()).filter(Boolean)
       : [],
     shouldBotJoin,
-    botScheduled: Boolean(stateEntry),
+    botScheduled: hasRealBot,
     botJoinAt: shouldBotJoin ? resolvePlannedCalendarJoinAt(startTime, endTime, joinOffsetMs) : null,
-    recallBotId: stateEntry?.recallBotId ? String(stateEntry.recallBotId) : null,
+    recallBotId: hasRealBot ? String(stateEntry!.recallBotId) : null,
     botStatus,
     skipReason: reason,
     createdAt: nowIso(),
@@ -603,6 +605,7 @@ async function dispatchBotForMeeting(
   meeting: UnifiedMeeting,
   joinAt: string,
   joinOffsetMinutes?: number,
+  options?: { fastSchedule?: boolean },
 ): Promise<{ botId: string; creationSource: StateEntry["creationSource"] }> {
   const displayTitle = buildDatedMeetingTitle(meeting.title, meeting.startTime);
   const { botId, creationSource } = await dispatchBotWithLiveTranscripts({
@@ -610,6 +613,7 @@ async function dispatchBotForMeeting(
     botJoinAt: joinAt,
     title: displayTitle,
     joinOffsetMinutes,
+    fastSchedule: options?.fastSchedule,
     metadata: {
       source: "unified_meetings",
       google_event_id: meeting.googleEventId,
@@ -625,7 +629,7 @@ async function dispatchBotForMeeting(
 
 async function scheduleMeetingInternal(
   meeting: UnifiedMeeting,
-  options?: { forceRedispatch?: boolean; joinOffsetMs?: number },
+  options?: { forceRedispatch?: boolean; joinOffsetMs?: number; fastSchedule?: boolean },
 ): Promise<{ scheduled: boolean; error?: string; redispatched?: boolean; botJoinAt?: string }> {
   if (!meeting.meetingUrl) return { scheduled: false, error: "No meeting URL" };
   const joinOffsetMs = options?.joinOffsetMs ?? BOT_JOIN_OFFSET_MS;
@@ -711,7 +715,9 @@ async function scheduleMeetingInternal(
     }
 
     try {
-      const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes);
+      const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes, {
+        fastSchedule: options?.fastSchedule,
+      });
       await commitMeetingBotReservation({
         dedupeKey: key,
         slotId: reservation.slotId,
@@ -757,7 +763,9 @@ async function scheduleMeetingInternal(
   }
 
   try {
-    const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes);
+    const { botId, creationSource } = await dispatchBotForMeeting(meeting, joinAt, joinOffsetMinutes, {
+      fastSchedule: options?.fastSchedule,
+    });
     const entry: StateEntry = {
       dedupeKey: key,
       googleEventId: meeting.googleEventId,
@@ -812,21 +820,120 @@ async function scheduleMeetingInternal(
 }
 
 export async function scheduleEligibleUnifiedBots(): Promise<UnifiedScheduleSummary> {
-  const { meetings } = await ensureCacheFresh(true);
-  const out: UnifiedScheduleSummary = { checked: meetings.length, scheduled: 0, skipped: 0, errors: [] };
-  for (const meeting of meetings) {
-    if (!meeting.shouldBotJoin) {
-      out.skipped += 1;
+  return scheduleAllowlistedUnifiedBots();
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Auto-schedule bots for allowlisted calendar owners only (alysonclient, mohita, arman, aditya, …).
+ * Scans only those calendars (not the whole Workspace) so cron stays fast.
+ */
+export async function scheduleAllowlistedUnifiedBots(options?: {
+  maxNewBots?: number;
+}): Promise<UnifiedScheduleSummary> {
+  const { getRecallCalendarAllowlist } = await import("@/lib/recall/recall-calendar-allowlist.server");
+  const allowlist = getRecallCalendarAllowlist();
+  const maxNewBots = Math.max(1, options?.maxNewBots ?? 25);
+  const out: UnifiedScheduleSummary = { checked: 0, scheduled: 0, skipped: 0, errors: [] };
+
+  const now = Date.now();
+  const timeMin = new Date(now - 60 * 60_000);
+  const timeMax = new Date(now + 48 * 60 * 60_000);
+  const state = await readState();
+  const stateByKey = new Map(state.scheduled.map((s) => [s.dedupeKey, s]));
+
+  const pending: UnifiedMeeting[] = [];
+
+  for (const userEmail of allowlist) {
+    console.info(`[allowlisted-schedule] scanning ${userEmail}`);
+    let events: any[] = [];
+    try {
+      events = await withTimeout(
+        listCalendarEventsForUser(userEmail, timeMin.toISOString(), timeMax.toISOString()),
+        45_000,
+        `list calendar ${userEmail}`,
+      );
+      console.info(`[allowlisted-schedule] ${userEmail}: ${events.length} events`);
+    } catch (e) {
+      out.errors.push(
+        `Calendar read failed for ${userEmail}: ${e instanceof Error ? e.message : "Unknown error"}`,
+      );
       continue;
     }
-    const result = await scheduleMeetingInternal(meeting);
-    if (result.scheduled) out.scheduled += 1;
-    else {
-      out.skipped += 1;
-      if (result.error) out.errors.push(`${meeting.googleEventId}: ${result.error}`);
+
+    for (const event of events) {
+      const meeting = normalizeMeetingEvent(userEmail, event, stateByKey, { allowInProgress: true });
+      out.checked += 1;
+      if (!meeting.shouldBotJoin || meeting.botScheduled) {
+        out.skipped += 1;
+        continue;
+      }
+      pending.push(meeting);
     }
   }
+
+  // Soonest meetings first so today's Pending rows clear before far-future ones.
+  pending.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+  const toSchedule = pending.slice(0, maxNewBots);
+  out.skipped += Math.max(0, pending.length - toSchedule.length);
+
+  for (const meeting of toSchedule) {
+    const label = `${meeting.calendarUserEmail} | ${meeting.title} | ${meeting.startTime}`;
+    console.info(`[allowlisted-schedule] scheduling ${label}`);
+    try {
+      const result = await withTimeout(
+        scheduleMeetingInternal(meeting, { fastSchedule: true }),
+        45_000,
+        label,
+      );
+      if (result.scheduled) {
+        out.scheduled += 1;
+        if (meeting.meetingUrl) {
+          stateByKey.set(dedupeKey(meeting.meetingUrl, meeting.startTime), {
+            dedupeKey: dedupeKey(meeting.meetingUrl, meeting.startTime),
+            googleEventId: meeting.googleEventId,
+            iCalUID: meeting.iCalUID,
+            calendarUserEmail: meeting.calendarUserEmail,
+            title: meeting.title,
+            meetingUrl: meeting.meetingUrl,
+            startTime: meeting.startTime,
+            endTime: meeting.endTime,
+            botJoinAt: result.botJoinAt || meeting.botJoinAt || meeting.startTime,
+            recallBotId: "scheduled",
+            scheduledAt: nowIso(),
+            lastStatusAt: nowIso(),
+            status: "scheduled",
+          } as StateEntry);
+        }
+      } else {
+        out.skipped += 1;
+        if (result.error && !/already scheduled/i.test(result.error)) {
+          out.errors.push(`${meeting.googleEventId}: ${result.error}`);
+        }
+      }
+    } catch (e) {
+      out.skipped += 1;
+      out.errors.push(`${meeting.googleEventId}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   cache = null;
+  console.info(
+    `[allowlisted-schedule] done scheduled=${out.scheduled} skipped=${out.skipped} errors=${out.errors.length}`,
+  );
   return out;
 }
 

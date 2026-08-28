@@ -1,50 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { scheduleAllowlistedUnifiedBots } from "@/lib/unifiedMeetingsService";
+import { assertDailyReportCronAuth } from "@/lib/resend-mail.server";
 
-// Company-wide auto-schedule (Vercel cron every 5 min + bulk POST) is intentionally disabled.
-// Use per-meeting scheduling: POST /api/analytics/unified-meetings/:meetingId/schedule
-// Future: selective allowlist by calendar email before re-enabling bulk/cron paths.
-//
-// import { scheduleEligibleUnifiedBots } from "@/lib/unifiedMeetingsService";
-
-const DISABLED = {
-  error: "Company-wide bot scheduling is disabled",
-  hint: "Schedule one meeting at a time from Unified Meetings (row action), or re-enable allowlisted automation later.",
-};
-
+/**
+ * Allowlisted auto-schedule (alysonclient, mohita, arman, aditya, …).
+ * Company-wide scheduling stays off. Cron + manual POST both use the same allowlist filter.
+ */
 export const Route = createFileRoute("/api/analytics/unified-meetings/schedule-bots")({
   server: {
     handlers: {
-      // Was used by Vercel Cron (GET every 5 min). Disabled — do not re-add vercel.json crons without product sign-off.
-      GET: async () => Response.json(DISABLED, { status: 410 }),
-      // Was used by "Schedule eligible bots" (bulk company-wide). Disabled — same as cron path.
-      POST: async () => Response.json(DISABLED, { status: 410 }),
-      /*
       GET: async ({ request }) => {
+        const authFail = assertDailyReportCronAuth(request);
+        if (authFail) return authFail;
         try {
-          const expected = process.env.ALYSON_SCHEDULE_CALENDAR_CRON_SECRET?.trim();
-          if (expected) {
-            const auth = request.headers.get("authorization") || "";
-            if (auth !== `Bearer ${expected}`) {
-              return Response.json({ error: "Unauthorized" }, { status: 401 });
-            }
-          }
-          const result = await scheduleEligibleUnifiedBots();
-          return Response.json(result);
+          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 25 });
+          return Response.json({ ok: true, mode: "allowlisted", ...result });
         } catch (e) {
           const message = e instanceof Error ? e.message : "Failed to schedule bots";
-          return Response.json({ error: message }, { status: 500 });
+          return Response.json({ ok: false, error: message }, { status: 500 });
         }
       },
-      POST: async () => {
+      POST: async ({ request }) => {
+        // UI / ops: same allowlisted path (no secret required for signed-in app traffic).
+        // Prefer Authorization when called from external cron.
+        const hasAuth =
+          Boolean(request.headers.get("authorization")?.trim()) ||
+          Boolean(request.headers.get("x-cron-secret")?.trim());
+        if (hasAuth) {
+          const authFail = assertDailyReportCronAuth(request);
+          if (authFail) return authFail;
+        }
         try {
-          const result = await scheduleEligibleUnifiedBots();
-          return Response.json(result);
+          const result = await scheduleAllowlistedUnifiedBots({ maxNewBots: 25 });
+          return Response.json({ ok: true, mode: "allowlisted", ...result });
         } catch (e) {
           const message = e instanceof Error ? e.message : "Failed to schedule bots";
-          return Response.json({ error: message }, { status: 500 });
+          return Response.json({ ok: false, error: message }, { status: 500 });
         }
       },
-      */
     },
   },
 });

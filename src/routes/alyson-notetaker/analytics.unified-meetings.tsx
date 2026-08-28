@@ -259,15 +259,55 @@ export function UnifiedMeetingsPage() {
   const meetings = q.data?.meetings ?? [];
   const stats = useMemo(() => {
     const withLink = meetings.filter((m) => Boolean(m.meetingUrl)).length;
-    return { total: meetings.length, withLink };
+    const pendingBot = meetings.filter(
+      (m) =>
+        Boolean(m.meetingUrl) &&
+        m.status !== "cancelled" &&
+        !m.botScheduled &&
+        !isMeetingOver(m.startTime, m.endTime),
+    ).length;
+    return { total: meetings.length, withLink, pendingBot };
   }, [meetings]);
+
+  const autoScheduleRef = useRef<{ at: number; pending: number }>({ at: 0, pending: -1 });
+  const [autoScheduling, setAutoScheduling] = useState(false);
+
+  // Keep allowlisted meetings in Scheduled without clicking row Schedule buttons.
+  useEffect(() => {
+    if (q.isLoading || q.isError) return;
+    const pending = stats.pendingBot;
+    if (pending <= 0) return;
+    const now = Date.now();
+    const prev = autoScheduleRef.current;
+    if (prev.pending === pending && now - prev.at < 90_000) return;
+    if (autoScheduling) return;
+
+    autoScheduleRef.current = { at: now, pending };
+    setAutoScheduling(true);
+    toast.message(`Auto-scheduling ${pending} pending bot${pending === 1 ? "" : "s"}…`);
+    void fetch("/api/analytics/unified-meetings/schedule-bots", { method: "POST" })
+      .then(async (res) => {
+        const json = (await res.json().catch(() => ({}))) as {
+          scheduled?: number;
+          errors?: string[];
+          error?: string;
+        };
+        if (!res.ok) throw new Error(String(json.error || "Auto-schedule failed"));
+        const n = Number(json.scheduled || 0);
+        if (n > 0) toast.success(`Auto-scheduled ${n} bot${n === 1 ? "" : "s"}`);
+        else if (json.errors?.length) toast.message(`Auto-schedule: ${json.errors[0]}`);
+        void q.refetch();
+      })
+      .catch((e: Error) => toast.error(e.message || "Auto-schedule failed"))
+      .finally(() => setAutoScheduling(false));
+  }, [autoScheduling, q.isError, q.isLoading, q.refetch, stats.pendingBot]);
 
   return (
     <div className="ops-dense">
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="Connected calendars auto-sync on the server when pending > 0 (cron every 5 min + Recall webhooks). No page visit required."
+        description="Allowlisted calendars stay Scheduled automatically (page load + cron + webhooks). Schedule buttons are a manual retry only."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -278,6 +318,40 @@ export function UnifiedMeetingsPage() {
               <CalendarDays className="h-3.5 w-3.5" />
               Alyson Notetaker
             </Link>
+            <button
+              type="button"
+              disabled={autoScheduling}
+              onClick={() => {
+                if (autoScheduling) return;
+                setAutoScheduling(true);
+                toast.message("Auto-scheduling allowlisted meetings…");
+                void fetch("/api/analytics/unified-meetings/schedule-bots", { method: "POST" })
+                  .then(async (res) => {
+                    const json = (await res.json().catch(() => ({}))) as {
+                      scheduled?: number;
+                      errors?: string[];
+                      error?: string;
+                    };
+                    if (!res.ok) throw new Error(String(json.error || "Auto-schedule failed"));
+                    const n = Number(json.scheduled || 0);
+                    if (n > 0) toast.success(`Auto-scheduled ${n} bot${n === 1 ? "" : "s"}`);
+                    else toast.message(json.errors?.[0] || "No new bots needed");
+                    autoScheduleRef.current = { at: Date.now(), pending: stats.pendingBot };
+                    void q.refetch();
+                  })
+                  .catch((e: Error) => toast.error(e.message || "Auto-schedule failed"))
+                  .finally(() => setAutoScheduling(false));
+              }}
+              className="h-7 px-2.5 rounded-md border border-border bg-background text-[11.5px] font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
+              title="Force allowlisted auto-schedule for all pending meetings"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              {autoScheduling
+                ? "Auto-scheduling…"
+                : stats.pendingBot
+                  ? `Auto-schedule (${stats.pendingBot})`
+                  : "All scheduled"}
+            </button>
             <button
               type="button"
               onClick={() => refreshM.mutate()}
@@ -304,9 +378,10 @@ export function UnifiedMeetingsPage() {
           busy={calendarActionM.isPending}
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <Kpi label="Total meetings next 24h" value={String(stats.total)} />
           <Kpi label="Meetings with Meet links" value={String(stats.withLink)} />
+          <Kpi label="Pending bots (auto)" value={String(stats.pendingBot)} />
         </div>
 
         <div className="surface-card p-4 grid grid-cols-1 md:grid-cols-3 gap-2">

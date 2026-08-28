@@ -258,6 +258,9 @@ export async function runNotetakerTranscriptCron(): Promise<NotetakerTranscriptC
     const { runUnifiedMeetingsBackgroundMaintenance } = await import("@/lib/unified-meetings-background.server");
     const um = await runUnifiedMeetingsBackgroundMaintenance();
     if (um.warnings.length) warnings.push(...um.warnings);
+    if (um.allowlistedBotsScheduled > 0) {
+      warnings.push(`unified_meetings: scheduled ${um.allowlistedBotsScheduled} allowlisted bot(s)`);
+    }
     if (um.calendarBotsScheduled > 0) {
       warnings.push(`unified_meetings: scheduled ${um.calendarBotsScheduled} calendar bot(s)`);
     }
