@@ -307,7 +307,7 @@ export function UnifiedMeetingsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Unified Meetings"
-        description="Allowlisted calendars stay Scheduled automatically (page load + cron + webhooks). Schedule buttons are a manual retry only."
+        description="Allowlisted calendars (alysonclient, mohita, arman, aditya, …) auto-schedule via Google Workspace DWD — no Connect required. Schedule buttons are a manual retry only."
         dense
         actions={
           <div className="flex items-center gap-2">
@@ -584,12 +584,11 @@ function RecallCalendarPanel({
           <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Recall Calendar V2</div>
           <h3 className="font-display text-lg mt-0.5">Auto-join via calendar webhooks</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Connect Google Calendar once for{" "}
-            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>. New or
-            updated meetings trigger Recall webhooks and bots are scheduled immediately (timed 48h
-            retention). Cron is a safety net;{" "}
-            <span className="text-foreground font-medium">Sync now</span> is a manual fallback. Each
-            bot joins ~2 min before start.
+            Auto-schedule for{" "}
+            <span className="text-foreground font-medium">{allowedEmails.join(", ")}</span>{" "}
+            runs via Google Workspace (DWD) + cron —{" "}
+            <span className="text-foreground font-medium">Connect is optional</span> (faster webhook
+            path only). Bots use timed 48h retention and join ~2 min before start.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
